@@ -1,17 +1,65 @@
-name: 'publish'
+name: 'Publish Release'
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'New tag name'
+      environment:
+        type: environment
+        default: "Beta"
+      vendor_version:
+        type: string
+        description: "Vendor Version (semver) for the release -- what will be visible."
+        default: "0.0.1"
+        required: true
+      build:
+        type: string
+        description: "Build number (int, 3 max digits) for the release."
+        default: "0"
         required: true
 
 jobs:
+  create_release_tag:
+    name: "Create release tag"
+    environment: ${{ github.event.inputs.environment || 'Beta' }}
+    env:
+        PL_VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
+        PL_VENDOR_BASE_URL: "https://github.com/${{ github.repository }}"
+
+    runs-on: ubuntu-latest
+    outputs:
+        release_id: ${{ steps.create_release.outputs.id }}
+    steps:
+        - uses: actions/checkout@v3
+        - uses: actions/setup-node@v3
+          with:
+            node-version: 16
+        - name: Install dependencies
+          run: |
+              npm i -g npm@8.2.0
+              npm ci
+        - name: Build tauri-update.json
+          run: node generate-update-file.ts
+        - uses: softprops/action-gh-release@v1
+          id: create_release
+          name: Create release and add tauri-update.json
+          with:
+            tag_name: "v${{ env.PL_VENDOR_VERSION }}"
+            name: "v${{ env.PL_VENDOR_VERSION }}"
+            body: "v${{ env.PL_VENDOR_VERSION }}"
+            prerelease: true
+            draft: false
+            files: tauri-update.json
+            fail_on_unmatched_files: true
+
   publish-tauri:
+    environment: ${{ github.event.inputs.environment || 'Beta' }}
+    needs: create_release_tag
+    env:
+      RELEASE_ID: ${{ needs.create_release_tag.outputs.release_id }}
+      PL_VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest, ubuntu-20.04, windows-latest]
+        platform: [macos-latest, ubuntu-latest, windows-latest]
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -33,7 +81,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         with:
+          releaseId: ${{ env.RELEASE_ID }}
           tagName: ${{ github.event.inputs.tag }}
           releaseName: 'App ${{ github.event.inputs.tag }}'
           releaseBody: 'See the assets to download this version and install.'
