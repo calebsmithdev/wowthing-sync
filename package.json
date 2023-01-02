@@ -12,6 +12,7 @@
     "@tauri-apps/api": "^1.2.0",
     "axios": "^1.2.2",
     "dayjs": "^1.11.7",
+    "dotenv": "^16.0.3",
     "localforage": "^1.10.0",
     "next": "^12.2.5",
     "react": "^18.2.0",
