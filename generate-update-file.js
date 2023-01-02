@@ -36,5 +36,3 @@ const tauriUpdate = {
 };
 
 writeFileSync(tauriUpdateFilePath, JSON.stringify(tauriUpdate, null, 4), "utf-8");
-
-export {}
