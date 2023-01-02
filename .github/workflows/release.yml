@@ -28,7 +28,7 @@ jobs:
               npm i -g npm@8.2.0
               npm ci
         - name: Build tauri-update.json
-          run: node generate-update-file.ts
+          run: node generate-update-file.js
         - uses: softprops/action-gh-release@v1
           id: create_release
           name: Create release and add tauri-update.json
