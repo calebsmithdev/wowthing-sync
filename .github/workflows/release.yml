@@ -74,7 +74,6 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         with:
           releaseId: ${{ env.RELEASE_ID }}
-          tagName: ${{ github.event.inputs.tag }}
           releaseName: 'App ${{ github.event.inputs.tag }}'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
