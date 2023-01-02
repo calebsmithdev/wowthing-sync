@@ -1,5 +1,5 @@
 [package]
-name = "wowthings-sync"
+name = "wowthing-sync"
 version = "0.0.0"
 description = "A Tauri App"
 authors = ["you"]

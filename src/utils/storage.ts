@@ -1,7 +1,7 @@
 import localforage from "localforage";
 
 const store = localforage.createInstance({
-  name: "wowthings-sync"
+  name: "wowthing-sync"
 });
 
 export const getStorageItem = <T>(key: string) : Promise<T> => {

@@ -41,8 +41,8 @@
     },
     "bundle": {
       "active": true,
-      "category": "DeveloperTool",
-      "copyright": "",
+      "category": "Productivity",
+      "copyright": "2022 Caleb Smith",
       "deb": {
         "depends": []
       },
@@ -54,7 +54,7 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "identifier": "com.tauri.dev",
+      "identifier": "wowthing.sync",
       "longDescription": "",
       "macOS": {
         "entitlements": null,
