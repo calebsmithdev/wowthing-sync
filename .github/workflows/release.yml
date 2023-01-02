@@ -2,9 +2,6 @@ name: 'Publish Release'
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        type: environment
-        default: "Beta"
       vendor_version:
         type: string
         description: "Vendor Version (semver) for the release -- what will be visible."
@@ -19,7 +16,6 @@ on:
 jobs:
   create_release_tag:
     name: "Create release tag"
-    environment: ${{ github.event.inputs.environment || 'Beta' }}
     env:
         PL_VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
         PL_VENDOR_BASE_URL: "https://github.com/${{ github.repository }}"
@@ -51,7 +47,6 @@ jobs:
             fail_on_unmatched_files: true
 
   publish-tauri:
-    environment: ${{ github.event.inputs.environment || 'Beta' }}
     needs: create_release_tag
     env:
       RELEASE_ID: ${{ needs.create_release_tag.outputs.release_id }}
