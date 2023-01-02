@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  background-color: #101112;
+  color: white;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+h2 {
+  @apply text-xl;
+
+  border-bottom: 1px solid #58595a;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: .5rem;
+  padding-bottom: .5rem;
+}
+
+input {
+  border: 1px solid #58595a;
+  width: 100%;
+  background-color: transparent;
+  padding: 0.25em 0.375em;
+  outline: none;
+  transition: .1s;
+}
+
+/* Smooth outline with box-shadow: */
+input:focus {
+  outline: none;
+  box-shadow: 0 0 3pt 2pt rgba(255,255,255,0.4);
+}
+
+.button {
+  display: inline;
+  background: #004c94;
+  border: 1px solid #0074e0;
+  border-radius: 5px;
+  color: #fff;
+  padding: 0.2rem 0.5rem;
+}
+
+.button.input-button {
+  margin-left: 20px;
+}
+
+.card {
+  background: #1a1b1c;
+  border: 1px solid #58595a;
+  padding: 0.5rem 1rem;
+}
