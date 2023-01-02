@@ -7,11 +7,6 @@ on:
         description: "Vendor Version (semver) for the release -- what will be visible."
         default: "0.0.1"
         required: true
-      build:
-        type: string
-        description: "Build number (int, 3 max digits) for the release."
-        default: "0"
-        required: true
 
 jobs:
   create_release_tag:
