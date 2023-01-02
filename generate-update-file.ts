@@ -4,19 +4,15 @@ const { writeFileSync } = require("fs");
 require("dotenv").config();
 
 const rootDir = resolve(__dirname, "../..");
-const assetsDir = resolve(rootDir, process.env.PL_ASSETS_DIR || "assets");
 
 const tauriUpdateFilePath = resolve(__dirname, "tauri-update.json");
 const packageFilePath = resolve(__dirname, "package.json");
-const manifestFilePath = resolve(assetsDir, "manifest.json");
 
 const { version } = require(packageFilePath);
-const manifest = require(manifestFilePath);
 const now = new Date().toISOString();
 
 const vendorVersion = process.env.PL_VENDOR_VERSION || version;
-const vendorName = manifest.name;
-const vendorNameLowercase = vendorName.toLowerCase();
+const vendorNameLowercase = 'wowthing-sync';
 const vendorBaseUrl = "https://github.com/calebsmithdev/wowthing-sync";
 
 const baseUrl = `${vendorBaseUrl}/releases/download/v${vendorVersion}`;
