@@ -12,7 +12,7 @@ const { version } = require(packageFilePath);
 const now = new Date().toISOString();
 
 const vendorVersion = process.env.VENDOR_VERSION || version;
-const vendorNameLowercase = 'WoWthing.Sync';
+const vendorNameLowercase = 'Wowthing.Sync';
 const vendorBaseUrl = "https://github.com/calebsmithdev/wowthing-sync";
 
 const baseUrl = `${vendorBaseUrl}/releases/download/v${vendorVersion}`;
