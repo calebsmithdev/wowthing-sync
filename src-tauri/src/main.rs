@@ -21,10 +21,13 @@ fn build_menu() -> SystemTrayMenu {
 
 fn main() {
     let tray_menu = build_menu();
+    let settings = tauri_plugin_store::StoreBuilder::new(".settings.dat".parse().unwrap())
+        .build();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_persisted_scope::init())
         .plugin(tauri_plugin_fs_watch::Watcher::default())
-        .plugin(tauri_plugin_store::PluginBuilder::default().build())
+        .plugin(tauri_plugin_store::PluginBuilder::default().stores([settings]).freeze().build())
         .system_tray(SystemTray::new().with_menu(tray_menu))
         .on_system_tray_event(move |app, event| match event {
             SystemTrayEvent::DoubleClick {

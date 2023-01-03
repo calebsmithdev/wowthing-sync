@@ -4,12 +4,13 @@ import { useProgramFolder } from "../composables/programFolder";
 import { useFileUpload } from "../composables/fileUpload";
 import relativeTime from 'dayjs/plugin/relativeTime'
 import dayjs from "dayjs";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import UpdateBanner from "../components/UpdateBanner";
 
 dayjs.extend(relativeTime)
 
 function App() {
+  const [updatedTimeAgo, setUpdatedTimeAgo] = useState('');
   const {apiKey, setKey} = useApiKeys();
   const {folder, setFolder, getDefaultPath} = useProgramFolder();
   const { handleUpload, lastUpdated, startFileWatchingProcess, stopFileWatchingProcess, watchingFiles } = useFileUpload();
@@ -32,6 +33,21 @@ function App() {
     }
   }, [folder])
 
+  useEffect(() => {
+    setUpdatedTimeAgo(dayjs(lastUpdated).fromNow());
+    const timer = setInterval(() => {
+      if(!lastUpdated) return;
+      const date = dayjs(lastUpdated).fromNow();
+      console.log({lastUpdated})
+      console.log({date})
+      setUpdatedTimeAgo(date);
+    }, 5000);
+
+    return () => {
+      clearInterval(timer);
+    }
+  },[lastUpdated])
+
   return (
     <>
     <UpdateBanner />
@@ -42,8 +58,8 @@ function App() {
         <div className="w-full md:w-1/3 lg:w-1/4 px-5 mb-5 md:mb-0 text-center">
           <div className="card">
             <h2 className="mb-6">Info</h2>
-            {lastUpdated ? (
-              <p className="mb-5">Data uploaded {dayjs(lastUpdated).fromNow()}</p>
+            {lastUpdated && updatedTimeAgo ? (
+              <p className="mb-5">Data uploaded {updatedTimeAgo}</p>
             ) : (
               <p className="mb-5">Waiting to upload</p>
             )}

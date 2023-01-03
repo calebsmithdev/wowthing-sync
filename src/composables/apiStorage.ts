@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { API_KEY } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
 
