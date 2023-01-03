@@ -7,8 +7,8 @@
     "withGlobalTauri": false
   },
   "package": {
-    "productName": "wowthing-sync",
-    "version": "0.1.0"
+    "productName": "WoWthing Sync",
+    "version": "0.1.2"
   },
   "tauri": {
     "systemTray": {
