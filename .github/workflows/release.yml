@@ -12,8 +12,7 @@ jobs:
   create_release_tag:
     name: "Create release tag"
     env:
-        PL_VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
-        PL_VENDOR_BASE_URL: "https://github.com/${{ github.repository }}"
+        VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
 
     runs-on: ubuntu-latest
     outputs:
@@ -33,9 +32,9 @@ jobs:
           id: create_release
           name: Create release and add tauri-update.json
           with:
-            tag_name: "v${{ env.PL_VENDOR_VERSION }}"
-            name: "v${{ env.PL_VENDOR_VERSION }}"
-            body: "v${{ env.PL_VENDOR_VERSION }}"
+            tag_name: "v${{ env.VENDOR_VERSION }}"
+            name: "v${{ env.VENDOR_VERSION }}"
+            body: "v${{ env.VENDOR_VERSION }}"
             prerelease: true
             draft: false
             files: tauri-update.json
@@ -45,11 +44,11 @@ jobs:
     needs: create_release_tag
     env:
       RELEASE_ID: ${{ needs.create_release_tag.outputs.release_id }}
-      PL_VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
+      VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest, ubuntu-latest, windows-latest]
+        platform: [macos-12, windows-latest]
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -61,11 +60,6 @@ jobs:
           node-version: 16
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
       - name: install app dependencies and build it
         run: yarn && yarn build
       - uses: tauri-apps/tauri-action@v0

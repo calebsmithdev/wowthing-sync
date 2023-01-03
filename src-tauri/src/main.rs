@@ -9,11 +9,6 @@
 use tauri::Manager;
 use tauri::{CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
 
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 fn build_menu() -> SystemTrayMenu {
     let menuitem_quit = CustomMenuItem::new("quit".to_string(), "Quit");
@@ -29,6 +24,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_fs_watch::Watcher::default())
+        .plugin(tauri_plugin_store::PluginBuilder::default().build())
         .system_tray(SystemTray::new().with_menu(tray_menu))
         .on_system_tray_event(move |app, event| match event {
             SystemTrayEvent::DoubleClick {
@@ -73,7 +69,6 @@ fn main() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![greet])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             if(!cfg!(debug_assertions)) {

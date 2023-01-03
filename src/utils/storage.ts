@@ -1,13 +1,12 @@
-import localforage from "localforage";
-
-const store = localforage.createInstance({
-  name: "wowthing-sync"
-});
-
-export const getStorageItem = <T>(key: string) : Promise<T> => {
-  return store.getItem<T>(key);
+export const getStorageItem = async <T>(key: string) : Promise<T> => {
+  const Store = (await import('tauri-plugin-store-api')).Store
+  const store = new Store('.settings.dat');
+  return store.get(key);
 }
 
-export const saveStorageItem = <T>(key: string, value: T) : Promise<T> => {
-  return store.setItem<T>(key, value);
+export const saveStorageItem = async <T>(key: string, value: T) : Promise<T> => {
+  const Store = (await import('tauri-plugin-store-api')).Store
+  const store = new Store('.settings.dat');
+  await store.set(key, value);
+  return store.get(key);
 }

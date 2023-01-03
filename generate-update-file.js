@@ -11,8 +11,8 @@ const packageFilePath = resolve(__dirname, "package.json");
 const { version } = require(packageFilePath);
 const now = new Date().toISOString();
 
-const vendorVersion = process.env.PL_VENDOR_VERSION || version;
-const vendorNameLowercase = 'wowthing-sync';
+const vendorVersion = process.env.VENDOR_VERSION || version;
+const vendorNameLowercase = 'WoWthing.Sync';
 const vendorBaseUrl = "https://github.com/calebsmithdev/wowthing-sync";
 
 const baseUrl = `${vendorBaseUrl}/releases/download/v${vendorVersion}`;
@@ -20,17 +20,17 @@ const tauriUpdate = {
     name: `v${vendorVersion}`,
     pub_date: now,
     platforms: {
-        darwin: {
-            url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_macos_tauri_x86_64.app.tar.gz`,
-            signature: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_macos_tauri_x86_64.app.tar.gz.sig`,
+        'darwin-x86_64': {
+            url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}.app.tar.gz`,
+            signature: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}.app.tar.gz.sig`,
         },
-        linux: {
-            url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_linux_tauri_amd64.AppImage.tar.gz`,
-            signature: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_linux_tauri_amd64.AppImage.tar.gz.sig`,
+        'darwin-aarch64': {
+            url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}.app.tar.gz`,
+            signature: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}.app.tar.gz.sig`,
         },
-        win64: {
-            url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_windows_tauri_x64.msi.zip`,
-            signature: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_windows_tauri_x64.msi.zip.sig`,
+        'windows-x86_64': {
+            url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_x64_en-US.msi.zip`,
+            signature: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_x64_en-US.msi.zip.sig`,
         },
     },
 };

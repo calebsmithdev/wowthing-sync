@@ -5,6 +5,7 @@ import { useFileUpload } from "../composables/fileUpload";
 import relativeTime from 'dayjs/plugin/relativeTime'
 import dayjs from "dayjs";
 import { useEffect } from "react";
+import UpdateBanner from "../components/UpdateBanner";
 
 dayjs.extend(relativeTime)
 
@@ -32,6 +33,8 @@ function App() {
   }, [folder])
 
   return (
+    <>
+    <UpdateBanner />
     <div className="container py-8">
       <h1 className="font-bold text-3xl">WoWthing [insert cool logo here]</h1>
 
@@ -91,6 +94,7 @@ function App() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

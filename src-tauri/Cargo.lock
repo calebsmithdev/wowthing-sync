@@ -2818,6 +2818,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-store"
+version = "0.0.0"
+source = "git+https://github.com/tauri-apps/tauri-plugin-store?branch=dev#9bd993aa67766596638bbfd91e79a1bf8f632014"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror",
+]
+
+[[package]]
 name = "tauri-runtime"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3647,6 +3659,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-fs-watch",
+ "tauri-plugin-store",
 ]
 
 [[package]]
