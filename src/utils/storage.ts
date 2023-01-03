@@ -5,9 +5,9 @@ const store = localforage.createInstance({
 });
 
 export const getStorageItem = <T>(key: string) : Promise<T> => {
-  return localforage.getItem<T>(key);
+  return store.getItem<T>(key);
 }
 
 export const saveStorageItem = <T>(key: string, value: T) : Promise<T> => {
-  return localforage.setItem<T>(key, value);
+  return store.setItem<T>(key, value);
 }

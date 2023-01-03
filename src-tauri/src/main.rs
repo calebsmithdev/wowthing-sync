@@ -31,6 +31,21 @@ fn main() {
         .plugin(tauri_plugin_fs_watch::Watcher::default())
         .system_tray(SystemTray::new().with_menu(tray_menu))
         .on_system_tray_event(move |app, event| match event {
+            SystemTrayEvent::DoubleClick {
+                position: _,
+                size: _,
+                ..
+            } => {
+                let w = app.get_window("main").unwrap();
+                w.show().unwrap();
+
+                // because the window shows in a specific workspace and the user
+                // can hide it and move to another, it will next show in the original
+                // workspace it was opened in.
+                // this is important for the window to always show in whatever workspace
+                // the user moved to and is active in.
+                w.set_focus().unwrap();
+            }
             SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
                 "quit" => {
                     std::process::exit(0);

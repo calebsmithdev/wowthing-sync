@@ -4,37 +4,48 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import localforage from 'localforage';
 import dayjs from 'dayjs';
-import { API_KEY, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
+import { API_KEY, LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
 
 export const useFileUpload = () => {
+  const [isProcessing, setProcessing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [watchingFiles, setWatchingFiles] = useState([null]);
+  const [watchingFiles, setWatchingFiles] = useState([]);
 
   useEffect(() => {
     getLastUpdated();
-    setTimeout(() => {
-      startFileWatchingProcess();
-    }, 1000)
   }, []);
 
   const startFileWatchingProcess = async () => {
+    if(isProcessing) return;
+    setProcessing(true);
     const folder = await getStorageItem<string>(PROGRAM_FOLDER)
-    if(!folder) {
+    if(!folder || watchingFiles.length > 0) {
+      setProcessing(false);
       return;
     }
+    console.log('Started watching files')
     const files = await getAllFiles();
-    files.forEach(async (file) => {
+    for (const file of files) {
+      console.log({watchingFiles})
+      if(watchingFiles.find(m => m.path == file.path)) {
+        continue;
+      }
       const watch = (await import('tauri-plugin-fs-watch-api')).watch
-      const stopWatching = await watch(file.path, { recursive: false }, handleUpload)
-      setWatchingFiles([...watchingFiles, stopWatching]);
-    })
+      const stopWatching = await watch(file.path, { recursive: false }, () => handleUpload(false))
+      setWatchingFiles(stateFiles => [...stateFiles, {
+        stopWatching,
+        path: file.path
+      }]);
+    }
+    setProcessing(false);
   }
 
   const stopFileWatchingProcess = async() => {
     if (watchingFiles.length > 0) {
-      watchingFiles.forEach(async (stopWatching, index) => {
-        await stopWatching()
+      console.log('Stopped watching files')
+      watchingFiles.forEach(async (item, index) => {
+        await item.stopWatching()
         watchingFiles.splice(index, 1);
       })
 		}
@@ -87,11 +98,16 @@ export const useFileUpload = () => {
     return folderExists.length > 0;
   }
 
-  const handleUpload = async () => {
+  const handleUpload = async (force = false) => {
+    const lastStartedDate = await getStorageItem<string>(LAST_STARTED_DATE);
+    if(!force && lastStartedDate && dayjs().diff(dayjs(lastStartedDate), 'seconds') < 15) {
+      return;
+    }
+    await saveStorageItem<string>(LAST_STARTED_DATE, dayjs().format())
     const files = await getAllFiles();
+    const dedupedFiles = removeDuplicateFiles(files);
     const apiKey = await getStorageItem<string>(API_KEY)
-    
-    for (const file of files) {
+    for (const file of dedupedFiles) {
       const contents = await readTextFile(file.path, { dir: BaseDirectory.Home });
       const {data} = await axios.post('/api/upload/', {
         apiKey: apiKey,
@@ -107,8 +123,21 @@ export const useFileUpload = () => {
     await handleLastUpdated();
   }
 
+  const removeDuplicateFiles = (arr) => {
+    var unique = arr.reduce(function (files, file) {
+      if(!files.find(m => m.path == file.path)) {
+        files.push(file);
+      }
+      return files;
+    }, []);
+    return unique;
+  }
+
   return {
     handleUpload,
-    lastUpdated
+    lastUpdated,
+    watchingFiles,
+    startFileWatchingProcess,
+    stopFileWatchingProcess
   }
 }

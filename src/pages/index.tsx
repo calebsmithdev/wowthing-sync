@@ -4,13 +4,14 @@ import { useProgramFolder } from "../composables/programFolder";
 import { useFileUpload } from "../composables/fileUpload";
 import relativeTime from 'dayjs/plugin/relativeTime'
 import dayjs from "dayjs";
+import { useEffect } from "react";
 
 dayjs.extend(relativeTime)
 
 function App() {
   const {apiKey, setKey} = useApiKeys();
   const {folder, setFolder, getDefaultPath} = useProgramFolder();
-  const { handleUpload, lastUpdated } = useFileUpload();
+  const { handleUpload, lastUpdated, startFileWatchingProcess, stopFileWatchingProcess, watchingFiles } = useFileUpload();
 
   const openFolderDialog = async () => {
     const defaultPath = await getDefaultPath();
@@ -22,8 +23,17 @@ function App() {
     setFolder(selected);
   }
 
+  useEffect(() => {
+    if(folder) {
+      startFileWatchingProcess();
+    } else {
+      stopFileWatchingProcess();
+    }
+  }, [folder])
+
   return (
     <div className="container py-8">
+      {watchingFiles.length}
       <h1 className="font-bold text-3xl">WoWthing [insert cool logo here]</h1>
 
       <div className="flex -mx-5 pt-10 flex-wrap">
@@ -36,7 +46,7 @@ function App() {
               <p className="mb-5">Waiting to upload</p>
             )}
             {apiKey && folder && 
-              <button type="button" onClick={() => handleUpload()} className="button mb-3">
+              <button type="button" onClick={() => handleUpload(true)} className="button mb-3">
                 Manually Upload Data
               </button>
             }
