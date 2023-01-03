@@ -15,7 +15,7 @@ const UpdateBanner = () => {
     });
     listen('tauri://update-status', async function (res) {
       console.log('New status: ', res)
-      if(res.payload.status === 'DONE') {
+      if((res.payload as any).status === 'DONE') {
         const relaunch = (await import('@tauri-apps/api/process')).relaunch;
         await relaunch();
       }
