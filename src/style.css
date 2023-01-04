@@ -68,3 +68,12 @@ input:focus {
   text-decoration: underline;
   cursor: pointer;
 }
+
+.build-info {
+  font-size: 10px;
+  color: gray;
+  position: absolute;
+  bottom: 9px;
+  right: 9px;
+  user-select: none;
+}

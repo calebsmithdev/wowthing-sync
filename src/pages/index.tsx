@@ -6,6 +6,7 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 import UpdateBanner from "../components/UpdateBanner";
+import BuildInfo from "../components/BuildInfo";
 
 dayjs.extend(relativeTime)
 
@@ -110,6 +111,7 @@ function App() {
         </div>
       </div>
     </div>
+    <BuildInfo />
     </>
   );
 }
