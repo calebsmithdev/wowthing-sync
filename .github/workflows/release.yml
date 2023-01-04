@@ -68,15 +68,6 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
-      - name: Build tauri-update.json
-        run: node generate-update-file.mjs
-      - uses: softprops/action-gh-release@v1
-        id: create_release
-        name: Create release and add tauri-update.json
-        with:
-          tag_name: "v${{ env.VENDOR_VERSION }}"
-          files: tauri-update.json
-          fail_on_unmatched_files: true
 
   updater:
     needs: publish-tauri

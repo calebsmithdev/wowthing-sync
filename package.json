@@ -21,11 +21,13 @@
     "tauri-plugin-store-api": "github:tauri-apps/tauri-plugin-store#dev"
   },
   "devDependencies": {
+    "@actions/github": "^5.1.1",
     "@tauri-apps/cli": "^1.2.2",
     "@types/node": "^18.7.11",
     "@types/react": "^18.0.17",
     "@types/react-dom": "^18.0.6",
     "autoprefixer": "^10.4.13",
+    "node-fetch": "^3.3.0",
     "postcss": "^8.4.20",
     "tailwindcss": "^3.2.4",
     "typescript": "^4.7.4"

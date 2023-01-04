@@ -1,10 +1,8 @@
 import fetch from "node-fetch";
 import { getOctokit, context } from "@actions/github";
-import { resolveUpdateLog } from "./updatelog.mjs";
 
 const UPDATE_TAG_NAME = "updater";
-const UPDATE_JSON_FILE = "update.json";
-const UPDATE_JSON_PROXY = "update-proxy.json";
+const UPDATE_JSON_FILE = "tauri-update.json";
 
 /// generate update.json
 /// upload to update tag's release asset
@@ -35,7 +33,7 @@ async function resolveUpdater() {
 
   const updateData = {
     name: tag.name,
-    notes: await resolveUpdateLog(tag.name), // use updatelog.md
+    notes: '',
     pub_date: new Date().toISOString(),
     platforms: {
       "darwin-aarch64": { signature: "", url: "" },
@@ -120,41 +118,12 @@ async function resolveUpdater() {
     }
   });
 
-  // update the update.json
-  const { data: updateRelease } = await github.rest.repos.getReleaseByTag({
-    ...options,
-    tag: UPDATE_TAG_NAME,
-  });
-
-  // delete the old assets
-  for (let asset of updateRelease.assets) {
-    if (asset.name === UPDATE_JSON_FILE) {
-      await github.rest.repos.deleteReleaseAsset({
-        ...options,
-        asset_id: asset.id,
-      });
-    }
-
-    if (asset.name === UPDATE_JSON_PROXY) {
-      await github.rest.repos
-        .deleteReleaseAsset({ ...options, asset_id: asset.id })
-        .catch(console.error); // do not break the pipeline
-    }
-  }
-
   // upload new assets
   await github.rest.repos.uploadReleaseAsset({
     ...options,
-    release_id: updateRelease.id,
+    release_id: latestRelease.id,
     name: UPDATE_JSON_FILE,
     data: JSON.stringify(updateData, null, 2),
-  });
-
-  await github.rest.repos.uploadReleaseAsset({
-    ...options,
-    release_id: updateRelease.id,
-    name: UPDATE_JSON_PROXY,
-    data: JSON.stringify(updateDataNew, null, 2),
   });
 }
 
