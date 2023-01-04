@@ -68,19 +68,3 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
-
-  updater:
-    needs: publish-tauri
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - run: git tag ${{ github.event.inputs.tag }}
-      - name: setup node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 16
-      - name: Build tauri-update.json
-        run: npm install && node generate-update-file.mjs
