@@ -8,7 +8,7 @@
   },
   "package": {
     "productName": "Wowthing Sync",
-    "version": "0.1.4"
+    "version": "0.1.5"
   },
   "tauri": {
     "systemTray": {
@@ -37,6 +37,9 @@
         "readFile": true,
         "readDir": true,
         "exists": true
+      },
+      "process": {
+        "all": true
       }
     },
     "bundle": {

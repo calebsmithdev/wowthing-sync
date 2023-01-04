@@ -39,8 +39,6 @@ function App() {
     const timer = setInterval(() => {
       if(!lastUpdated) return;
       const date = dayjs(lastUpdated).fromNow();
-      console.log({lastUpdated})
-      console.log({date})
       setUpdatedTimeAgo(date);
     }, 5000);
 
