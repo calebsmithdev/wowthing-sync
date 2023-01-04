@@ -4,7 +4,7 @@ import { PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
 
 const defaultMacFolder = '/Applications/World of Warcraft/_retail_';
-const defaultWindowsFolder = 'C:\Program Files (x86)\World of Warcraft\_retail_';
+const defaultWindowsFolder = 'C:\\Program Files (x86)\\World of Warcraft\\_retail_';
 
 export const useProgramFolder = () => {
   const [programFolder, setProgramFolder] = useState('');

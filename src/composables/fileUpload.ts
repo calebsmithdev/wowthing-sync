@@ -6,11 +6,13 @@ import localforage from 'localforage';
 import dayjs from 'dayjs';
 import { API_KEY, LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
+import { useLogs } from '../providers/LogProvider';
 
 export const useFileUpload = () => {
   const [isProcessing, setProcessing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [watchingFiles, setWatchingFiles] = useState([]);
+  const { addLog } = useLogs();
 
   useEffect(() => {
     getLastUpdated();
@@ -108,6 +110,11 @@ export const useFileUpload = () => {
     const dedupedFiles = removeDuplicateFiles(files);
     const apiKey = await getStorageItem<string>(API_KEY)
     for (const file of dedupedFiles) {
+      addLog({
+        date: new Date(),
+        title: 'Attempting to upload...',
+        note: `File path: ${file.path}`
+      })
       const contents = await readTextFile(file.path, { dir: BaseDirectory.Home });
       const {data} = await axios.post('/api/upload/', {
         apiKey: apiKey,
@@ -116,6 +123,11 @@ export const useFileUpload = () => {
         headers: {
           'User-Agent': `WoWthing Sync - Tauri`
         }
+      })
+      addLog({
+        date: new Date(),
+        title: 'Uploaded file!',
+        note: `File path: ${file.path}; Return: ${data}`
       })
       console.log(`File: ${file.path}; Return: ${data}`);
     }

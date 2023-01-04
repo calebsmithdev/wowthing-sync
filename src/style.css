@@ -77,3 +77,20 @@ input:focus {
   right: 9px;
   user-select: none;
 }
+
+table {
+  width: 100%;
+  background: #1a1b1c;
+  border-radius: 5px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+table th {
+  text-align: left;
+}
+
+table tbody tr:nth-child(odd) {
+  background: #212324;
+}

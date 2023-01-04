@@ -6,15 +6,23 @@
 // #[cfg(target_os = "macos")]
 // use cocoa::appkit::{NSWindow, NSWindowButton, NSWindowStyleMask, NSWindowTitleVisibility};
 
-use tauri::Manager;
+use tauri::{Manager, SystemTraySubmenu, api};
 use tauri::{CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
 
 
 fn build_menu() -> SystemTrayMenu {
     let menuitem_quit = CustomMenuItem::new("quit".to_string(), "Quit");
     let menuitem_show = CustomMenuItem::new("show".to_string(), "Open Window");
+
+    let submenu_preferences = SystemTrayMenu::new()
+        .add_item(CustomMenuItem::new("logs", "View Logs"))
+        .add_item(CustomMenuItem::new("check-update", "Check for Updates"))
+        .add_item(CustomMenuItem::new("restart", "Restart App"));
+
     SystemTrayMenu::new()
         .add_item(menuitem_show)
+        .add_native_item(SystemTrayMenuItem::Separator)
+        .add_submenu(SystemTraySubmenu::new("Preferences", submenu_preferences))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(menuitem_quit)
 }
@@ -48,6 +56,17 @@ fn main() {
             SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
                 "quit" => {
                     std::process::exit(0);
+                }
+                "restart" => {
+                    api::process::restart(&app.env());
+                }
+                "check-update" => {
+                    let w = app.get_window("main").unwrap();
+                    w.eval("window.checkForUpdates()");
+                }
+                "logs" => {
+                    let w = app.get_window("main").unwrap();
+                    w.eval("window.goToLink('/logs')");
                 }
                 "show" => {
                     let w = app.get_window("main").unwrap();

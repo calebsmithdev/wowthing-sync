@@ -7,6 +7,7 @@ import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 import UpdateBanner from "../components/UpdateBanner";
 import BuildInfo from "../components/BuildInfo";
+import { useLogs } from "../providers/LogProvider";
 
 dayjs.extend(relativeTime)
 
@@ -14,6 +15,7 @@ function App() {
   const [updatedTimeAgo, setUpdatedTimeAgo] = useState('');
   const {apiKey, setKey} = useApiKeys();
   const {folder, setFolder, getDefaultPath} = useProgramFolder();
+  const { addLog } = useLogs();
   const { handleUpload, lastUpdated, startFileWatchingProcess, stopFileWatchingProcess, watchingFiles } = useFileUpload();
 
   const openFolderDialog = async () => {
