@@ -20,7 +20,8 @@ export const useProgramFolder = () => {
 
   const setFolder = async (value) => {
     if(!value) return;
-    await saveStorageItem<string>(PROGRAM_FOLDER, value)
+    const testValue = await saveStorageItem<string>(PROGRAM_FOLDER, value)
+    console.log({testValue})
     setProgramFolder(value);
   }
 

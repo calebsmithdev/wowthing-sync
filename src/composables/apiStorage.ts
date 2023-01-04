@@ -15,7 +15,8 @@ export const useApiKeys = () => {
   }
 
   const setKey = async (value) => {
-    await saveStorageItem(API_KEY, value)
+    const testValue = await saveStorageItem(API_KEY, value)
+    console.log({testValue})
     setApiKey(value);
   }
 
