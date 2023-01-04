@@ -21,12 +21,12 @@ const tauriUpdate = {
     pub_date: now,
     platforms: {
         'darwin-x86_64': {
-            url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}.app.tar.gz`,
-            signature: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}.app.tar.gz.sig`,
+            url: `${baseUrl}/${vendorNameLowercase}.app.tar.gz`,
+            signature: `${baseUrl}/${vendorNameLowercase}.app.tar.gz.sig`,
         },
         'darwin-aarch64': {
-            url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}.app.tar.gz`,
-            signature: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}.app.tar.gz.sig`,
+            url: `${baseUrl}/${vendorNameLowercase}.app.tar.gz`,
+            signature: `${baseUrl}/${vendorNameLowercase}.app.tar.gz.sig`,
         },
         'windows-x86_64': {
             url: `${baseUrl}/${vendorNameLowercase}_${vendorVersion}_x64_en-US.msi.zip`,
