@@ -77,16 +77,16 @@ async function resolveUpdater() {
     }
 
     // linux url
-    if (name.endsWith(".AppImage.tar.gz")) {
-      updateData.platforms.linux.url = browser_download_url;
-      updateData.platforms["linux-x86_64"].url = browser_download_url;
-    }
+    // if (name.endsWith(".AppImage.tar.gz")) {
+    //   updateData.platforms.linux.url = browser_download_url;
+    //   updateData.platforms["linux-x86_64"].url = browser_download_url;
+    // }
     // linux signature
-    if (name.endsWith(".AppImage.tar.gz.sig")) {
-      const sig = await getSignature(browser_download_url);
-      updateData.platforms.linux.signature = sig;
-      updateData.platforms["linux-x86_64"].signature = sig;
-    }
+    // if (name.endsWith(".AppImage.tar.gz.sig")) {
+    //   const sig = await getSignature(browser_download_url);
+    //   updateData.platforms.linux.signature = sig;
+    //   updateData.platforms["linux-x86_64"].signature = sig;
+    // }
   });
 
   await Promise.allSettled(promises);
