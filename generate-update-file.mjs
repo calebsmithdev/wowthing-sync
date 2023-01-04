@@ -58,22 +58,20 @@ async function resolveUpdater() {
 
     // darwin url (intel)
     if (name.endsWith(".app.tar.gz") && !name.includes("aarch")) {
-      updateData.platforms.darwin.url = browser_download_url;
       updateData.platforms["darwin-intel"].url = browser_download_url;
     }
     // darwin signature (intel)
     if (name.endsWith(".app.tar.gz.sig") && !name.includes("aarch")) {
       const sig = await getSignature(browser_download_url);
-      updateData.platforms.darwin.signature = sig;
       updateData.platforms["darwin-intel"].signature = sig;
     }
 
     // darwin url (aarch)
-    if (name.endsWith("aarch64.app.tar.gz")) {
+    if (name.endsWith(".app.tar.gz")) {
       updateData.platforms["darwin-aarch64"].url = browser_download_url;
     }
     // darwin signature (aarch)
-    if (name.endsWith("aarch64.app.tar.gz.sig")) {
+    if (name.endsWith(".app.tar.gz.sig")) {
       const sig = await getSignature(browser_download_url);
       updateData.platforms["darwin-aarch64"].signature = sig;
     }
