@@ -82,7 +82,7 @@ jobs:
         with:
           node-version: 16
       - name: Build tauri-update.json
-        run: node generate-update-file.mjs
+        run: npm install && node generate-update-file.mjs
       - uses: softprops/action-gh-release@v1
         id: create_release
         name: Create release and add tauri-update.json
