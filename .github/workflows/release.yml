@@ -71,7 +71,7 @@ jobs:
         if: matrix.platform == 'macos-12'
         run: rustup target add aarch64-apple-darwin
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@dev
         if: matrix.platform != 'macos-12'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -84,7 +84,7 @@ jobs:
 
       - name: 'Build the Mac Silicon version'
         if: matrix.platform == 'macos-12'
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@dev
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
@@ -97,7 +97,7 @@ jobs:
 
       - name: 'Build the Mac Intel version'
         if: matrix.platform == 'macos-12'
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@dev
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
