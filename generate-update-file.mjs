@@ -66,11 +66,11 @@ async function resolveUpdater() {
     }
 
     // darwin url (aarch)
-    if (name.endsWith(".app.tar.gz")) {
+    if (name.endsWith("aarch64.app.tar.gz")) {
       updateData.platforms["darwin-aarch64"].url = browser_download_url;
     }
     // darwin signature (aarch)
-    if (name.endsWith(".app.tar.gz.sig")) {
+    if (name.endsWith("aarch64.app.tar.gz.sig")) {
       const sig = await getSignature(browser_download_url);
       updateData.platforms["darwin-aarch64"].signature = sig;
     }
