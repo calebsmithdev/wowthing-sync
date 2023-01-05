@@ -68,7 +68,7 @@ jobs:
         run: yarn && yarn build
 
       - uses: tauri-apps/tauri-action@v0
-        if: matrix.platform !== 'macos-12'
+        if: matrix.platform != 'macos-12'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
