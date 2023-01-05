@@ -56,11 +56,11 @@ async function resolveUpdater() {
     }
 
     // darwin url (intel)
-    if (name.endsWith(".app.tar.gz") && !name.includes("aarch")) {
+    if (name.endsWith("x64.app.tar.gz") && !name.includes("aarch")) {
       updateData.platforms["darwin-intel"].url = browser_download_url;
     }
     // darwin signature (intel)
-    if (name.endsWith(".app.tar.gz.sig") && !name.includes("aarch")) {
+    if (name.endsWith("x64.app.tar.gz.sig") && !name.includes("aarch")) {
       const sig = await getSignature(browser_download_url);
       updateData.platforms["darwin-intel"].signature = sig;
     }
