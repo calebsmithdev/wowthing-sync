@@ -116,20 +116,25 @@ export const useFileUpload = () => {
         note: `File path: ${file.path}`
       })
       const contents = await readTextFile(file.path, { dir: BaseDirectory.Home });
-      const {data} = await axios.post('/api/upload/', {
-        apiKey: apiKey,
-        luaFile: contents
-      }, {
-        headers: {
-          'User-Agent': `WoWthing Sync - Tauri`
-        }
-      })
-      addLog({
-        date: new Date(),
-        title: 'Uploaded file!',
-        note: `File path: ${file.path}; Return: ${data}`
-      })
-      console.log(`File: ${file.path}; Return: ${data}`);
+
+      const invoke = (await import('@tauri-apps/api/tauri')).invoke
+      try {
+        const message = await invoke('submit_addon_data', {api: apiKey, contents})
+
+        addLog({
+          date: new Date(),
+          title: 'Uploaded file!',
+          note: `File path: ${file.path}; Return: ${message}`
+        })
+        console.log(`File: ${file.path}; Return: ${message}`);
+      } catch (error) {
+        addLog({
+          date: new Date(),
+          title: 'File failed to upload!',
+          note: `File path: ${file.path}; Return: ${error}`
+        })
+        console.log(`File: ${file.path}; Return: ${error}`);
+      }
     }
 
     await handleLastUpdated();

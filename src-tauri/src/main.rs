@@ -3,11 +3,44 @@
     windows_subsystem = "windows"
 )]
 
+use std::collections::HashMap;
+
+use reqwest;
+
 // #[cfg(target_os = "macos")]
 // use cocoa::appkit::{NSWindow, NSWindowButton, NSWindowStyleMask, NSWindowTitleVisibility};
 
-use tauri::{Manager, SystemTraySubmenu, api};
+use tauri::{command, Manager, SystemTraySubmenu, api};
 use tauri::{CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
+
+#[command]
+async fn submit_addon_data(api: &str, contents: &str) -> Result<String, String> {
+    println!("Attempting to submit file...");
+    
+    let mut form_data = HashMap::new();
+    form_data.insert("apiKey", api);
+    form_data.insert("luaFile", contents);
+
+    let client = reqwest::Client::new();
+    let response = client.post("https://wowthing.org/api/upload/")
+        .json(&form_data)
+        .header("User-Agent", "WoWthing Sync - Tauri")
+        .send()
+        .await
+        .unwrap();
+        
+    match response.status() {
+        reqwest::StatusCode::OK => {
+            match response.text().await {
+                Ok(text) => Ok(format!("Sync completed: {:?}", text)),
+                Err(_) => Err(format!("There was an issue reading the response.")),
+            }
+        }
+        other => {
+            Err(format!("Uh oh! Something unexpected happened: {:?}", other))
+        }
+    }
+}
 
 
 fn build_menu() -> SystemTrayMenu {
@@ -100,6 +133,7 @@ fn main() {
       
             Ok(())
           })
+        .invoke_handler(tauri::generate_handler![submit_addon_data])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| match event {

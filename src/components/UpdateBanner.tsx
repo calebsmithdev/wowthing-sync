@@ -18,13 +18,6 @@ const UpdateBanner = () => {
       console.log('New version available: ', res)
       setUpdateNeeded(true);
     });
-    listen('tauri://update-status', async function (res) {
-      console.log('New status: ', res)
-      if((res.payload as any).status === 'DONE') {
-        const relaunch = (await import('@tauri-apps/api/process')).relaunch;
-        await relaunch();
-      }
-    })
   }, []);
 
   useEffect(() => {
@@ -54,8 +47,11 @@ const UpdateBanner = () => {
     };
   }, [])
 
-  const handleUpdate = () => {
-    emit('tauri://update-install')
+  const handleUpdate = async () => {
+    const installUpdate = (await import('@tauri-apps/api/updater')).installUpdate;
+    const relaunch = (await import('@tauri-apps/api/process')).relaunch;
+    await installUpdate();
+    await relaunch();
   }
 
   if(!updateNeeded) {
