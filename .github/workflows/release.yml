@@ -67,6 +67,10 @@ jobs:
       - name: install app dependencies and build it
         run: yarn && yarn build
 
+      - name: Install targets
+        if: matrix.platform == 'macos-12'
+        run: rustup target add aarch64-apple-darwin
+
       - uses: tauri-apps/tauri-action@v0
         if: matrix.platform != 'macos-12'
         env:
