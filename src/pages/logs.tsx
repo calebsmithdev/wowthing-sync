@@ -12,9 +12,7 @@ function LogsPage() {
 
   return (
     <>
-    <UpdateBanner />
     <div className="container py-8">
-      <p><Link href="/">&#8592; Go back to the main page</Link></p>
       <h1 className="font-bold text-3xl">WoWthing [insert cool logo here]</h1>
 
       <div className="card mt-10">

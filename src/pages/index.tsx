@@ -51,7 +51,6 @@ function App() {
 
   return (
     <>
-    <UpdateBanner />
     <div className="container py-8">
       <h1 className="font-bold text-3xl">WoWthing [insert cool logo here]</h1>
 

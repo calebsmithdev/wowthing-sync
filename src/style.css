@@ -94,3 +94,22 @@ table th {
 table tbody tr:nth-child(odd) {
   background: #212324;
 }
+
+header {
+  background: #2c2d2e;
+  padding: .5rem 1rem;
+  border-bottom: 1px solid #58595a;
+}
+
+.nav {
+  display: flex;
+}
+
+.nav-item {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.nav-item.active a {
+  text-decoration: underline;
+}
