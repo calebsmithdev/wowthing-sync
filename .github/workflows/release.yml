@@ -59,6 +59,10 @@ jobs:
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Mac Rust Targets
+        if: matrix.platform == 'macos-12'
+        run: rustup target add aarch64-apple-darwin
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -68,7 +72,6 @@ jobs:
         run: yarn && yarn build
 
       - uses: tauri-apps/tauri-action@dev
-        if: matrix.platform != 'macos-12'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
@@ -77,15 +80,4 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
-
-      - name: 'Build the Mac Intel version'
-        if: matrix.platform == 'macos-12'
-        uses: tauri-apps/tauri-action@dev
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-        with:
-          releaseId: ${{ env.RELEASE_ID }}
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
+          args: ${{ matrix.platform == 'macos-12' && '--target universal-apple-darwin' || '' }}
