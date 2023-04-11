@@ -12,6 +12,7 @@ use reqwest;
 
 use tauri::{command, Manager, SystemTraySubmenu, api};
 use tauri::{CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
+use tauri_plugin_store::StoreBuilder;
 
 #[command]
 async fn submit_addon_data(api: &str, contents: &str) -> Result<String, String> {
@@ -62,13 +63,11 @@ fn build_menu() -> SystemTrayMenu {
 
 fn main() {
     let tray_menu = build_menu();
-    let settings = tauri_plugin_store::StoreBuilder::new(".settings.dat".parse().unwrap())
-        .build();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_persisted_scope::init())
         .plugin(tauri_plugin_fs_watch::Watcher::default())
-        .plugin(tauri_plugin_store::PluginBuilder::default().stores([settings]).freeze().build())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .system_tray(SystemTray::new().with_menu(tray_menu))
         .on_system_tray_event(move |app, event| match event {
             SystemTrayEvent::DoubleClick {
@@ -95,11 +94,11 @@ fn main() {
                 }
                 "check-update" => {
                     let w = app.get_window("main").unwrap();
-                    w.eval("window.checkForUpdates()");
+                    w.eval("window.checkForUpdates()").unwrap();
                 }
                 "logs" => {
                     let w = app.get_window("main").unwrap();
-                    w.eval("window.goToLink('/logs')");
+                    w.eval("window.goToLink('/logs')").unwrap();
                 }
                 "show" => {
                     let w = app.get_window("main").unwrap();
@@ -126,11 +125,11 @@ fn main() {
         })
         .setup(|app| {
             #[cfg(target_os = "macos")]
-            if(!cfg!(debug_assertions)) {
+            if !cfg!(debug_assertions) {
                 // don't show on the taskbar/springboard
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
-      
+            StoreBuilder::new(app.handle(), ".settings.dat".parse()?).build();
             Ok(())
           })
         .invoke_handler(tauri::generate_handler![submit_addon_data])
@@ -138,7 +137,7 @@ fn main() {
         .expect("error while building tauri application")
         .run(|_app_handle, event| match event {
             tauri::RunEvent::ExitRequested { api, .. } => {
-            api.prevent_exit();
+                api.prevent_exit();
             }
             _ => {}
         });

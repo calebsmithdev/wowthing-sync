@@ -9,10 +9,10 @@ console.log(currentRoute)
     <header>
       <ul className="nav">
         <li className={currentRoute === '/' ? 'nav-item active' : 'nav-item' }>
-          <Link href="/">Main Page</Link>
+          <Link href="/" prefetch={false}>Main Page</Link>
         </li>
         <li className={currentRoute === '/logs' ? 'nav-item active' : 'nav-item' }>
-          <Link href="/logs">Logs</Link>
+          <Link href="/logs" prefetch={false}>Logs</Link>
         </li>
       </ul>
     </header>

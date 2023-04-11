@@ -1,5 +1,5 @@
 // import axios from "axios"
-import { readTextFile, BaseDirectory, readDir, FileEntry } from '@tauri-apps/api/fs';
+import { readTextFile, BaseDirectory, readDir, FileEntry, FsOptions } from '@tauri-apps/api/fs';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import localforage from 'localforage';
@@ -115,7 +115,7 @@ export const useFileUpload = () => {
         title: 'Attempting to upload...',
         note: `File path: ${file.path}`
       })
-      const contents = await readTextFile(file.path, { dir: BaseDirectory.Home });
+      const contents = await readBigFile(file.path, { dir: BaseDirectory.Home });
 
       const invoke = (await import('@tauri-apps/api/tauri')).invoke
       try {
@@ -149,6 +149,21 @@ export const useFileUpload = () => {
     }, []);
     return unique;
   }
+  
+  const readBigFile = async (filePath: string, options?: FsOptions) => {
+    const CHUNK_SIZE = 100000; // 100kb
+  
+    const file = await readTextFile(filePath, options);
+    const fileSize = file.length;
+    let fileData = '';
+  
+    for (let offset = 0; offset < fileSize; offset += CHUNK_SIZE) {
+      const chunk = file.slice(offset, offset + CHUNK_SIZE);
+      fileData += chunk;
+    }
+  
+    return fileData;
+  };
 
   return {
     handleUpload,

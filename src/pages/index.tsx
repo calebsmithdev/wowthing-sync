@@ -15,8 +15,7 @@ function App() {
   const [updatedTimeAgo, setUpdatedTimeAgo] = useState('');
   const {apiKey, setKey} = useApiKeys();
   const {folder, setFolder, getDefaultPath} = useProgramFolder();
-  const { addLog } = useLogs();
-  const { handleUpload, lastUpdated, startFileWatchingProcess, stopFileWatchingProcess, watchingFiles } = useFileUpload();
+  const { handleUpload, lastUpdated, startFileWatchingProcess, stopFileWatchingProcess } = useFileUpload();
 
   const openFolderDialog = async () => {
     const defaultPath = await getDefaultPath();
