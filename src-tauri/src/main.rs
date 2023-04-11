@@ -66,7 +66,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_persisted_scope::init())
-        .plugin(tauri_plugin_fs_watch::Watcher::default())
+        .plugin(tauri_plugin_fs_watch::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .system_tray(SystemTray::new().with_menu(tray_menu))
         .on_system_tray_event(move |app, event| match event {
