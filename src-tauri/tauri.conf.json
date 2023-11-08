@@ -49,7 +49,7 @@
     "bundle": {
       "active": true,
       "category": "Productivity",
-      "copyright": "2022 Caleb Smith",
+      "copyright": "2023 Caleb Smith",
       "deb": {
         "depends": []
       },
