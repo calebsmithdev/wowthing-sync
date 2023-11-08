@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest, windows-latest, ubuntu-latest]
+        platform: [macos-12, windows-latest, ubuntu-latest]
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -60,7 +60,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Mac Rust Targets
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-12'
         run: rustup target add universal-apple-darwin
 
       - name: install Ubuntu Dependencies
@@ -75,7 +75,7 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: install app dependencies and build it
-        run: yarn && yarn build
+        run: npm install && npm run build
 
       - uses: tauri-apps/tauri-action@dev
         env:
@@ -86,4 +86,4 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin' || '' }}
+          args: ${{ matrix.platform == 'macos-12' && '--target universal-apple-darwin' || '' }}
