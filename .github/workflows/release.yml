@@ -12,30 +12,32 @@ jobs:
   create_release_tag:
     name: "Create release tag"
     env:
-        VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
+      VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
 
     runs-on: ubuntu-latest
     outputs:
-        release_id: ${{ steps.create_release.outputs.id }}
+      release_id: ${{ steps.create_release.outputs.id }}
     steps:
-        - uses: actions/checkout@v3
-        - uses: actions/setup-node@v3
-          with:
-            node-version: 16
-        - name: Install dependencies
-          run: |
-              npm i -g npm@8.2.0
-              npm ci
-        - uses: softprops/action-gh-release@v1
-          id: create_release
-          name: Create release and add tauri-update.json
-          with:
-            tag_name: "v${{ env.VENDOR_VERSION }}"
-            name: "v${{ env.VENDOR_VERSION }}"
-            body: "v${{ env.VENDOR_VERSION }}"
-            prerelease: true
-            draft: false
-            fail_on_unmatched_files: true
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: |
+            npm i -g npm
+            npm ci
+
+      - uses: softprops/action-gh-release@v2
+        id: create_release
+        name: Create release and add tauri-update.json
+        with:
+          tag_name: "v${{ env.VENDOR_VERSION }}"
+          name: "v${{ env.VENDOR_VERSION }}"
+          body: "v${{ env.VENDOR_VERSION }}"
+          prerelease: false
+          draft: true
+          fail_on_unmatched_files: true
 
   publish-tauri:
     needs: create_release_tag
@@ -45,14 +47,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-12, windows-latest, ubuntu-latest]
+        platform: [macos-latest-large, windows-latest, ubuntu-latest]
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: git tag ${{ github.event.inputs.tag }}
       - name: setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 16
 
@@ -60,7 +62,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Mac Rust Targets
-        if: matrix.platform == 'macos-12'
+        if: matrix.platform == 'macos-latest-large'
         run: rustup target add universal-apple-darwin
 
       - name: install Ubuntu Dependencies
@@ -86,4 +88,4 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.platform == 'macos-12' && '--target universal-apple-darwin' || '' }}
+          args: ${{ matrix.platform == 'macos-latest-large' && '--target universal-apple-darwin' || '' }}
