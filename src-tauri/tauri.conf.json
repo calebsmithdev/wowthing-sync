@@ -1,8 +1,8 @@
 {
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:1420",
+    "beforeBuildCommand": "npm run generate",
+    "devPath": "http://localhost:3000",
     "distDir": "../dist",
     "withGlobalTauri": false
   },
@@ -49,7 +49,7 @@
     "bundle": {
       "active": true,
       "category": "Productivity",
-      "copyright": "2023 Caleb Smith",
+      "copyright": "2024 Caleb Smith",
       "deb": {
         "depends": []
       },

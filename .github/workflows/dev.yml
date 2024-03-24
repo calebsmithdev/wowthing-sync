@@ -1,12 +1,10 @@
-name: 'Publish Release'
+name: 'Dev: Mock release'
 on:
-  workflow_dispatch:
-    inputs:
-      vendor_version:
-        type: string
-        description: "Vendor Version (semver) for the release -- what will be visible."
-        default: "0.0.1"
-        required: true
+  pull_request:
+    types:
+      - closed
+    branches:
+      - dev
 
 jobs:
   create_release_tag:
