@@ -3,46 +3,16 @@
     windows_subsystem = "windows"
 )]
 
-use std::collections::HashMap;
-
-use reqwest;
+// Import the additional files
+mod thing_api;
+use crate::thing_api::submit_addon_data;
 
 // #[cfg(target_os = "macos")]
 // use cocoa::appkit::{NSWindow, NSWindowButton, NSWindowStyleMask, NSWindowTitleVisibility};
 
-use tauri::{command, Manager, SystemTraySubmenu, api};
+use tauri::{Manager, SystemTraySubmenu, api};
 use tauri::{CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
 use tauri_plugin_store::StoreBuilder;
-
-#[command]
-async fn submit_addon_data(api: &str, contents: &str) -> Result<String, String> {
-    println!("Attempting to submit file...");
-    
-    let mut form_data = HashMap::new();
-    form_data.insert("apiKey", api);
-    form_data.insert("luaFile", contents);
-
-    let client = reqwest::Client::new();
-    let response = client.post("https://wowthing.org/api/upload/")
-        .json(&form_data)
-        .header("User-Agent", "WoWthing Sync - Tauri")
-        .send()
-        .await
-        .unwrap();
-        
-    match response.status() {
-        reqwest::StatusCode::OK => {
-            match response.text().await {
-                Ok(text) => Ok(format!("Sync completed: {:?}", text)),
-                Err(_) => Err(format!("There was an issue reading the response.")),
-            }
-        }
-        other => {
-            Err(format!("Uh oh! Something unexpected happened: {:?}", other))
-        }
-    }
-}
-
 
 fn build_menu() -> SystemTrayMenu {
     let menuitem_quit = CustomMenuItem::new("quit".to_string(), "Quit");
