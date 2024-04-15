@@ -8,7 +8,7 @@
   },
   "package": {
     "productName": "Wowthing Sync",
-    "version": "0.1.3"
+    "version": "0.2.0"
   },
   "tauri": {
     "systemTray": {
@@ -95,7 +95,8 @@
         "height": 400,
         "width": 500,
         "resizable": false,
-        "title": "WoWthing Sync"
+        "title": "WoWthing Sync",
+        "decorations": false
       }
     ]
   }

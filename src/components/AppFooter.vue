@@ -1,6 +1,6 @@
 <template>
   <footer>
-    <p>Version 0.0.0 | Built by Failcookie</p>
+    <p>Version 0.0.0 | Built by <a href="https://raider.io/user/failcookie" target="_blank">Failcookie</a> | Powered by <a href="https://wowthing.org" target="_blank">WoWthing</a></p>
   </footer>
 </template>
 
@@ -15,5 +15,9 @@
     display: flex;
     justify-content: end;
     font-size: 70%;
+  }
+
+  a {
+    text-decoration: underline;
   }
 </style>
