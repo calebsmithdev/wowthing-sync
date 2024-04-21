@@ -25,4 +25,12 @@
 <script setup lang="ts">
   const apiKey = useApiKeys();
   const { handleUpload, lastUpdated, lastUpdatedFromNow, startFileWatchingProcess, stopFileWatchingProcess, isProcessing } = useFileUpload();
+
+  onMounted(async () => {
+    await startFileWatchingProcess();
+  })
+
+  onUnmounted(async () => {
+    await stopFileWatchingProcess();
+  })
 </script>

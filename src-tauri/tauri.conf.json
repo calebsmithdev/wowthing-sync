@@ -92,11 +92,11 @@
     "windows": [
       {
         "fullscreen": false,
-        "height": 400,
+        "height": 500,
         "width": 500,
         "resizable": false,
         "title": "WoWthing Sync",
-        "decorations": false
+        "decorations": true
       }
     ]
   }

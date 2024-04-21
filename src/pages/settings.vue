@@ -2,7 +2,9 @@
   <div class="container pt-5">
     <h1 class="mb-5">Settings</h1>
 
-    <UFormGroup label="API Key" name="apiKey" help="Visit Settings -> Account to find your API Key." class="mb-4">
+    <UCheckbox label="Launch WoWthing Sync when you start your computer" v-model="autoStart" class="mb-6" />
+
+    <UFormGroup label="API Key" name="apiKey" help="Visit Settings -> Account to find your API Key." class="mb-6">
       <UInput v-model="apiKey" autocomplete="off" :ui="{ icon: { trailing: { pointer: '' } } }" :type="showPassword ? 'text' : 'password'">
         <template #trailing>
           <UButton
@@ -28,8 +30,10 @@
 
 <script setup lang="ts">
   import { open } from '@tauri-apps/api/dialog';
+  import { enable, isEnabled, disable } from "tauri-plugin-autostart-api";
 
   const apiKey = useApiKeys();
+  const autoStart = useAutoStart();
   const { handleUpload, lastUpdated, lastUpdatedFromNow, startFileWatchingProcess, stopFileWatchingProcess, isProcessing } = useFileUpload();
   const { folder, getDefaultPath } = useProgramFolder();
   const showPassword = ref(false);

@@ -1,6 +1,15 @@
 use std::collections::HashMap;
 use tauri::command;
 
+/// Sends a POST request to the WoWthing API with the provided form data and returns the response.
+///
+/// ## Arguments
+///
+/// * `form_data` - The form data to be sent in the request body.
+///
+/// ## Returns
+///
+/// The response from the WoWthing API.
 #[command]
 pub async fn submit_addon_data(api: &str, contents: &str) -> Result<String, String> {
     println!("Attempting to submit file...");

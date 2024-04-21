@@ -8,7 +8,6 @@
 <script lang="ts" setup>
 const links = [
   { label: 'Dashboard', to: '/' },
-  { label: 'Logs', to: '/logs' },
   { label: 'Settings', to: '/settings' },
 ];
 </script>

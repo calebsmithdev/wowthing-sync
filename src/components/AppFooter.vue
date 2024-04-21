@@ -1,8 +1,14 @@
 <template>
   <footer>
-    <p>Version 0.0.0 | Built by <a href="https://raider.io/user/failcookie" target="_blank">Failcookie</a> | Powered by <a href="https://wowthing.org" target="_blank">WoWthing</a></p>
+    <p>Version {{ appVersion }} | Built by <a href="https://raider.io/user/failcookie" target="_blank">Failcookie</a> | Powered by <a href="https://wowthing.org" target="_blank">WoWthing</a></p>
   </footer>
 </template>
+
+<script setup lang="ts">
+import { getVersion } from '@tauri-apps/api/app';
+
+const appVersion = await getVersion();
+</script>
 
 <style scoped>
   footer {
