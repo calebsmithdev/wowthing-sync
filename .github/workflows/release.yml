@@ -23,9 +23,6 @@ jobs:
         with:
           node-version: lts/*
 
-      - name: Install dependencies
-        run: npm ci
-
       - uses: softprops/action-gh-release@v2
         id: create_release
         name: Create release and add tauri-update.json
