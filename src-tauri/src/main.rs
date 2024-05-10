@@ -3,71 +3,29 @@
     windows_subsystem = "windows"
 )]
 
-use std::collections::HashMap;
+// Import the additional files
+mod thing_api;
+mod system_tray_menu;
 
-use reqwest;
+use crate::system_tray_menu::build_system_tray_menu;
+use crate::thing_api::submit_addon_data;
 
 // #[cfg(target_os = "macos")]
 // use cocoa::appkit::{NSWindow, NSWindowButton, NSWindowStyleMask, NSWindowTitleVisibility};
 
-use tauri::{command, Manager, SystemTraySubmenu, api};
-use tauri::{CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
+use tauri::{Manager, api};
+use tauri::{SystemTray, SystemTrayEvent};
 use tauri_plugin_store::StoreBuilder;
-
-#[command]
-async fn submit_addon_data(api: &str, contents: &str) -> Result<String, String> {
-    println!("Attempting to submit file...");
-    
-    let mut form_data = HashMap::new();
-    form_data.insert("apiKey", api);
-    form_data.insert("luaFile", contents);
-
-    let client = reqwest::Client::new();
-    let response = client.post("https://wowthing.org/api/upload/")
-        .json(&form_data)
-        .header("User-Agent", "WoWthing Sync - Tauri")
-        .send()
-        .await
-        .unwrap();
-        
-    match response.status() {
-        reqwest::StatusCode::OK => {
-            match response.text().await {
-                Ok(text) => Ok(format!("Sync completed: {:?}", text)),
-                Err(_) => Err(format!("There was an issue reading the response.")),
-            }
-        }
-        other => {
-            Err(format!("Uh oh! Something unexpected happened: {:?}", other))
-        }
-    }
-}
-
-
-fn build_menu() -> SystemTrayMenu {
-    let menuitem_quit = CustomMenuItem::new("quit".to_string(), "Quit");
-    let menuitem_show = CustomMenuItem::new("show".to_string(), "Open Window");
-
-    let submenu_preferences = SystemTrayMenu::new()
-        .add_item(CustomMenuItem::new("logs", "View Logs"))
-        .add_item(CustomMenuItem::new("check-update", "Check for Updates"))
-        .add_item(CustomMenuItem::new("restart", "Restart App"));
-
-    SystemTrayMenu::new()
-        .add_item(menuitem_show)
-        .add_native_item(SystemTrayMenuItem::Separator)
-        .add_submenu(SystemTraySubmenu::new("Preferences", submenu_preferences))
-        .add_native_item(SystemTrayMenuItem::Separator)
-        .add_item(menuitem_quit)
-}
+use tauri_plugin_autostart::MacosLauncher;
 
 fn main() {
-    let tray_menu = build_menu();
+    let tray_menu = build_system_tray_menu();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_persisted_scope::init())
         .plugin(tauri_plugin_fs_watch::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--flag1", "--flag2"]))) /* arbitrary number of args to pass to the app */
         .system_tray(SystemTray::new().with_menu(tray_menu))
         .on_system_tray_event(move |app, event| match event {
             SystemTrayEvent::DoubleClick {
@@ -95,10 +53,6 @@ fn main() {
                 "check-update" => {
                     let w = app.get_window("main").unwrap();
                     w.eval("window.checkForUpdates()").unwrap();
-                }
-                "logs" => {
-                    let w = app.get_window("main").unwrap();
-                    w.eval("window.goToLink('/logs')").unwrap();
                 }
                 "show" => {
                     let w = app.get_window("main").unwrap();

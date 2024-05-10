@@ -24,9 +24,7 @@ jobs:
           node-version: lts/*
 
       - name: Install dependencies
-        run: |
-            npm i -g npm
-            npm ci
+        run: npm ci
 
       - uses: softprops/action-gh-release@v2
         id: create_release
@@ -47,7 +45,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest-large, windows-latest, ubuntu-latest]
+        include:
+          - platform: 'macos-latest' # for Arm based macs (M1 and above).
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest' # for Intel based macs.
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -56,14 +62,20 @@ jobs:
       - name: setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 16
+          node-version: lts/*
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Mac Rust Targets
-        if: matrix.platform == 'macos-latest-large'
-        run: rustup target add universal-apple-darwin
+        with:
+          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+        
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2. We will remove 4.0 once Tauri V2 launches.
 
       - name: install Ubuntu Dependencies
         if: matrix.platform == 'ubuntu-latest'
@@ -85,7 +97,6 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         with:
           releaseId: ${{ env.RELEASE_ID }}
-          releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.platform == 'macos-latest-large' && '--target universal-apple-darwin' || '' }}
+          prerelease: true
+          args: ${{ matrix.args }}

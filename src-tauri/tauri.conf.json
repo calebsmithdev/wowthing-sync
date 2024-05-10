@@ -1,14 +1,14 @@
 {
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:1420",
+    "beforeBuildCommand": "npm run generate",
+    "devPath": "http://localhost:3000",
     "distDir": "../dist",
     "withGlobalTauri": false
   },
   "package": {
     "productName": "Wowthing Sync",
-    "version": "0.1.3"
+    "version": "0.2.0"
   },
   "tauri": {
     "systemTray": {
@@ -49,7 +49,7 @@
     "bundle": {
       "active": true,
       "category": "Productivity",
-      "copyright": "2023 Caleb Smith",
+      "copyright": "2024 Caleb Smith",
       "deb": {
         "depends": []
       },
@@ -87,15 +87,19 @@
           "https://github.com/calebsmithdev/wowthing-sync/releases/latest/download/tauri-update.json"
       ],
       "dialog": false,
+      "windows": {
+        "installMode": "passive"
+      },
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZFNjQ4NTAxNjlDNjAzOEMKUldTTUE4WnBBWVZrYnR0ZTNsdEdudVdQNlVpS1hibXZoVzRBYXZYYU02ZVZjNHpSaXNjVHZnMVAK"
     },
     "windows": [
       {
         "fullscreen": false,
-        "height": 600,
-        "resizable": true,
+        "height": 500,
+        "width": 500,
+        "resizable": false,
         "title": "WoWthing Sync",
-        "width": 900
+        "decorations": true
       }
     ]
   }
