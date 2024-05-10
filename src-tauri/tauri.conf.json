@@ -84,7 +84,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-          "https://github.com/calebsmithdev/wowthing-sync/releases/latest/download/tauri-update.json"
+          "https://github.com/calebsmithdev/wowthing-sync/releases/latest/download/latest.json"
       ],
       "dialog": false,
       "windows": {
