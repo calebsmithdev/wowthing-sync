@@ -1,5 +1,7 @@
 name: 'Test build on PR'
-on: [pull_request]
+on: 
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 # Cancel in progress workflows on pull_requests.
 concurrency:
@@ -29,9 +31,6 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: lts/*
-
-    - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@stable
 
     - name: install Rust stable
       uses: dtolnay/rust-toolchain@stable
