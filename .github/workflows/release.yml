@@ -25,7 +25,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         id: create_release
-        name: Create release and add tauri-update.json
+        name: Create release
         with:
           tag_name: "v${{ env.VENDOR_VERSION }}"
           name: "v${{ env.VENDOR_VERSION }}"
@@ -73,12 +73,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
         # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2. We will remove 4.0 once Tauri V2 launches.
-
-      - name: install Ubuntu Dependencies
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev webkit2gtk-4.0 libappindicator3-dev librsvg2-dev patchelf
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
