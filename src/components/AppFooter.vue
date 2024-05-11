@@ -1,5 +1,5 @@
 <template>
-  <footer>
+  <footer class="text-slate-800 dark:text-slate-200 bg-gray-100 dark:bg-gray-900">
     <p>Version {{ appVersion }} | Built by <a href="https://raider.io/user/failcookie" target="_blank">Failcookie</a> | Powered by <a href="https://wowthing.org" target="_blank">WoWthing</a></p>
   </footer>
 </template>

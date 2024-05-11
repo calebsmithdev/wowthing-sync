@@ -1,5 +1,5 @@
 <template>
-  <div class="main">
+  <div>
     <AppHeader />
     <main>
       <slot />
@@ -7,10 +7,3 @@
     <AppFooter />
   </div>
 </template>
-
-<style scoped>
-.main {
-  overflow: scroll;
-  height: 91vh;
-}
-</style>
