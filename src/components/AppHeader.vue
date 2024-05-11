@@ -1,4 +1,5 @@
 <template>
+  <UpdateBanner />
   <header class="border-b border-gray-200 dark:border-gray-800">
     <div class="logo">WoWthing Sync</div>
     <UHorizontalNavigation :links="links" />
