@@ -23,6 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
             let handle = &app.handle();
@@ -85,12 +86,13 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![thing_api::submit_addon_data])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|_app_handle, event| match event {
-            tauri::RunEvent::ExitRequested { api, .. } => {
-                api.prevent_exit();
-            }
-            _ => {}
-        });
+        // .build(tauri::generate_context!())
+        .run(tauri::generate_context!())
+        .expect("Error while building the Wowthing Sync application");
+        // .run(|_app_handle, event| match event {
+        //     tauri::RunEvent::ExitRequested { api, .. } => {
+        //         api.prevent_exit();
+        //     }
+        //     _ => {}
+        // });
 }

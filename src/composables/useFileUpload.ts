@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { API_KEY, LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
 import { invoke } from '@tauri-apps/api/core';
+import { join } from '@tauri-apps/api/path';
 // import { useLogs } from '../providers/LogProvider';
 
 export const useFileUpload = () => {
@@ -66,7 +67,7 @@ export const useFileUpload = () => {
     lastUpdated.value = now;
   }
 
-  const getAllFiles = async () : Promise<DirEntry[]> => {
+  const getAllFiles = async () => {
     const folder = await getStorageItem<string>(PROGRAM_FOLDER)
     if(!verifyFolderExists) {
       throw new Error('Invalid folder path. Verify you picked the correct World of Warcraft Retail folder.')
@@ -74,9 +75,19 @@ export const useFileUpload = () => {
 
     const addonFiles = [];
     const wtfPath = `${folder}/WTF/Account`;
-    const accountFolderFiles = await readDir(wtfPath, { dir: BaseDirectory.Home, recursive: true });
+    const accountFolderFiles = await readDir(wtfPath, { baseDir: BaseDirectory.Home });
 
+    processEntriesRecursively(wtfPath, accountFolderFiles);
     processFileEntries(accountFolderFiles);
+
+    async function processEntriesRecursively(parent, entries) {
+      for (const entry of entries) {
+        if (entry.isDirectory) {
+          const dir = await join(parent, entry.name);
+          processEntriesRecursively(dir, await readDir(dir, { baseDir: BaseDirectory.Home }))
+        }
+      }
+    }
 
     function processFileEntries(entries) {
       for (const entry of entries) {
@@ -96,8 +107,7 @@ export const useFileUpload = () => {
   const verifyFolderExists = async () : Promise<boolean> => {
     const folder = await getStorageItem<string>(PROGRAM_FOLDER)
     const wtfPath = `${folder}/WTF/Account`;
-    const folderExists = await readDir(wtfPath, { dir: BaseDirectory.Home });
-    console.log({folderExists})
+    const folderExists = await readDir(wtfPath, { baseDir: BaseDirectory.Home });
 
     return folderExists.length > 0;
   }
