@@ -7,26 +7,6 @@ export default defineNuxtConfig({
   colorMode: {
     preference: 'dark'
   },
-  vite: {
-    clearScreen: false,
-    // Enable environment variables
-    // Additional environment variables can be found at
-    // https://tauri.app/2/reference/environment-variables/
-    envPrefix: ['VITE_', 'TAURI_'],
-    server: {
-      strictPort: true,
-      // Enables the development server to be discoverable by other devices for mobile development
-      host: '0.0.0.0',
-      hmr: {
-        protocol: 'ws',
-        host: '0.0.0.0',
-        port: 5183,
-      },
-    },
-  },
-  css: [
-    '~/assets/styles/main.css',
-  ],
   app: {
     pageTransition: {
       name: 'fade',
@@ -37,5 +17,33 @@ export default defineNuxtConfig({
       mode: 'out-in',
     },
   },
+  vite: {
+    clearScreen: false,
+    envPrefix: ['VITE_', 'TAURI_'],
+    server: {
+      strictPort: true,
+      hmr: {
+				protocol: "ws",
+				host: "0.0.0.0",
+				port: 3001
+			},
+			watch: {
+				ignored: ["**/src-tauri/**"]
+			}
+    },
+  },
+  css: [
+    '~/assets/styles/main.css',
+  ],
+  devServer: {
+		host: "0.0.0.0"
+	},
+  postcss: {
+    plugins: {
+      tailwindcss: {},
+      autoprefixer: {},
+    },
+  },
+  compatibilityDate: "2024-10-01",
   srcDir: 'src/'
 })

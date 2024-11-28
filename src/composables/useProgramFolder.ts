@@ -1,4 +1,4 @@
-import { BaseDirectory, exists, readDir } from '@tauri-apps/api/fs';
+import { BaseDirectory, exists, readDir } from '@tauri-apps/plugin-fs';
 import { PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
 

@@ -1,10 +1,10 @@
-// import axios from "axios"
-import { readTextFile, BaseDirectory, readDir } from '@tauri-apps/api/fs';
-import type { FsOptions, FileEntry } from '@tauri-apps/api/fs';
+import { readTextFile, BaseDirectory, readDir, type ReadFileOptions, type DirEntry } from '@tauri-apps/plugin-fs';
+import { watch } from '@tauri-apps/plugin-fs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import dayjs from 'dayjs';
 import { API_KEY, LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
+import { invoke } from '@tauri-apps/api/core';
 // import { useLogs } from '../providers/LogProvider';
 
 export const useFileUpload = () => {
@@ -36,7 +36,6 @@ export const useFileUpload = () => {
       if(watchingFiles.value.find(m => m.path == file.path)) {
         continue;
       }
-      const watch = (await import('tauri-plugin-fs-watch-api')).watch
       const stopWatching = await watch(file.path, { recursive: false }, () => handleUpload(false))
       watchingFiles.value.push({
         stopWatching,
@@ -67,7 +66,7 @@ export const useFileUpload = () => {
     lastUpdated.value = now;
   }
 
-  const getAllFiles = async () : Promise<FileEntry[]> => {
+  const getAllFiles = async () : Promise<DirEntry[]> => {
     const folder = await getStorageItem<string>(PROGRAM_FOLDER)
     if(!verifyFolderExists) {
       throw new Error('Invalid folder path. Verify you picked the correct World of Warcraft Retail folder.')
@@ -121,7 +120,6 @@ export const useFileUpload = () => {
       // })
       const contents = await readBigFile(file.path, { dir: BaseDirectory.Home });
 
-      const invoke = (await import('@tauri-apps/api/tauri')).invoke
       try {
         const message = await invoke('submit_addon_data', {api: apiKey, contents})
 
@@ -154,19 +152,19 @@ export const useFileUpload = () => {
     }, []);
     return unique;
   }
-  
-  const readBigFile = async (filePath: string, options?: FsOptions) => {
+
+  const readBigFile = async (filePath: string, options?: ReadFileOptions) => {
     const CHUNK_SIZE = 100000; // 100kb
-  
+
     const file = await readTextFile(filePath, options);
     const fileSize = file.length;
     let fileData = '';
-  
+
     for (let offset = 0; offset < fileSize; offset += CHUNK_SIZE) {
       const chunk = file.slice(offset, offset + CHUNK_SIZE);
       fileData += chunk;
     }
-  
+
     return fileData;
   };
 

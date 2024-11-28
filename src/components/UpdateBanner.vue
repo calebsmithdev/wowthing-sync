@@ -10,7 +10,7 @@
 </template>
 
 <script lang="ts" setup>
-import { open } from '@tauri-apps/api/shell';
+import { open } from '@tauri-apps/plugin-shell';
 const { updateNeeded, handleUpdate } = useUpdater();
 
 const handleOpenUrl = (url: string) => {

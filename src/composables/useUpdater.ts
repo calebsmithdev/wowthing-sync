@@ -1,15 +1,36 @@
 import { ref, onMounted } from 'vue'
 import { emit, listen } from '@tauri-apps/api/event'
-import { installUpdate } from '@tauri-apps/api/updater'
-import { relaunch } from '@tauri-apps/api/process'
+import { check } from '@tauri-apps/plugin-updater'
+import { relaunch } from '@tauri-apps/plugin-process'
 
 export default function useUpdater() {
   const updateNeeded = ref(false)
 
   const handleUpdate = async () => {
     console.log('Attempting to update the app...')
-    await installUpdate()
-    await relaunch()
+    const update = await check();
+    if (update) {
+      let downloaded = 0;
+      let contentLength = 0;
+
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case 'Started':
+            contentLength = event.data.contentLength;
+            console.log(`started downloading ${event.data.contentLength} bytes`);
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            console.log(`downloaded ${downloaded} from ${contentLength}`);
+            break;
+          case 'Finished':
+            console.log('download finished');
+            break;
+        }
+      });
+
+      await relaunch()
+    }
   }
 
   onMounted(() => {
