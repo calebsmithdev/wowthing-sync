@@ -1,4 +1,4 @@
-import { readTextFile, BaseDirectory, readDir, type ReadFileOptions, type DirEntry } from '@tauri-apps/plugin-fs';
+import { readTextFile, BaseDirectory, readDir, type ReadFileOptions, type DirEntry, readTextFileLines } from '@tauri-apps/plugin-fs';
 import { watch } from '@tauri-apps/plugin-fs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import dayjs from 'dayjs';
@@ -33,14 +33,17 @@ export const useFileUpload = () => {
     console.log('Started watching files')
     const files = await getAllFiles();
     for (const file of files) {
-      console.log({watchingFiles})
-      if(watchingFiles.value.find(m => m.path == file.path)) {
+      if(watchingFiles.value.find(m => m == file)) {
         continue;
       }
-      const stopWatching = await watch(file.path, { recursive: false }, () => handleUpload(false))
+
+      const stopWatching = await watch(file, () => handleUpload(false), {
+        baseDir: BaseDirectory.Home
+      });
+
       watchingFiles.value.push({
         stopWatching,
-        path: file.path
+        path: file
       })
     }
     isProcessing.value = false;
@@ -67,7 +70,7 @@ export const useFileUpload = () => {
     lastUpdated.value = now;
   }
 
-  const getAllFiles = async () => {
+  const getAllFiles = async (): Promise<string[]> => {
     const folder = await getStorageItem<string>(PROGRAM_FOLDER)
     if(!verifyFolderExists) {
       throw new Error('Invalid folder path. Verify you picked the correct World of Warcraft Retail folder.')
@@ -77,26 +80,17 @@ export const useFileUpload = () => {
     const wtfPath = `${folder}/WTF/Account`;
     const accountFolderFiles = await readDir(wtfPath, { baseDir: BaseDirectory.Home });
 
-    processEntriesRecursively(wtfPath, accountFolderFiles);
-    processFileEntries(accountFolderFiles);
+    await processEntriesRecursively(wtfPath, accountFolderFiles);
 
-    async function processEntriesRecursively(parent, entries) {
+    async function processEntriesRecursively(parent: string, entries: DirEntry[]) {
       for (const entry of entries) {
         if (entry.isDirectory) {
           const dir = await join(parent, entry.name);
-          processEntriesRecursively(dir, await readDir(dir, { baseDir: BaseDirectory.Home }))
-        }
-      }
-    }
-
-    function processFileEntries(entries) {
-      for (const entry of entries) {
-        if(entry.name === 'WoWthing_Collector.lua') {
-          addonFiles.push(entry);
-        }
-
-        if (entry.children) {
-          processFileEntries(entry.children)
+          const dirEntries = await readDir(dir, { baseDir: BaseDirectory.Home });
+          await processEntriesRecursively(dir, dirEntries);
+        } else if (entry.name === 'WoWthing_Collector.lua') {
+          const fullPath = await join(parent, entry.name);
+          addonFiles.push(fullPath);
         }
       }
     }
@@ -128,7 +122,7 @@ export const useFileUpload = () => {
       //   title: 'Attempting to upload...',
       //   note: `File path: ${file.path}`
       // })
-      const contents = await readBigFile(file.path, { dir: BaseDirectory.Home });
+      const contents = await readBigFile(file, { baseDir: BaseDirectory.Home });
 
       try {
         const message = await invoke('submit_addon_data', {api: apiKey, contents})
@@ -138,14 +132,14 @@ export const useFileUpload = () => {
         //   title: 'Uploaded file!',
         //   note: `File path: ${file.path}; Return: ${message}`
         // })
-        console.log(`File: ${file.path}; Return: ${message}`);
+        console.log(`File: ${file}; Return: ${message}`);
       } catch (error) {
         // addLog({
         //   date: new Date(),
         //   title: 'File failed to upload!',
         //   note: `File path: ${file.path}; Return: ${error}`
         // })
-        console.log(`File: ${file.path}; Return: ${error}`);
+        console.log(`File: ${file}; Return: ${error}`);
       }
     }
 
@@ -164,15 +158,10 @@ export const useFileUpload = () => {
   }
 
   const readBigFile = async (filePath: string, options?: ReadFileOptions) => {
-    const CHUNK_SIZE = 100000; // 100kb
-
-    const file = await readTextFile(filePath, options);
-    const fileSize = file.length;
+    const lines = await readTextFileLines(filePath, options);
     let fileData = '';
-
-    for (let offset = 0; offset < fileSize; offset += CHUNK_SIZE) {
-      const chunk = file.slice(offset, offset + CHUNK_SIZE);
-      fileData += chunk;
+    for await (const line of lines) {
+      fileData += line;
     }
 
     return fileData;

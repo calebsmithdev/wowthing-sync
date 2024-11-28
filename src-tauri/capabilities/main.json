@@ -27,6 +27,12 @@
       ]
     },
     {
+      "identifier": "fs:allow-read-text-file-lines",
+      "allow": [
+        { "path": "**" }
+      ]
+    },
+    {
       "identifier": "fs:allow-unwatch",
       "allow": [
         { "path": "**" }
