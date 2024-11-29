@@ -1,5 +1,7 @@
-import { BaseDirectory, exists, readDir } from '@tauri-apps/api/fs';
+import { BaseDirectory, exists, readDir } from '@tauri-apps/plugin-fs';
+import { type } from '@tauri-apps/plugin-os';
 import { PROGRAM_FOLDER } from '../constants';
+import * as path from '@tauri-apps/api/path';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
 
 const defaultMacFolder = '/Applications/World of Warcraft/_retail_';
@@ -20,28 +22,24 @@ export const useProgramFolder = () => {
   }
 
   const getDefaultPath = async () => {
-    const type = (await import('@tauri-apps/api/os')).type
-    const homeDir = (await import('@tauri-apps/api/path')).homeDir;
-    const ostype = await type();
-    if(ostype === 'Darwin') {
-      const macFolderExists = await exists(defaultMacFolder, { dir: BaseDirectory.Home });
-      if(macFolderExists) {
-        return defaultMacFolder;
-      } else {
-        return await homeDir();
-      }
+    const homeDir = path.homeDir();
+    switch(type()) {
+      case 'macos':
+        const macFolderExists = await exists(defaultMacFolder, { baseDir: BaseDirectory.Home });
+        if(macFolderExists) {
+          return defaultMacFolder;
+        }
+        break;
+      case 'windows':
+        const winFolderExists = await exists(defaultWindowsFolder, { baseDir: BaseDirectory.Home });
+        if(winFolderExists) {
+          return defaultWindowsFolder;
+        }
+      default:
+        return await homeDir;
     }
 
-    if(ostype === 'Windows_NT') {
-      const winFolderExists = await exists(defaultWindowsFolder, { dir: BaseDirectory.Home });
-      if(winFolderExists) {
-        return defaultWindowsFolder;
-      } else {
-        return await homeDir();
-      }
-    }
-
-    return await homeDir();
+    return await homeDir;
   }
 
   const programFolder = computed({

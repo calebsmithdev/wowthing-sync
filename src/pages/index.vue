@@ -29,8 +29,4 @@
   onMounted(async () => {
     await startFileWatchingProcess();
   })
-
-  onUnmounted(async () => {
-    await stopFileWatchingProcess();
-  })
 </script>

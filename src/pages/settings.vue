@@ -29,8 +29,8 @@
 </template>
 
 <script setup lang="ts">
-  import { open } from '@tauri-apps/api/dialog';
-  import { enable, isEnabled, disable } from "tauri-plugin-autostart-api";
+  import { open } from '@tauri-apps/plugin-dialog';
+  import { enable, isEnabled, disable } from "@tauri-apps/plugin-autostart";
 
   const apiKey = useApiKeys();
   const autoStart = useAutoStart();

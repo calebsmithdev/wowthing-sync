@@ -1,20 +1,78 @@
-use tauri::{command, SystemTraySubmenu};
-use tauri::{CustomMenuItem, SystemTrayMenu, SystemTrayMenuItem};
+use tauri::{
+    menu::{MenuBuilder, MenuItem, SubmenuBuilder},
+    tray::TrayIconBuilder,
+    AppHandle, Manager,
+};
 
-#[command]
-pub fn build_system_tray_menu() -> SystemTrayMenu {
-  let menuitem_quit = CustomMenuItem::new("quit".to_string(), "Quit");
-  let menuitem_show = CustomMenuItem::new("show".to_string(), "Open Window");
+pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
+    let preferences_sub_menu = SubmenuBuilder::new(handle, "Preferences")
+        // .item(&MenuItem::with_id(
+        //     handle,
+        //     "logs",
+        //     "Logs",
+        //     true,
+        //     None::<&str>,
+        // )?)
+        .item(&MenuItem::with_id(
+            handle,
+            "check-update",
+            "Check for Updates",
+            true,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            handle,
+            "restart",
+            "Restart App",
+            true,
+            None::<&str>,
+        )?)
+        .build()?;
 
-  let submenu_preferences = SystemTrayMenu::new()
-      .add_item(CustomMenuItem::new("logs", "View Logs"))
-      .add_item(CustomMenuItem::new("check-update", "Check for Updates"))
-      .add_item(CustomMenuItem::new("restart", "Restart App"));
+    let menu = MenuBuilder::new(handle)
+        .item(&MenuItem::with_id(
+            handle,
+            "show",
+            "Open Window",
+            true,
+            None::<&str>,
+        )?)
+        .separator()
+        .item(&preferences_sub_menu)
+        .separator()
+        .item(&MenuItem::with_id(
+            handle,
+            "quit",
+            "Quit",
+            true,
+            None::<&str>,
+        )?)
+        .build()?;
 
-  SystemTrayMenu::new()
-      .add_item(menuitem_show)
-      .add_native_item(SystemTrayMenuItem::Separator)
-      .add_submenu(SystemTraySubmenu::new("Preferences", submenu_preferences))
-      .add_native_item(SystemTrayMenuItem::Separator)
-      .add_item(menuitem_quit)
+    TrayIconBuilder::new()
+        .menu(&menu)
+        .menu_on_left_click(true)
+        .icon(handle.default_window_icon().unwrap().clone())
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "restart" => {
+                tauri::process::restart(&app.env());
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            "show" => {
+                let w = app.get_webview_window("main").unwrap();
+                w.show().unwrap();
+                w.set_focus().unwrap();
+            }
+            "check-update" => {
+                let w = app.get_webview_window("main").unwrap();
+                w.eval("window.checkForUpdates()").unwrap();
+            }
+            _ => {
+                println!("Unhandled menu event {event:?}");
+            }
+        })
+        .build(handle)?;
+    Ok(())
 }
