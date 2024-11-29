@@ -11,22 +11,16 @@ import { join } from '@tauri-apps/api/path';
 export const useFileUpload = () => {
   dayjs.extend(relativeTime)
 
+  const daysAgoInterval = ref(null);
   const isProcessing = ref(false);
-  const lastUpdated = useState(LAST_UPDATED);
+  const lastUpdatedFromNow = ref('');
+  const lastUpdated = useState(LAST_UPDATED, () => dayjs());
   const watchingFiles = useState('watching-files', () => ([]));
   // const { addLog } = useLogs();
 
-  const lastUpdatedFromNow = computed(() => {
-    return lastUpdated.value ? dayjs(lastUpdated.value).fromNow() : '';
-  });
-
   const startFileWatchingProcess = async () => {
-    if(isProcessing.value) return;
-
-    isProcessing.value = true;
     const folder = await getStorageItem<string>(PROGRAM_FOLDER)
     if(!folder || watchingFiles.value.length > 0) {
-      isProcessing.value = false;
       return;
     }
 
@@ -46,7 +40,6 @@ export const useFileUpload = () => {
         path: file
       })
     }
-    isProcessing.value = false;
   }
 
   const stopFileWatchingProcess = async() => {
@@ -62,12 +55,14 @@ export const useFileUpload = () => {
   const getLastUpdated = async () => {
     const value = await getStorageItem<string>(LAST_UPDATED)
     lastUpdated.value = value;
+    lastUpdatedFromNow.value = value ? dayjs(value).fromNow() : '';
   }
 
   const handleLastUpdated = async () => {
     const now = dayjs();
     await saveStorageItem(LAST_UPDATED, now.format())
     lastUpdated.value = now;
+    lastUpdatedFromNow.value = dayjs(now).fromNow();
   }
 
   const getAllFiles = async (): Promise<string[]> => {
@@ -169,6 +164,16 @@ export const useFileUpload = () => {
 
   onMounted(() => {
     getLastUpdated();
+
+     // Trigger reactivity
+    daysAgoInterval.value = setInterval(() => {
+      console.log(lastUpdated.value)
+      lastUpdatedFromNow.value = dayjs(lastUpdated.value).fromNow();
+    }, 10000); // Every 10 seconds
+  })
+
+  onUnmounted(async () => {
+    clearInterval(daysAgoInterval.value);
   })
 
   return {
