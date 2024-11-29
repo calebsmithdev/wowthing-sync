@@ -4,7 +4,6 @@ mod system_tray_menu;
 mod thing_api;
 
 // Import the references for the internal functions
-use setup::{desktop::setup_desktop, mac::setup_mac};
 use system_tray_menu::build_system_tray_menu;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,8 +20,12 @@ pub fn run() {
         .setup(|app| {
             let handle = &app.handle();
 
-            setup_mac(handle)?;
-            setup_desktop(handle)?;
+            #[cfg(target_os = "macos")]
+            setup::mac::setup_mac(handle)?;
+
+            #[cfg(desktop)]
+            setup::desktop::setup_desktop(handle)?;
+
             build_system_tray_menu(handle)?;
 
             Ok(())
