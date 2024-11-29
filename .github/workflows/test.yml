@@ -11,7 +11,7 @@ concurrency:
 jobs:
   test-tauri:
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
@@ -43,7 +43,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2. We will remove 4.0 once Tauri V2 launches.
 
     - name: Rust cache
       uses: swatinem/rust-cache@v2
@@ -56,6 +55,6 @@ jobs:
     - uses: tauri-apps/tauri-action@v0
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
       with:
         args: ${{ matrix.args }}
