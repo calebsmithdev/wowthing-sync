@@ -1,7 +1,6 @@
 use tauri::AppHandle;
 use tauri_plugin_autostart::MacosLauncher;
 
-#[cfg(desktop)]
 pub fn setup_desktop(app: &AppHandle) -> tauri::Result<()> {
     app.plugin(tauri_plugin_autostart::init(
         MacosLauncher::LaunchAgent,
