@@ -33,19 +33,23 @@ pub async fn submit_addon_data(app: tauri::AppHandle, contents: &str) -> Result<
     match response.status() {
         reqwest::StatusCode::OK => match response.text().await {
             Ok(text) => {
-                app.notification().builder()
+                app.notification()
+                    .builder()
                     .title("Wowthing Sync")
                     .body("Upload was completed succesfully")
-                    .show().unwrap();
+                    .show()
+                    .unwrap();
                 Ok(format!("Sync completed: {:?}", text))
-            },
+            }
             Err(_) => {
-                app.notification().builder()
+                app.notification()
+                    .builder()
                     .title("Wowthing Sync")
                     .body("An error occurred while uploading. Please try again later.")
-                    .show() .unwrap();
+                    .show()
+                    .unwrap();
                 Err(format!("There was an issue reading the response."))
-            },
+            }
         },
         other => Err(format!("Uh oh! Something unexpected happened: {:?}", other)),
     }
