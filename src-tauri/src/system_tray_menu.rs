@@ -6,13 +6,13 @@ use tauri::{
 
 pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
     let preferences_sub_menu = SubmenuBuilder::new(handle, "Preferences")
-        .item(&MenuItem::with_id(
-            handle,
-            "logs",
-            "Logs",
-            true,
-            None::<&str>,
-        )?)
+        // .item(&MenuItem::with_id(
+        //     handle,
+        //     "logs",
+        //     "Logs",
+        //     true,
+        //     None::<&str>,
+        // )?)
         .item(&MenuItem::with_id(
             handle,
             "check-update",
