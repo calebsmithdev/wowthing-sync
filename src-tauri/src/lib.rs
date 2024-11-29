@@ -1,15 +1,16 @@
 // Declare the internal namespaces
-mod thing_api;
-mod system_tray_menu;
 mod setup;
+mod system_tray_menu;
+mod thing_api;
 
 // Import the references for the internal functions
-use system_tray_menu::build_system_tray_menu;
 use setup::{desktop::setup_desktop, mac::setup_mac};
+use system_tray_menu::build_system_tray_menu;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_persisted_scope::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -28,9 +29,9 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
-              // Don't kill the app when the user clicks close
-              window.hide().unwrap();
-              api.prevent_close();
+                // Don't kill the app when the user clicks close
+                window.hide().unwrap();
+                api.prevent_close();
             }
             _ => {}
         })

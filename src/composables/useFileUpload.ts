@@ -120,7 +120,7 @@ export const useFileUpload = () => {
       const contents = await readBigFile(file, { baseDir: BaseDirectory.Home });
 
       try {
-        const message = await invoke('submit_addon_data', {api: apiKey, contents})
+        const message = await invoke('submit_addon_data', {contents})
 
         // addLog({
         //   date: new Date(),
@@ -167,7 +167,6 @@ export const useFileUpload = () => {
 
      // Trigger reactivity
     daysAgoInterval.value = setInterval(() => {
-      console.log(lastUpdated.value)
       lastUpdatedFromNow.value = dayjs(lastUpdated.value).fromNow();
     }, 10000); // Every 10 seconds
   })

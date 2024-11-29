@@ -14,36 +14,48 @@
     "updater:default",
     "os:default",
     "shell:default",
+    "autostart:default",
     "fs:default",
     {
       "identifier": "fs:allow-exists",
       "allow": [
-        { "path": "**" }
+        {
+          "path": "**"
+        }
       ]
     },
     {
       "identifier": "fs:allow-read-dir",
       "allow": [
-        { "path": "**" }
+        {
+          "path": "**"
+        }
       ]
     },
     {
       "identifier": "fs:allow-read-text-file-lines",
       "allow": [
-        { "path": "**" }
+        {
+          "path": "**"
+        }
       ]
     },
     {
       "identifier": "fs:allow-unwatch",
       "allow": [
-        { "path": "**" }
+        {
+          "path": "**"
+        }
       ]
     },
     {
       "identifier": "fs:allow-watch",
       "allow": [
-        { "path": "**" }
+        {
+          "path": "**"
+        }
       ]
-    }
+    },
+    "notification:default"
   ]
 }
