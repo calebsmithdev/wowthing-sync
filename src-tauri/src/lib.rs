@@ -20,15 +20,8 @@ pub fn run() {
         .setup(|app| {
             let handle = &app.handle();
 
-            #[cfg(target_os = "macos")]
-            {
-                setup::mac::setup_mac(handle)?;
-            }
-
-            #[cfg(desktop)]
-            {
-                setup::desktop::setup_desktop(handle)?;
-            }
+            setup::mac::setup_mac(handle)?;
+            setup::desktop::setup_desktop(handle)?;
 
             build_system_tray_menu(handle)?;
 
