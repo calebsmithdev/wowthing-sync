@@ -1,5 +1,5 @@
 use tauri::{
-    menu::{MenuBuilder, MenuItem, SubmenuBuilder}, tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}, AppHandle, Manager
+    menu::{MenuBuilder, MenuItem, SubmenuBuilder}, tray::{  TrayIconBuilder}, AppHandle, Manager
 };
 
 pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
@@ -17,7 +17,7 @@ pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
         .item(&MenuItem::with_id(handle, "quit", "Quit", true, None::<&str>)?)
         .build()?;
 
-    let _tray = TrayIconBuilder::new()
+    TrayIconBuilder::new()
         .menu(&menu)
         .menu_on_left_click(true)
         .icon(handle.default_window_icon().unwrap().clone())
@@ -28,25 +28,19 @@ pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
             "quit" => {
                 app.exit(0);
             }
+            "show" => {
+                let w = app.get_webview_window("main").unwrap();
+                w.show().unwrap();
+                w.set_focus().unwrap();
+            }
+            "check-update" => {
+                let w = app.get_webview_window("main").unwrap();
+                w.eval("window.checkForUpdates()").unwrap();
+            }
             _ => {
                 println!("Unhandled menu event {event:?}");
             }
         })
-        .on_tray_icon_event(|tray, event| match event {
-            TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } => {
-                let w = tray.app_handle().get_webview_window("main").unwrap();
-                w.show().unwrap();
-                w.set_focus().unwrap();
-            }
-            _ => {
-                println!("Unhandled tray icon menu event {event:?}");
-            }
-        })
         .build(handle)?;
-
     Ok(())
 }

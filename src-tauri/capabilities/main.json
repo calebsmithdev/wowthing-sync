@@ -13,6 +13,7 @@
     "process:default",
     "updater:default",
     "os:default",
+    "shell:default",
     "fs:default",
     {
       "identifier": "fs:allow-exists",
