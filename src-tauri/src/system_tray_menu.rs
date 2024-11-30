@@ -80,8 +80,9 @@ pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
                 button_state: MouseButtonState::Up,
                 ..
             } => {
-                // Show and focus the main window when the tray is clicked, non-Mac only
-                #[cfg(not(target_os = "macos"))]
+                // Show and focus the main window when the tray is clicked
+                let is_macos = platform() == "macos";
+                if !is_macos
                 {
                     let app = tray.app_handle();
                     if let Some(window) = app.get_webview_window("main") {
