@@ -63,7 +63,8 @@
         "resizable": false,
         "title": "WoWthing Sync",
         "decorations": true,
-        "useHttpsScheme": true
+        "useHttpsScheme": true,
+        "visible": false
       }
     ],
     "withGlobalTauri": false,
