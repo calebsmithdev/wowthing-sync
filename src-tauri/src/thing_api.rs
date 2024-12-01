@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_store::StoreExt;
 
 /// Sends a POST request to the WoWthing API with the provided form data and returns the response.
@@ -33,21 +31,9 @@ pub async fn submit_addon_data(app: tauri::AppHandle, contents: &str) -> Result<
     match response.status() {
         reqwest::StatusCode::OK => match response.text().await {
             Ok(text) => {
-                app.notification()
-                    .builder()
-                    .title("Wowthing Sync")
-                    .body("Upload was completed succesfully")
-                    .show()
-                    .unwrap();
                 Ok(format!("Sync completed: {:?}", text))
             }
             Err(_) => {
-                app.notification()
-                    .builder()
-                    .title("Wowthing Sync")
-                    .body("An error occurred while uploading. Please try again later.")
-                    .show()
-                    .unwrap();
                 Err(format!("There was an issue reading the response."))
             }
         },
