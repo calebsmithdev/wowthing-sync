@@ -16,6 +16,7 @@ export const useFileUpload = () => {
   const lastUpdatedFromNow = ref('');
   const lastUpdated = useState(LAST_UPDATED, () => dayjs());
   const watchingFiles = useState('watching-files', () => ([]));
+  const notifications = useNotifications();
   // const { addLog } = useLogs();
 
   const startFileWatchingProcess = async () => {
@@ -103,48 +104,52 @@ export const useFileUpload = () => {
 
   const handleUpload = async (force = false) => {
     const lastStartedDate = await getStorageItem<string>(LAST_STARTED_DATE);
-    if(!force && lastStartedDate && dayjs().diff(dayjs(lastStartedDate), 'seconds') < 15) {
+    if (!force && lastStartedDate && dayjs().diff(dayjs(lastStartedDate), 'seconds') < 15) {
       return;
     }
     isProcessing.value = true;
-    await saveStorageItem<string>(LAST_STARTED_DATE, dayjs().format())
+    await saveStorageItem<string>(LAST_STARTED_DATE, dayjs().format());
     const files = await getAllFiles();
     const dedupedFiles = removeDuplicateFiles(files);
-    const apiKey = await getStorageItem<string>(API_KEY)
+
     for (const file of dedupedFiles) {
       // addLog({
       //   date: new Date(),
       //   title: 'Attempting to upload...',
       //   note: `File path: ${file.path}`
-      // })
+      // });
       const contents = await readBigFile(file, { baseDir: BaseDirectory.Home });
 
       try {
-        const message = await invoke('submit_addon_data', {contents})
+        const message = await invoke('submit_addon_data', { contents });
 
         // addLog({
         //   date: new Date(),
         //   title: 'Uploaded file!',
         //   note: `File path: ${file.path}; Return: ${message}`
-        // })
+        // });
         console.log(`File: ${file}; Return: ${message}`);
       } catch (error) {
         // addLog({
         //   date: new Date(),
         //   title: 'File failed to upload!',
         //   note: `File path: ${file.path}; Return: ${error}`
-        // })
+        // });
         console.log(`File: ${file}; Return: ${error}`);
+        await notifications.send({ title: 'Wowthing Sync', body: 'An error occurred while uploading. Please try again later.' });
+        isProcessing.value = false;
+        return; // Stop the rest of the loop from working
       }
     }
 
     await handleLastUpdated();
+    await notifications.send({ title: 'Wowthing Sync', body: 'Upload was completed successfully' });
     isProcessing.value = false;
-  }
+  };
 
   const removeDuplicateFiles = (arr) => {
     var unique = arr.reduce(function (files, file) {
-      if(!files.find(m => m.path == file.path)) {
+      if(!files.find(m => m == file)) {
         files.push(file);
       }
       return files;
