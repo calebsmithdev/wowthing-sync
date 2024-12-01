@@ -5,7 +5,10 @@
 
       <div class="mb-4">
         <template v-if="lastUpdated">
-          Data uploaded {{ lastUpdatedFromNow }}
+          Data uploaded
+          <UTooltip :text="formattedLastUpdated" :popper="{placement: 'top'}">
+            {{ lastUpdatedFromNow }}
+          </UTooltip>
         </template>
         <template v-else>
           Waiting to upload
@@ -24,7 +27,7 @@
 
 <script setup lang="ts">
   const apiKey = useApiKeys();
-  const { handleUpload, lastUpdated, lastUpdatedFromNow, startFileWatchingProcess, stopFileWatchingProcess, isProcessing } = useFileUpload();
+  const { handleUpload, lastUpdated, lastUpdatedFromNow, startFileWatchingProcess, stopFileWatchingProcess, isProcessing, formattedLastUpdated } = useFileUpload();
 
   onMounted(async () => {
     await startFileWatchingProcess();

@@ -1,6 +1,7 @@
-import { readTextFile, BaseDirectory, readDir, type ReadFileOptions, type DirEntry, readTextFileLines } from '@tauri-apps/plugin-fs';
+import { BaseDirectory, readDir, type ReadFileOptions, type DirEntry, readTextFileLines } from '@tauri-apps/plugin-fs';
 import { watch } from '@tauri-apps/plugin-fs'
 import relativeTime from 'dayjs/plugin/relativeTime'
+import localizedFormat from 'dayjs/plugin/localizedFormat'
 import dayjs from 'dayjs';
 import { API_KEY, LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
@@ -10,6 +11,7 @@ import { join } from '@tauri-apps/api/path';
 
 export const useFileUpload = () => {
   dayjs.extend(relativeTime)
+  dayjs.extend(localizedFormat);
 
   const daysAgoInterval = ref(null);
   const isProcessing = ref(false);
@@ -17,6 +19,7 @@ export const useFileUpload = () => {
   const lastUpdated = useState(LAST_UPDATED, () => dayjs());
   const watchingFiles = useState('watching-files', () => ([]));
   const notifications = useNotifications();
+  const formattedLastUpdated = computed(() => dayjs(lastUpdated.value).format('lll'));
   // const { addLog } = useLogs();
 
   const startFileWatchingProcess = async () => {
@@ -186,6 +189,7 @@ export const useFileUpload = () => {
     isProcessing,
     lastUpdated,
     watchingFiles,
+    formattedLastUpdated,
     startFileWatchingProcess,
     stopFileWatchingProcess
   }
