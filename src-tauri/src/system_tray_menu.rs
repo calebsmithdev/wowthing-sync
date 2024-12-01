@@ -51,7 +51,7 @@ pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
         )?)
         .build()?;
 
-    TrayIconBuilder::new()
+    let mut tray_icon_builder = TrayIconBuilder::new()
         .menu(&menu)
         .menu_on_left_click(is_macos)
         .icon(handle.default_window_icon().unwrap().clone())
@@ -92,7 +92,14 @@ pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
                 }
             }
             _ => {}
-        })
-        .build(handle)?;
+        });
+
+    if cfg!(debug_assertions) {
+        tray_icon_builder = tray_icon_builder.tooltip("Dev Mode");
+    } else {
+        tray_icon_builder = tray_icon_builder.tooltip("WoWthing Sync");
+    }
+
+    tray_icon_builder.build(handle)?;
     Ok(())
 }
