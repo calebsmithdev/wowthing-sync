@@ -30,12 +30,8 @@ pub async fn submit_addon_data(app: tauri::AppHandle, contents: &str) -> Result<
 
     match response.status() {
         reqwest::StatusCode::OK => match response.text().await {
-            Ok(text) => {
-                Ok(format!("Sync completed: {:?}", text))
-            }
-            Err(_) => {
-                Err(format!("There was an issue reading the response."))
-            }
+            Ok(text) => Ok(format!("Sync completed: {:?}", text)),
+            Err(_) => Err(format!("There was an issue reading the response.")),
         },
         other => Err(format!("Uh oh! Something unexpected happened: {:?}", other)),
     }

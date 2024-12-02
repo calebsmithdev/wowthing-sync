@@ -3,6 +3,7 @@ import { type } from '@tauri-apps/plugin-os';
 import { PROGRAM_FOLDER } from '../constants';
 import * as path from '@tauri-apps/api/path';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
+import { info } from '@tauri-apps/plugin-log';
 
 const defaultMacFolder = '/Applications/World of Warcraft/_retail_';
 const defaultWindowsFolder = 'C:\\Program Files (x86)\\World of Warcraft\\_retail_';
@@ -18,6 +19,7 @@ export const useProgramFolder = () => {
   const setFolder = async (value: string | null) => {
     if(!value) return;
     await saveStorageItem<string>(PROGRAM_FOLDER, value)
+    info(`Program folder set to: ${value}`);
     _programFolder.value = value;
   }
 

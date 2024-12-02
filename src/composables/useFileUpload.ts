@@ -1,13 +1,13 @@
-import { BaseDirectory, readDir, type ReadFileOptions, type DirEntry, readTextFileLines } from '@tauri-apps/plugin-fs';
+import { BaseDirectory, readDir, type ReadFileOptions, type DirEntry, readTextFileLines, type WatchEvent, type UnwatchFn } from '@tauri-apps/plugin-fs';
 import { watch } from '@tauri-apps/plugin-fs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import localizedFormat from 'dayjs/plugin/localizedFormat'
 import dayjs from 'dayjs';
-import { API_KEY, LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
+import { LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
-// import { useLogs } from '../providers/LogProvider';
+import { info } from '@tauri-apps/plugin-log';
 
 export const useFileUpload = () => {
   dayjs.extend(relativeTime)
@@ -15,12 +15,12 @@ export const useFileUpload = () => {
 
   const daysAgoInterval = ref(null);
   const isProcessing = ref(false);
+  const stopWatching = ref<UnwatchFn>(null);
   const lastUpdatedFromNow = ref('');
   const lastUpdated = useState(LAST_UPDATED, () => dayjs());
   const watchingFiles = useState('watching-files', () => ([]));
   const notifications = useNotifications();
   const formattedLastUpdated = computed(() => dayjs(lastUpdated.value).format('lll'));
-  // const { addLog } = useLogs();
 
   const startFileWatchingProcess = async () => {
     const folder = await getStorageItem<string>(PROGRAM_FOLDER)
@@ -28,32 +28,13 @@ export const useFileUpload = () => {
       return;
     }
 
-    console.log('Started watching files')
     const files = await getAllFiles();
-    for (const file of files) {
-      if(watchingFiles.value.find(m => m == file)) {
-        continue;
-      }
+    const stop = await watch(files, (e) => handleUpload(false, e), {
+      baseDir: BaseDirectory.Home,
+      delayMs: 1000
+    });
 
-      const stopWatching = await watch(file, () => handleUpload(false), {
-        baseDir: BaseDirectory.Home
-      });
-
-      watchingFiles.value.push({
-        stopWatching,
-        path: file
-      })
-    }
-  }
-
-  const stopFileWatchingProcess = async() => {
-    if (watchingFiles.value.length > 0) {
-      console.log('Stopped watching files')
-      watchingFiles.value.forEach(async (item, index) => {
-        await item.stopWatching()
-        watchingFiles.value.splice(index, 1);
-      })
-		}
+    stopWatching.value = stop;
   }
 
   const getLastUpdated = async () => {
@@ -105,40 +86,47 @@ export const useFileUpload = () => {
     return folderExists.length > 0;
   }
 
-  const handleUpload = async (force = false) => {
+  const isModifyAnyEvent = (event: WatchEvent): boolean => {
+    return typeof event.type === 'object' && 'modify' in event.type && event.type.modify.kind === 'any';
+  }
+
+  const handleUpload = async (force: boolean = false, event: WatchEvent = null) => {
     const lastStartedDate = await getStorageItem<string>(LAST_STARTED_DATE);
     if (!force && lastStartedDate && dayjs().diff(dayjs(lastStartedDate), 'seconds') < 15) {
       return;
     }
+
+    // `watch` triggers multiple events when a file is changed. We are specifically looking for just one event.
+    // Current observerd options are: `modify` and `remove. For `kind`,  `any` and `remove` are the options.
+    if (event && !isModifyAnyEvent(event)) {
+      return;
+    }
+
     isProcessing.value = true;
     await saveStorageItem<string>(LAST_STARTED_DATE, dayjs().format());
-    const files = await getAllFiles();
-    const dedupedFiles = removeDuplicateFiles(files);
+    let dedupedFiles = [];
+
+    console.log({ event });
+    isProcessing.value = false;
+
+    // If event is null, we are uploading all files.
+    if(!event) {
+      const files = await getAllFiles();
+      dedupedFiles = removeDuplicateFiles(files);
+    } else {
+      dedupedFiles = removeDuplicateFiles(event.paths);
+    }
 
     for (const file of dedupedFiles) {
-      // addLog({
-      //   date: new Date(),
-      //   title: 'Attempting to upload...',
-      //   note: `File path: ${file.path}`
-      // });
+      info(`Uploading file: ${file} at file path: ${file}`);
       const contents = await readBigFile(file, { baseDir: BaseDirectory.Home });
 
       try {
         const message = await invoke('submit_addon_data', { contents });
-
-        // addLog({
-        //   date: new Date(),
-        //   title: 'Uploaded file!',
-        //   note: `File path: ${file.path}; Return: ${message}`
-        // });
-        console.log(`File: ${file}; Return: ${message}`);
+        info(`Uploaded file: ${file}`);
+        info(`API response from ${file}: ${message}`);
       } catch (error) {
-        // addLog({
-        //   date: new Date(),
-        //   title: 'File failed to upload!',
-        //   note: `File path: ${file.path}; Return: ${error}`
-        // });
-        console.log(`File: ${file}; Return: ${error}`);
+        error(`File failed to upload! File: ${file}; Return: ${error}`);
         await notifications.send({ title: 'Wowthing Sync', body: 'An error occurred while uploading. Please try again later.' });
         isProcessing.value = false;
         return; // Stop the rest of the loop from working
@@ -190,7 +178,6 @@ export const useFileUpload = () => {
     lastUpdated,
     watchingFiles,
     formattedLastUpdated,
-    startFileWatchingProcess,
-    stopFileWatchingProcess
+    startFileWatchingProcess
   }
 }
