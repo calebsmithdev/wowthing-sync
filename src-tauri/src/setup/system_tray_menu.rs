@@ -5,7 +5,7 @@ use tauri::{
 };
 use tauri_plugin_os::platform;
 
-pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
+pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
     let is_macos = platform() == "macos";
     let preferences_sub_menu = SubmenuBuilder::new(handle, "Preferences")
         // .item(&MenuItem::with_id(
@@ -82,8 +82,7 @@ pub fn build_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
             } => {
                 // Show and focus the main window when the tray is clicked
                 let is_macos = platform() == "macos";
-                if !is_macos
-                {
+                if !is_macos {
                     let app = tray.app_handle();
                     if let Some(window) = app.get_webview_window("main") {
                         window.show().unwrap();

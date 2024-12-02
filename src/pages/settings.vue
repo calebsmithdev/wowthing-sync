@@ -34,7 +34,6 @@
 
   const apiKey = useApiKeys();
   const autoStart = useAutoStart();
-  const { handleUpload, lastUpdated, lastUpdatedFromNow, startFileWatchingProcess, stopFileWatchingProcess, isProcessing } = useFileUpload();
   const { folder, getDefaultPath } = useProgramFolder();
   const showPassword = ref(false);
 

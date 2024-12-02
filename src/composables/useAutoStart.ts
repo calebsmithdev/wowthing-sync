@@ -1,4 +1,5 @@
 import { enable, isEnabled, disable } from "@tauri-apps/plugin-autostart";
+import { info } from "@tauri-apps/plugin-log";
 import { AUTO_START } from "~/constants";
 
 export const useAutoStart = () => {
@@ -19,7 +20,7 @@ export const useAutoStart = () => {
       await disable();
     }
 
-    console.log(`Setting the status for autostart: ${await isEnabled()}`);
+    info(`Setting the status for autostart: ${await isEnabled()}`);
   }
 
   const autoStart = computed({

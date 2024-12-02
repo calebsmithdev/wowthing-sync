@@ -1,10 +1,6 @@
 // Declare the internal namespaces
 mod setup;
-mod system_tray_menu;
 mod thing_api;
-
-// Import the references for the internal functions
-use system_tray_menu::build_system_tray_menu;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,8 +18,8 @@ pub fn run() {
 
             setup::mac::setup_mac(handle)?;
             setup::desktop::setup_desktop(handle)?;
-
-            build_system_tray_menu(handle)?;
+            setup::system_tray_menu::setup_system_tray_menu(handle)?;
+            setup::logs::setup_logs(handle)?;
 
             Ok(())
         })
