@@ -33,11 +33,17 @@ export default function useUpdater() {
     }
   }
 
-  onMounted(() => {
-    emit('tauri://update')
+  onMounted(async () => {
+    const update = await check();
+    if (update) {
+      updateNeeded.value = true
+    }
 
-    setInterval(() => {
-      emit("tauri://update")
+    setInterval(async () => {
+      const update = await check();
+      if (update) {
+        updateNeeded.value = true
+      }
     }, 5 * 60 * 1000)
 
     listen('tauri://update-available', function (res) {
