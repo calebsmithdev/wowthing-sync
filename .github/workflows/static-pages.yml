@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      working-directory: ./landing
     steps:
       - uses: actions/checkout@v4
       - run: corepack enable
@@ -16,12 +18,15 @@ jobs:
           node-version: lts/*
 
       - run: npm install
+        working-directory: ${{ env.working-directory}}
+
       - run: NUXT_APP_BASE_URL=/wowthing-sync/ npx nuxt build --preset github_pages
+        working-directory: ${{ env.working-directory}}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./.output/public
+          path: ${{ env.working-directory}}/.output/public
 
   deploy:
     needs: build
