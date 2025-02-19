@@ -8,7 +8,7 @@
   "bundle": {
     "active": true,
     "category": "Productivity",
-    "copyright": "2024 Caleb Smith",
+    "copyright": "2025 Caleb Smith",
     "targets": "all",
     "externalBin": [],
     "icon": [
@@ -41,7 +41,7 @@
   },
   "productName": "Wowthing Sync",
   "mainBinaryName": "Wowthing Sync",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "identifier": "com.calebsmithdev.wowthing-sync",
   "plugins": {
     "updater": {

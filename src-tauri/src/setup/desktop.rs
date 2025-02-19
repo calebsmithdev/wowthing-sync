@@ -10,10 +10,15 @@ pub fn setup_desktop(app: &AppHandle) -> tauri::Result<()> {
         ))?;
         app.plugin(tauri_plugin_updater::Builder::new().build())?;
         app.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let w = app.get_webview_window("main").unwrap();
-            w.show().unwrap();
-            w.set_focus().unwrap();
+            let _ = app.get_webview_window("main")
+                       .expect("no main window")
+                       .set_focus();
         }));
+
+        // Show the main window when the app loads
+        let main_window = app.get_webview_window("main").expect("no main window");
+        main_window.show()?;
+        main_window.set_focus()?;
     }
 
     #[cfg(not(desktop))]
