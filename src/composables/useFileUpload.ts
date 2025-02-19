@@ -33,8 +33,15 @@ export const useFileUpload = () => {
       baseDir: BaseDirectory.Home,
       delayMs: 1000
     });
-
     stopWatching.value = stop;
+
+    info(`Started watching files: ${JSON.stringify(files)}`);
+  }
+
+  const stopFileWatchingProcess = () => {
+    watchingFiles.value = [];
+    stopWatching.value();
+    info('Stopped watching files');
   }
 
   const getLastUpdated = async () => {
@@ -87,7 +94,7 @@ export const useFileUpload = () => {
   }
 
   const isModifyAnyEvent = (event: WatchEvent): boolean => {
-    return typeof event.type === 'object' && 'modify' in event.type && event.type.modify.kind === 'any';
+    return typeof event.type === 'object' && 'modify' in event.type && (event.type.modify.kind === 'any' || event.type.modify.kind === 'rename');
   }
 
   const handleUpload = async (force: boolean = false, event: WatchEvent = null) => {
@@ -105,9 +112,6 @@ export const useFileUpload = () => {
     isProcessing.value = true;
     await saveStorageItem<string>(LAST_STARTED_DATE, dayjs().format());
     let dedupedFiles = [];
-
-    console.log({ event });
-    isProcessing.value = false;
 
     // If event is null, we are uploading all files.
     if(!event) {
@@ -178,6 +182,7 @@ export const useFileUpload = () => {
     lastUpdated,
     watchingFiles,
     formattedLastUpdated,
-    startFileWatchingProcess
+    startFileWatchingProcess,
+    stopFileWatchingProcess
   }
 }
