@@ -53,7 +53,7 @@ pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
 
     let mut tray_icon_builder = TrayIconBuilder::new()
         .menu(&menu)
-        .menu_on_left_click(is_macos)
+        .show_menu_on_left_click(is_macos)
         .icon(handle.default_window_icon().unwrap().clone())
         .on_menu_event(|app, event| match event.id.as_ref() {
             "restart" => {
