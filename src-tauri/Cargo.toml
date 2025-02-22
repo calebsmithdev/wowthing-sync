@@ -1,3 +1,5 @@
+## Run `cargo outdated` to find a list of packages that should be updated.
+
 [package]
 name = "wowthing-sync"
 version = "0.0.0"
@@ -18,15 +20,15 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 serde_json = "1.0"
-tauri-plugin-store = "2.0.0"
-tauri-plugin-persisted-scope = "2"
-tauri-plugin-fs = { version = "2.0.0", features = ["watch"] }
-tauri-plugin-shell = "2.0.2"
-tauri-plugin-process = "2.0.1"
-tauri-plugin-dialog = "2.0.3"
-tauri-plugin-os = "2.0.1"
-tauri-plugin-notification = "2"
-tauri-plugin-log = "2"
+tauri-plugin-store = "2.2"
+tauri-plugin-persisted-scope = "2.2"
+tauri-plugin-fs = { version = "2.2", features = ["watch"] }
+tauri-plugin-shell = "2.2"
+tauri-plugin-process = "2.2"
+tauri-plugin-dialog = "2.2"
+tauri-plugin-os = "2.2"
+tauri-plugin-notification = "2.2"
+tauri-plugin-log = "2.2"
 log = "0.4"
 
 [dependencies.tauri]
@@ -38,7 +40,7 @@ version = "1"
 features = [ "derive" ]
 
 [dependencies.reqwest]
-version = "0.11"
+version = "0.12"
 features = [ "json", "socks" ]
 
 [features]
@@ -50,8 +52,8 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
-tauri-plugin-autostart = "2"
-tauri-plugin-updater = "2.0.2"
+tauri-plugin-autostart = "2.2"
+tauri-plugin-updater = "2.5"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = "2.2"
