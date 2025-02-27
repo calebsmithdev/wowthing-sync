@@ -1,4 +1,4 @@
-import { BaseDirectory, readDir, type ReadFileOptions, type DirEntry, readTextFileLines, type WatchEvent, type UnwatchFn } from '@tauri-apps/plugin-fs';
+import { BaseDirectory, readDir, type DirEntry, type WatchEvent, type UnwatchFn } from '@tauri-apps/plugin-fs';
 import { watch } from '@tauri-apps/plugin-fs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import localizedFormat from 'dayjs/plugin/localizedFormat'
@@ -7,7 +7,8 @@ import { LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
-import { info } from '@tauri-apps/plugin-log';
+import { error, info } from '@tauri-apps/plugin-log';
+import { platform } from '@tauri-apps/plugin-os';
 
 export const useFileUpload = () => {
   dayjs.extend(relativeTime)
@@ -94,7 +95,12 @@ export const useFileUpload = () => {
   }
 
   const isModifyAnyEvent = (event: WatchEvent): boolean => {
-    return typeof event.type === 'object' && 'modify' in event.type && (event.type.modify.kind === 'any' || event.type.modify.kind === 'rename');
+    const currentPlatform = platform();
+    if(currentPlatform === 'macos') {
+      return typeof event.type === 'object' && 'modify' in event.type && (event.type.modify.kind === 'any' || event.type.modify.kind === 'rename');
+    } else {
+      return typeof event.type === 'object' && 'modify' in event.type && event.type.modify.kind === 'any';
+    }
   }
 
   const handleUpload = async (force: boolean = false, event: WatchEvent = null) => {
@@ -108,6 +114,7 @@ export const useFileUpload = () => {
     if (event && !isModifyAnyEvent(event)) {
       return;
     }
+    console.log({event})
 
     isProcessing.value = true;
     await saveStorageItem<string>(LAST_STARTED_DATE, dayjs().format());
@@ -123,14 +130,13 @@ export const useFileUpload = () => {
 
     for (const file of dedupedFiles) {
       info(`Uploading file: ${file} at file path: ${file}`);
-      const contents = await readBigFile(file, { baseDir: BaseDirectory.Home });
 
       try {
-        const message = await invoke('submit_addon_data', { contents });
+        const message = await invoke('submit_addon_data', { filePath: file });
         info(`Uploaded file: ${file}`);
         info(`API response from ${file}: ${message}`);
-      } catch (error) {
-        error(`File failed to upload! File: ${file}; Return: ${error}`);
+      } catch (result) {
+        error(`File failed to upload! File: ${file}; Return: ${result}`);
         await notifications.send({ title: 'Wowthing Sync', body: 'An error occurred while uploading. Please try again later.' });
         isProcessing.value = false;
         return; // Stop the rest of the loop from working
@@ -151,16 +157,6 @@ export const useFileUpload = () => {
     }, []);
     return unique;
   }
-
-  const readBigFile = async (filePath: string, options?: ReadFileOptions) => {
-    const lines = await readTextFileLines(filePath, options);
-    let fileData = '';
-    for await (const line of lines) {
-      fileData += line;
-    }
-
-    return fileData;
-  };
 
   onMounted(() => {
     getLastUpdated();
