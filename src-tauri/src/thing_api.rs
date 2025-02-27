@@ -11,13 +11,14 @@ use tauri_plugin_store::StoreExt;
 ///
 /// The response from the WoWthing API.
 #[tauri::command]
-pub async fn submit_addon_data(app: tauri::AppHandle, contents: &str) -> Result<String, String> {
+pub async fn submit_addon_data(app: tauri::AppHandle, file_path: &str) -> Result<String, String> {
     let store = app.store_builder(".settings.dat").build().unwrap();
     let api_key = store.get("api-key").expect("No API key found in settings.");
+    let contents = &std::fs::read_to_string(file_path).map_err(|e| e.to_string())?;
 
     let mut form_data = HashMap::new();
     form_data.insert("apiKey", api_key.as_str().unwrap());
-    form_data.insert("luaFile", contents);
+    form_data.insert("luaFile", &contents);
 
     let client = reqwest::Client::new();
     let response = client
