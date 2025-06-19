@@ -41,6 +41,7 @@ export const useFileUpload = () => {
 
   const stopFileWatchingProcess = () => {
     watchingFiles.value = [];
+    if(typeof stopWatching.value !== 'function') return;
     stopWatching.value();
     info('Stopped watching files');
   }
