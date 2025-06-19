@@ -7,6 +7,12 @@ import { info } from '@tauri-apps/plugin-log';
 
 const defaultMacFolder = '/Applications/World of Warcraft/_retail_';
 const defaultWindowsFolder = 'C:\\Program Files (x86)\\World of Warcraft\\_retail_';
+const defaultLinuxFolders = [
+  '.wine/drive_c/Program Files (x86)/World of Warcraft/_retail_',
+  '.wine/drive_c/Program Files/World of Warcraft/_retail_',
+  'Games/world-of-warcraft/drive_c/Program Files (x86)/World of Warcraft/_retail_',
+  'Games/world-of-warcraft/drive_c/Program Files/World of Warcraft/_retail_',
+];
 
 export const useProgramFolder = () => {
   const _programFolder = ref<string | null>('');
@@ -37,6 +43,14 @@ export const useProgramFolder = () => {
         if(winFolderExists) {
           return defaultWindowsFolder;
         }
+      case 'linux':
+        for (const relPath of defaultLinuxFolders) {
+          if (await exists(relPath, { baseDir: BaseDirectory.Home })) {
+            // Build the absolute path the rest of the app expects
+            return `${homeDir}/${relPath}`;
+          }
+        }
+        break;
       default:
         return await homeDir;
     }

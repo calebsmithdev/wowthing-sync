@@ -67,7 +67,23 @@ export const useFileUpload = () => {
 
     const addonFiles = [];
     const wtfPath = `${folder}/WTF/Account`;
-    const accountFolderFiles = await readDir(wtfPath, { baseDir: BaseDirectory.Home });
+    let accountFolderFiles: DirEntry[];
+    try {
+      accountFolderFiles = await readDir(wtfPath, { baseDir: BaseDirectory.Home });
+    } catch (err) {
+      if (err?.toString().includes('forbidden path')) {
+        await notifications.send({
+          title: 'Permission Denied',
+          body: `The app does not have permission to access "${wtfPath}". Please inform the dev of this issue.`,
+        });
+      } else {
+        await notifications.send({
+          title: 'Error',
+          body: `An error occurred while reading files: ${err}`,
+        });
+      }
+      throw err;
+    }
 
     await processEntriesRecursively(wtfPath, accountFolderFiles);
 
@@ -90,9 +106,20 @@ export const useFileUpload = () => {
   const verifyFolderExists = async () : Promise<boolean> => {
     const folder = await getStorageItem<string>(PROGRAM_FOLDER)
     const wtfPath = `${folder}/WTF/Account`;
-    const folderExists = await readDir(wtfPath, { baseDir: BaseDirectory.Home });
 
-    return folderExists.length > 0;
+    try {
+      const folderExists = await readDir(wtfPath, { baseDir: BaseDirectory.Home });
+      return folderExists.length > 0;
+    } catch (err) {
+      if (err?.toString().includes('forbidden path')) {
+        await notifications.send({
+          title: 'Permission Denied',
+          body: `The app does not have permission to access "${wtfPath}".`,
+        });
+        return false;
+      }
+      throw err;
+    }
   }
 
   const isModifyAnyEvent = (event: WatchEvent): boolean => {
