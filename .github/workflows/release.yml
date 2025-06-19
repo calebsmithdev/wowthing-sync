@@ -98,5 +98,4 @@ jobs:
           releaseId: ${{ env.RELEASE_ID }}
           releaseDraft: true
           prerelease: true
-          includeDebug: true
           args: ${{ matrix.args }}

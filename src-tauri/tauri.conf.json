@@ -67,8 +67,7 @@
         "title": "WoWthing Sync",
         "decorations": true,
         "useHttpsScheme": true,
-        "visible": false,
-        "devtools": true
+        "visible": false
       }
     ],
     "withGlobalTauri": false,
