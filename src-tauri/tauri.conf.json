@@ -41,7 +41,7 @@
   },
   "productName": "Wowthing Sync",
   "mainBinaryName": "Wowthing Sync",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "identifier": "com.calebsmithdev.wowthing-sync",
   "plugins": {
     "fs": {
