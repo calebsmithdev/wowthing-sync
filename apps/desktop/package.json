@@ -12,7 +12,9 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "tauri:build:debug": "tauri build --debug"
+    "tauri:build:debug": "tauri build --debug",
+    "test:unit": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@nuxt/ui": "^4.0.0-alpha.2",
@@ -43,9 +45,13 @@
     "@antfu/eslint-config": "^5.4.1",
     "@tauri-apps/cli": "^2.8.4",
     "@types/node": "^24.5.2",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/test-utils": "^2.4.6",
     "eslint": "^9.36.0",
     "eslint-config-next": "^15.5.3",
+    "jsdom": "^26.0.0",
     "node-fetch": "^3.3.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.8"
   }
 }

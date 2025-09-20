@@ -312,16 +312,16 @@ Agent SHOULD submit a patch that adds these subsections under clearly marked hea
 
 ```bash
 # Type/lint/test (frontend)
-npm typecheck && npm lint && npm test:unit
+npm run --prefix ./apps/desktop typecheck && npm run  --prefix ./apps/desktoplint && npm run --prefix ./apps/desktop test:unit
 
 # Rust
 cargo fmt -- --check && cargo clippy -- -D warnings && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Build desktop app (current OS)
-npm run --prefix ./apps/desktop build && npm --prefix ./apps/desktop tauri build
+npm run --prefix ./apps/desktop build && npm run --prefix ./apps/desktop tauri build
 
-# E2E smoke (after build)
-npm --prefix ./tests test:e2e
+# Vue Unit Tests
+npm run --prefix ./apps/desktop test:unit
 ```
 
 ---
