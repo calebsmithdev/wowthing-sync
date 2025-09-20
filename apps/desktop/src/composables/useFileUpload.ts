@@ -5,10 +5,10 @@ import localizedFormat from 'dayjs/plugin/localizedFormat'
 import dayjs from 'dayjs';
 import { LAST_STARTED_DATE, LAST_UPDATED, PROGRAM_FOLDER } from '../constants';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
-import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { error, info } from '@tauri-apps/plugin-log';
 import { platform } from '@tauri-apps/plugin-os';
+import { submitAddonData } from './useThingApi';
 
 export const useInternalFileUpload = () => {
   dayjs.extend(relativeTime)
@@ -160,7 +160,7 @@ export const useInternalFileUpload = () => {
       info(`Uploading file: ${file} at file path: ${file}`);
 
       try {
-        const message = await invoke('submit_addon_data', { filePath: file });
+        const message = await submitAddonData(file);
         info(`Uploaded file: ${file}`);
         info(`API response from ${file}: ${message}`);
       } catch (result) {

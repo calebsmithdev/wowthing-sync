@@ -338,7 +338,23 @@ npm --prefix ./tests test:e2e
 ## 18) Definition of Done (per feature)
 
 * Functionally implemented across OSes targeted for the feature.
-* IPC types validated end‑to‑end; security reviewed.
+* IPC types validated end-to-end; security reviewed.
 * Unit tests + e2e smoke covering happy path and one failure.
 * Docs updated: this file (if relevant) and help/README.
 * CI green; artifacts build for at least the current OS.
+
+---
+
+## Command Catalog
+
+| Command | Rust signature | Frontend wrapper | Error cases / notes |
+| --- | --- | --- | --- |
+| `submit_addon_data` | `pub async fn submit_addon_data(app: tauri::AppHandle, file_path: &str) -> Result<String, String>` (`apps/desktop/src-tauri/src/thing_api.rs:14`) | `submitAddonData(filePath: string): Promise<string>` (`apps/desktop/src/composables/useThingApi.ts:1`) | Returns `Err` when the LUA file cannot be read, the WoWthing API replies non-200, or response text conversion fails; currently panics if the persisted store lacks an `api-key` entry. |
+
+---
+
+## Discovered Context
+
+* Tauri config (`apps/desktop/src-tauri/tauri.conf.json`): allowlist section absent (defaults apply); plugins = `fs` (requireLiteralLeadingDot=false) and `updater` (GitHub endpoint, Windows passive install, bundled pubkey); updater artifacts set to `v1Compatible`; bundle targets = `all`; no autostart wiring in config.
+* Nuxt config (`apps/desktop/nuxt.config.ts`): modules = `@nuxt/ui`; SSR disabled (`ssr: false`); no CSP defined in `app` head; no custom path aliases declared; Vite uses Tailwind plugin with strict HMR port 3001.
+* Rust crate (`apps/desktop/src-tauri/Cargo.toml`): default feature `custom-protocol` mapped to `tauri/custom-protocol`; additional plugins via dependencies (store, persisted-scope, fs+watch, shell, process, dialog, os, notification, log, tray-icon feature, reqwest with json+socks); platform-gated deps include autostart, updater, single-instance; `rust-toolchain` file not present in repo root.
