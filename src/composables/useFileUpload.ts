@@ -10,7 +10,7 @@ import { join } from '@tauri-apps/api/path';
 import { error, info } from '@tauri-apps/plugin-log';
 import { platform } from '@tauri-apps/plugin-os';
 
-export const useFileUpload = () => {
+export const useInternalFileUpload = () => {
   dayjs.extend(relativeTime)
   dayjs.extend(localizedFormat);
 

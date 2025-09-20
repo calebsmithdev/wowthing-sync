@@ -1,3 +1,6 @@
+import tailwindcss from "@tailwindcss/vite";
+import { defineNuxtConfig } from "nuxt/config";
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   devtools: { enabled: false },
@@ -20,6 +23,9 @@ export default defineNuxtConfig({
   vite: {
     clearScreen: false,
     envPrefix: ['VITE_', 'TAURI_'],
+    plugins: [
+      tailwindcss()
+    ],
     server: {
       strictPort: true,
       hmr: {
@@ -40,7 +46,6 @@ export default defineNuxtConfig({
 	},
   postcss: {
     plugins: {
-      tailwindcss: {},
       autoprefixer: {},
     },
   },
