@@ -30,6 +30,12 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      - name: Stub Nuxt dist output
+        run: |
+          mkdir -p dist
+          test -f dist/index.html || echo '<!doctype html><title>stub</title>' > dist/index.html
+        working-directory: apps/desktop
+
       - name: Cache Rust builds
         uses: swatinem/rust-cache@v2
         with:
