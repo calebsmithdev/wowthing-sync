@@ -3,6 +3,8 @@ name: "Rust Tests"
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - 'apps/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}

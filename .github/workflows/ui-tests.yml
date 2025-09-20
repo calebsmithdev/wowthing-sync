@@ -3,8 +3,12 @@ name: UI Tests
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - 'apps/**'
   push:
     branches: [main]
+    paths:
+      - 'apps/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
