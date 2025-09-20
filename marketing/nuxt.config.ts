@@ -34,5 +34,15 @@ export default defineNuxtConfig({
       }
     }
   },
+  nitro: {
+    prerender: {
+      routes: [
+        '/download/mac-intel',
+        '/download/mac-silicon',
+        '/download/windows',
+        '/download/linux'
+      ]
+    }
+  },
   devtools: { enabled: true }
 })
