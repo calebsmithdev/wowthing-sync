@@ -19,9 +19,20 @@
 
 <script lang="ts" setup>
 import type { NavigationMenuItem } from '@nuxt/ui';
+import { computed } from 'vue';
 
-const navigationItems = [
-  { label: 'Dashboard', to: '/' },
-  { label: 'Settings', to: '/settings' },
-] satisfies NavigationMenuItem[];
+const isDev = import.meta.dev;
+
+const navigationItems = computed<NavigationMenuItem[]>(() => {
+  const items: NavigationMenuItem[] = [
+    { label: 'Dashboard', to: '/' },
+    { label: 'Settings', to: '/settings' },
+  ];
+
+  if (isDev) {
+    items.push({ label: 'Debug', to: '/__debug' });
+  }
+
+  return items;
+});
 </script>
