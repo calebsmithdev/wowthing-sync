@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      working-directory: ./landing
+      working-directory: ./marketing
     steps:
       - uses: actions/checkout@v4
       - run: corepack enable
