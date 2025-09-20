@@ -47,9 +47,10 @@ jobs:
     - name: Rust cache
       uses: swatinem/rust-cache@v2
       with:
-        workspaces: './src-tauri -> target'
+        workspaces: 'apps/desktop/src-tauri -> target'
 
     - name: Install frontend dependencies
+      working-directory: apps/desktop
       run: npm install
 
     - uses: tauri-apps/tauri-action@v0
@@ -57,4 +58,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
       with:
+        projectPath: apps/desktop
+        tauriScript: npm run tauri
         args: ${{ matrix.args }}
