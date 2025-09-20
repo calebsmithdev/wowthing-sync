@@ -1,5 +1,5 @@
 <template>
-  <div class="container py-16">
+  <div class="container py-10">
     <div class="text-center">
       <h1 class="mb-5">Addon Sync</h1>
 
@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
   const apiKey = useApiKeys();
-  const { handleUpload, lastUpdated, lastUpdatedFromNow, startFileWatchingProcess, stopFileWatchingProcess, isProcessing, formattedLastUpdated } = useFileUpload();
+  const { handleUpload, lastUpdated, lastUpdatedFromNow, startFileWatchingProcess, stopFileWatchingProcess, isProcessing, formattedLastUpdated } = useInternalFileUpload();
 
   onMounted(async () => {
     await startFileWatchingProcess();

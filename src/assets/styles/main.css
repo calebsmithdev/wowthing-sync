@@ -1,3 +1,5 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
 @import './transitions.css';
 
 body {

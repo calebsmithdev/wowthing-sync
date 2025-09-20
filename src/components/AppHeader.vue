@@ -1,29 +1,27 @@
 <template>
   <UpdateBanner />
-  <header class="border-b border-gray-200 dark:border-gray-800">
-    <div class="logo">WoWthing Sync</div>
-    <UHorizontalNavigation :links="links" />
+  <header class="border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900">
+    <div class="mx-auto flex w-full max-w-5xl items-center gap-6 pl-6 pr-4 pt-2">
+      <p class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+        WoWthing Sync
+      </p>
+      <div class="ml-auto">
+        <UNavigationMenu
+          :items="navigationItems"
+          highlight
+          variant="pill"
+          class="justify-end"
+        />
+      </div>
+    </div>
   </header>
 </template>
 
 <script lang="ts" setup>
-const links = [
+import type { NavigationMenuItem } from '@nuxt/ui';
+
+const navigationItems = [
   { label: 'Dashboard', to: '/' },
   { label: 'Settings', to: '/settings' },
-];
+] satisfies NavigationMenuItem[];
 </script>
-
-<style scoped>
-header {
-  display: flex;
-  align-items: center;
-}
-
-.logo {
-  white-space: nowrap;
-  margin-bottom: 4px;
-  font-size: 25px;
-  user-select: none;
-  padding: 10px 50px 10px 30px;
-}
-</style>
