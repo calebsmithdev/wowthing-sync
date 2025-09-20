@@ -1,4 +1,4 @@
-import { BaseDirectory, exists, readDir } from '@tauri-apps/plugin-fs';
+import { BaseDirectory, exists } from '@tauri-apps/plugin-fs';
 import { type } from '@tauri-apps/plugin-os';
 import { PROGRAM_FOLDER } from '../constants';
 import * as path from '@tauri-apps/api/path';
@@ -30,7 +30,7 @@ export const useProgramFolder = () => {
   }
 
   const getDefaultPath = async () => {
-    const homeDir = path.homeDir();
+    const homeDir = await path.homeDir();
     switch(type()) {
       case 'macos':
         const macFolderExists = await exists(defaultMacFolder, { baseDir: BaseDirectory.Home });
@@ -47,15 +47,15 @@ export const useProgramFolder = () => {
         for (const relPath of defaultLinuxFolders) {
           if (await exists(relPath, { baseDir: BaseDirectory.Home })) {
             // Build the absolute path the rest of the app expects
-            return `${homeDir}/${relPath}`;
+            return await path.join(homeDir, relPath);
           }
         }
         break;
       default:
-        return await homeDir;
+        return homeDir;
     }
 
-    return await homeDir;
+    return homeDir;
   }
 
   const programFolder = computed({
