@@ -1,0 +1,28 @@
+name: "Rust Tests"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust builds
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+
+      - name: Run cargo test
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml

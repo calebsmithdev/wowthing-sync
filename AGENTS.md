@@ -37,8 +37,8 @@
 │  │  │  └─ tauri.conf.json   # App config (allowlist, bundles, updater)
 │  │  ├─ nuxt.config.ts
 │  │  ├─ package.json
-│  └─ └─ src/                 # Nuxt app source
-├─ tests/                     # e2e harness (Playwright)
+|  |  ├─ tests/               # Backend, Frontend, and E2E tests
+│  │  └─ src/                 # Nuxt app source
 └─ .github/workflows/         # CI build/test/release
 ```
 
@@ -50,7 +50,7 @@ If structure differs, **Agent must scan** `tauri.conf.json`, `package.json`, `nu
 
 **Dev (hot‑reload web + Tauri)**
 
-* `npm dev` or `npm run dev` within `apps/desktop` should:
+* `npm dev` or `npm run --prefix ./apps/desktop dev` within `apps/desktop` should:
 
   1. launch Nuxt dev server
   2. run `tauri dev` with that URL as devPath
@@ -61,11 +61,9 @@ If structure differs, **Agent must scan** `tauri.conf.json`, `package.json`, `nu
 
 **Tests**
 
-* Frontend unit: `npm test:unit`
+* Frontend unit: `npm run --prefix ./apps/desktop test:unit`
 * Rust: `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml`
-* E2E: `npm test:e2e` (expects Playwright + built app)
-
-Agent: if scripts are missing, propose a patch to `package.json` adding clear scripts and wire CI.
+* E2E: `npm run --prefix ./apps/desktop test:e2e` (expects Playwright + built app)
 
 ---
 
