@@ -55,7 +55,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
-      - run: git tag ${{ github.event.inputs.tag }}
+      - run: git tag v${{ env.VENDOR_VERSION }}
       - name: setup node
         uses: actions/setup-node@v4
         with:
@@ -85,16 +85,18 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: 'apps/desktop/src-tauri -> target'
 
       - name: install frontend dependencies
-        run: npm install
+        run: npm ci
+        working-directory: apps/desktop
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         with:
+          projectPath: apps/desktop
           releaseId: ${{ env.RELEASE_ID }}
           releaseDraft: true
           prerelease: true
