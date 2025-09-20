@@ -1,5 +1,5 @@
 <template>
-  <div class="container py-16">
+  <div class="container py-10">
     <div class="text-center">
       <h1 class="mb-5">Addon Sync</h1>
 

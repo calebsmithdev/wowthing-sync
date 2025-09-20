@@ -1,38 +1,78 @@
 <template>
-  <div class="container pt-5">
-    <h1 class="mb-5">Settings</h1>
+  <div class="space-y-6">
+    <h1>Settings</h1>
 
-    <UFormGroup label="API Key" name="apiKey" help="Visit Settings -> Account to find your API Key." class="mb-6">
-      <UInput v-model="apiKey" autocomplete="off" :ui="{ icon: { trailing: { pointer: '' } } }" :type="showPassword ? 'text' : 'password'">
+    <UFormField
+      label="API Key"
+      name="apiKey"
+      help="Visit Settings -> Account to find your API Key."
+      class="w-full"
+    >
+      <UInput
+        v-model="apiKey"
+        autocomplete="off"
+        class="w-full"
+        :ui="{ icon: { trailing: { pointer: '' } } }"
+        :type="showPassword ? 'text' : 'password'"
+      >
         <template #trailing>
           <UButton
             color="gray"
             variant="link"
             :icon="showPassword ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'"
             :padded="false"
+            class="cursor-pointer"
             @click="toggleShowPassword"
           />
         </template>
       </UInput>
-    </UFormGroup>
+    </UFormField>
 
-    <UFormGroup label='World of Warcraft "_retail_" Folder' name="folder" class="mb-6">
-      <UInput v-model="folder" readonly @click="openFolderDialog">
+    <UFormField
+      label='World of Warcraft "_retail_" Folder'
+      name="folder"
+      class="w-full"
+    >
+      <UInput
+        v-model="folder"
+        readonly
+        class="w-full"
+        :ui="{
+          root: 'cursor-pointer',
+          base: 'cursor-pointer select-none',
+          trailing: 'cursor-pointer pointer-events-auto text-right'
+        }"
+        @click="openFolderDialog"
+      >
         <template #trailing>
-          <span class="text-gray-500 dark:text-gray-400 text-xs">Choose Directory</span>
+          <span
+            class="text-gray-500 dark:text-gray-400 text-xs cursor-pointer"
+            @click.stop="openFolderDialog"
+          >
+            Choose Directory
+          </span>
         </template>
       </UInput>
-    </UFormGroup>
+    </UFormField>
 
-    <UCheckbox label="Enable desktop notifications" v-model="notificationsEnabled" class="mb-2" />
+    <div class="space-y-3">
+      <UCheckbox
+        label="Enable desktop notifications"
+        v-model="notificationsEnabled"
+        class="w-full justify-start"
+      />
 
-    <UCheckbox label="Launch WoWthing Sync when you start your computer" v-model="autoStart" class="mb-2" />
+      <UCheckbox
+        label="Launch WoWthing Sync when you start your computer"
+        v-model="autoStart"
+        class="w-full justify-start"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
   import { open } from '@tauri-apps/plugin-dialog';
-  import { enable, isEnabled, disable } from "@tauri-apps/plugin-autostart";
 
   const apiKey = useApiKeys();
   const autoStart = useAutoStart();
