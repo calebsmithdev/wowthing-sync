@@ -1,5 +1,5 @@
 import { ref, onMounted } from 'vue'
-import { emit, listen } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 
@@ -17,14 +17,14 @@ export default function useUpdater() {
         switch (event.event) {
           case 'Started':
             contentLength = event.data.contentLength;
-            console.log(`started downloading ${event.data.contentLength} bytes`);
+            console.log(`Started downloading ${event.data.contentLength} bytes`);
             break;
           case 'Progress':
             downloaded += event.data.chunkLength;
-            console.log(`downloaded ${downloaded} from ${contentLength}`);
+            console.log(`Downloaded ${downloaded} from ${contentLength}`);
             break;
           case 'Finished':
-            console.log('download finished');
+            console.log('Download finished');
             break;
         }
       });
