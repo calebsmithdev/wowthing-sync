@@ -8,6 +8,9 @@ export default defineNuxtConfig({
   css: [
     '~/assets/css/tailwind.css'
   ],
+  app: {
+    baseURL: process.env.NUXT_APP_BASE_URL || '/'
+  },
   modules: [
     '@primevue/nuxt-module'
   ],

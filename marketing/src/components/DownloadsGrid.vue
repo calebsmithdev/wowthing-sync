@@ -27,10 +27,14 @@
 </template>
 
 <script setup lang="ts">
-  const links = {
-    macIntel: '/download/mac-intel',
-    macSilicon: '/download/mac-silicon',
-    windows: '/download/windows',
-    linux: '/download/linux'
-  } as const;
+  const router = useRouter();
+
+  const resolveLink = (path: string) => router.resolve(path).href;
+
+  const links = computed(() => ({
+    macIntel: resolveLink('/download/mac-intel'),
+    macSilicon: resolveLink('/download/mac-silicon'),
+    windows: resolveLink('/download/windows'),
+    linux: resolveLink('/download/linux')
+  }));
 </script>

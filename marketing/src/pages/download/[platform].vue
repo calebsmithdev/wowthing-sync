@@ -36,7 +36,10 @@ const status = ref<'loading' | 'error'>('loading');
 const errorMessage = ref('');
 
 function isKnownPlatform(value: string | undefined): value is PlatformSlug {
-  return !!value && value in PLATFORM_MAP;
+  return (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(ASSET_PATTERNS, value)
+  );
 }
 
 async function redirectToDownload(slug: string | undefined) {
