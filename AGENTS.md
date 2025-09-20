@@ -345,6 +345,10 @@ npm run --prefix ./apps/desktop test:unit
 
 ---
 
+## 19) Commands to run after tasks
+
+* `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` When updating any Rust code to verify the build runs without compile errors.
+
 ## Command Catalog
 
 | Command | Rust signature | Frontend wrapper | Error cases / notes |

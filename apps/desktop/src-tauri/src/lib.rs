@@ -1,6 +1,6 @@
 // Declare the internal namespaces
+mod commands;
 mod setup;
-mod thing_api;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -31,7 +31,9 @@ pub fn run() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![thing_api::submit_addon_data])
+        .invoke_handler(tauri::generate_handler![
+            commands::submit_addon_data::submit_addon_data
+        ])
         .run(tauri::generate_context!())
         .expect("Error while building the Wowthing Sync application");
 }
