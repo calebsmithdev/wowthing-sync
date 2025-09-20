@@ -12,19 +12,24 @@
 <script setup lang="ts">
 const route = useRoute();
 
-const RELEASE_MANIFEST_URL = 'https://github.com/calebsmithdev/wowthing-sync/releases/latest/download/latest.json';
+const GITHUB_RELEASE_URL = 'https://api.github.com/repos/calebsmithdev/wowthing-sync/releases/latest';
 
-const PLATFORM_MAP = {
-  'mac-intel': 'darwin-x86_64',
-  'mac-silicon': 'darwin-aarch64',
-  windows: 'windows-x86_64',
-  linux: 'linux-x86_64'
+const ASSET_PATTERNS = {
+  'mac-intel': /Wowthing\.Sync_x64\.app\.tar\.gz$/,
+  'mac-silicon': /Wowthing\.Sync_aarch64\.app\.tar\.gz$/,
+  windows: /Wowthing\.Sync_[^_]+_x64_en-US\.msi\.zip$/,
+  linux: /Wowthing\.Sync_[^_]+_amd64\.AppImage$/
 } as const;
 
-type PlatformSlug = keyof typeof PLATFORM_MAP;
+type PlatformSlug = keyof typeof ASSET_PATTERNS;
 
-interface ReleaseManifest {
-  platforms: Record<string, { url: string }>;
+interface GithubReleaseAsset {
+  name: string;
+  browser_download_url: string;
+}
+
+interface GithubRelease {
+  assets: GithubReleaseAsset[];
 }
 
 const status = ref<'loading' | 'error'>('loading');
@@ -45,8 +50,15 @@ async function redirectToDownload(slug: string | undefined) {
   }
 
   try {
-    const manifest = await $fetch<ReleaseManifest>(RELEASE_MANIFEST_URL, { responseType: 'json' });
-    const downloadUrl = manifest.platforms?.[PLATFORM_MAP[slug]]?.url;
+    const release = await $fetch<GithubRelease>(GITHUB_RELEASE_URL, {
+      headers: {
+        Accept: 'application/vnd.github+json'
+      }
+    });
+
+    const downloadUrl = release.assets
+      ?.find((asset) => ASSET_PATTERNS[slug].test(asset.name))
+      ?.browser_download_url;
 
     if (!downloadUrl) {
       status.value = 'error';
@@ -56,7 +68,7 @@ async function redirectToDownload(slug: string | undefined) {
 
     window.location.href = downloadUrl;
   } catch (error) {
-    console.error('Failed to fetch release manifest', error);
+    console.error('Failed to fetch release info', error);
     status.value = 'error';
     errorMessage.value = 'Unable to reach the download server. Please try again in a moment.';
   }
