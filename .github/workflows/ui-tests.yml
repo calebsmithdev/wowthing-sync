@@ -20,12 +20,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: 'lts/*'
           cache: 'npm'
           cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         working-directory: apps/desktop
 
       - name: Run unit tests
