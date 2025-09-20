@@ -1,4 +1,5 @@
 import Lara from '@primevue/themes/lara';
+import tailwindcss from "@tailwindcss/vite";
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -12,9 +13,13 @@ export default defineNuxtConfig({
   ],
   postcss: {
     plugins: {
-      tailwindcss: {},
       autoprefixer: {},
     }
+  },
+  vite: {
+    plugins: [
+      tailwindcss()
+    ],
   },
   primevue: {
     options: {
