@@ -27,24 +27,10 @@
 </template>
 
 <script setup lang="ts">
-  const links = ref({
-    macIntel: '',
-    macSilicon: '',
-    windows: '',
-    linux: ''
-  });
-
-  const { data, error } = await useFetch('https://github.com/calebsmithdev/wowthing-sync/releases/latest/download/latest.json', {
-    responseType: 'json'
-  });
-
-  if (error.value) {
-    console.error('Error fetching data:', error.value);
-  } else {
-    const platforms = data.value.platforms;
-    links.value.macIntel = platforms['darwin-x86_64'].url;
-    links.value.macSilicon = platforms['darwin-aarch64'].url;
-    links.value.windows = platforms['windows-x86_64'].url;
-    links.value.linux = platforms['linux-x86_64'].url;
-  }
+  const links = {
+    macIntel: '/download/mac-intel',
+    macSilicon: '/download/mac-silicon',
+    windows: '/download/windows',
+    linux: '/download/linux'
+  } as const;
 </script>
