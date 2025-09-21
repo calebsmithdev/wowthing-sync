@@ -11,26 +11,28 @@
 
 <script setup lang="ts">
 const route = useRoute();
+const runtimeConfig = useRuntimeConfig();
 
-const GITHUB_RELEASE_URL = 'https://api.github.com/repos/calebsmithdev/wowthing-sync/releases/latest';
-
-const ASSET_PATTERNS = {
-  'mac-intel': /Wowthing\.Sync_x64\.app\.tar\.gz$/,
-  'mac-silicon': /Wowthing\.Sync_aarch64\.app\.tar\.gz$/,
-  windows: /Wowthing\.Sync_[^_]+_x64_en-US\.msi\.zip$/,
-  linux: /Wowthing\.Sync_[^_]+_amd64\.AppImage$/
+const PLATFORM_MAP = {
+  'mac-intel': 'darwin-x86_64',
+  'mac-silicon': 'darwin-aarch64',
+  windows: 'windows-x86_64',
+  linux: 'linux-x86_64'
 } as const;
 
-type PlatformSlug = keyof typeof ASSET_PATTERNS;
+type PlatformSlug = keyof typeof PLATFORM_MAP;
 
-interface GithubReleaseAsset {
-  name: string;
-  browser_download_url: string;
+interface ReleaseManifestPlatform {
+  url: string;
 }
 
-interface GithubRelease {
-  assets: GithubReleaseAsset[];
+interface ReleaseManifest {
+  platforms?: Record<string, ReleaseManifestPlatform>;
 }
+
+const manifest = computed<ReleaseManifest | null>(() => {
+  return (runtimeConfig.public.downloadManifest as ReleaseManifest | null) ?? null;
+});
 
 const status = ref<'loading' | 'error'>('loading');
 const errorMessage = ref('');
@@ -38,43 +40,43 @@ const errorMessage = ref('');
 function isKnownPlatform(value: string | undefined): value is PlatformSlug {
   return (
     typeof value === 'string' &&
-    Object.prototype.hasOwnProperty.call(ASSET_PATTERNS, value)
+    Object.prototype.hasOwnProperty.call(PLATFORM_MAP, value)
   );
 }
 
-async function redirectToDownload(slug: string | undefined) {
+function resolveDownloadUrl(slug: PlatformSlug): string | null {
+  const manifestKey = PLATFORM_MAP[slug];
+  const url = manifest.value?.platforms?.[manifestKey]?.url;
+  return url ?? null;
+}
+
+function handleError(message: string) {
+  status.value = 'error';
+  errorMessage.value = message;
+}
+
+function redirectToDownload(slug: string | undefined) {
   status.value = 'loading';
   errorMessage.value = '';
 
   if (!isKnownPlatform(slug)) {
-    status.value = 'error';
-    errorMessage.value = 'Unknown download platform. Please pick a link from the downloads page.';
+    handleError('Unknown download platform. Please pick a link from the downloads page.');
     return;
   }
 
-  try {
-    const release = await $fetch<GithubRelease>(GITHUB_RELEASE_URL, {
-      headers: {
-        Accept: 'application/vnd.github+json'
-      }
-    });
-
-    const downloadUrl = release.assets
-      ?.find((asset) => ASSET_PATTERNS[slug].test(asset.name))
-      ?.browser_download_url;
-
-    if (!downloadUrl) {
-      status.value = 'error';
-      errorMessage.value = 'Download is not available right now. Please try again later.';
-      return;
-    }
-
-    window.location.href = downloadUrl;
-  } catch (error) {
-    console.error('Failed to fetch release info', error);
-    status.value = 'error';
-    errorMessage.value = 'Unable to reach the download server. Please try again in a moment.';
+  if (!manifest.value) {
+    handleError('Download info is not available right now. Please try again later.');
+    return;
   }
+
+  const downloadUrl = resolveDownloadUrl(slug);
+
+  if (!downloadUrl) {
+    handleError('Download is not available right now. Please try again later.');
+    return;
+  }
+
+  window.location.href = downloadUrl;
 }
 
 onMounted(() => {

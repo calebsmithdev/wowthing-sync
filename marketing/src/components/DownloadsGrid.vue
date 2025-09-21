@@ -27,9 +27,14 @@
 </template>
 
 <script setup lang="ts">
-  const router = useRouter();
+  import { joinURL } from 'ufo';
 
-  const resolveLink = (path: string) => router.resolve(path).href;
+  const runtimeConfig = useRuntimeConfig();
+
+  const resolveLink = (path: string) => {
+    const baseURL = runtimeConfig.app?.baseURL ?? '/';
+    return joinURL(baseURL, path);
+  };
 
   const links = computed(() => ({
     macIntel: resolveLink('/download/mac-intel'),

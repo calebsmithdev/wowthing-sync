@@ -1,6 +1,17 @@
 import Lara from '@primevue/themes/lara';
 import tailwindcss from "@tailwindcss/vite";
 
+const downloadManifestRaw = process.env.NUXT_DOWNLOAD_MANIFEST;
+let downloadManifest: unknown = null;
+
+if (downloadManifestRaw) {
+  try {
+    downloadManifest = JSON.parse(downloadManifestRaw);
+  } catch (error) {
+    console.warn('Failed to parse NUXT_DOWNLOAD_MANIFEST env variable', error);
+  }
+}
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   srcDir: 'src/',
@@ -10,6 +21,11 @@ export default defineNuxtConfig({
   ],
   app: {
     baseURL: process.env.NUXT_APP_BASE_URL || '/'
+  },
+  runtimeConfig: {
+    public: {
+      downloadManifest
+    }
   },
   modules: [
     '@primevue/nuxt-module'
