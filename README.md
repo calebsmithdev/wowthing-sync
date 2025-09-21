@@ -8,10 +8,10 @@ Wowthing Sync is a cross-platform desktop client for [Wowthing](https://wowthing
 
 | Platform | Link |
 | --- | --- |
-| macOS (Apple Silicon) | https://calebsmithdev.github.io/wowthing-sync/download/mac-silicon |
-| macOS (Intel) | https://calebsmithdev.github.io/wowthing-sync/download/mac-intel |
-| Windows (x64) | https://calebsmithdev.github.io/wowthing-sync/download/windows |
-| Linux (x64) | https://calebsmithdev.github.io/wowthing-sync/download/linux |
+| macOS (Apple Silicon) | [WowthingSync-AppleSilicon.dmg](https://calebsmithdev.github.io/wowthing-sync/download/mac-silicon) |
+| macOS (Intel) | [WowthingSync-Intel.dmg](https://calebsmithdev.github.io/wowthing-sync/download/mac-intel) |
+| Windows (x64) | [WowthingSync.msi](https://calebsmithdev.github.io/wowthing-sync/download/windows) |
+| Linux (x64) | [WowthingSync.AppImage](https://calebsmithdev.github.io/wowthing-sync/download/linux) |
 
 ## Features
 
