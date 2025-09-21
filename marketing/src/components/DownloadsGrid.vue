@@ -27,10 +27,19 @@
 </template>
 
 <script setup lang="ts">
-  const links = {
-    macIntel: '/download/mac-intel',
-    macSilicon: '/download/mac-silicon',
-    windows: '/download/windows',
-    linux: '/download/linux'
-  } as const;
+  import { joinURL } from 'ufo';
+
+  const runtimeConfig = useRuntimeConfig();
+
+  const resolveLink = (path: string) => {
+    const baseURL = runtimeConfig.app?.baseURL ?? '/';
+    return joinURL(baseURL, path);
+  };
+
+  const links = computed(() => ({
+    macIntel: resolveLink('/download/mac-intel'),
+    macSilicon: resolveLink('/download/mac-silicon'),
+    windows: resolveLink('/download/windows'),
+    linux: resolveLink('/download/linux')
+  }));
 </script>

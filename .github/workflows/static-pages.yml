@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       working-directory: ./marketing
+      NUXT_APP_BASE_URL: '/${{ github.event.repository.name }}/'
     steps:
       - uses: actions/checkout@v4
       - run: corepack enable
@@ -20,7 +21,11 @@ jobs:
       - run: npm install
         working-directory: ${{ env.working-directory}}
 
-      - run: NUXT_APP_BASE_URL=/wowthing-sync/ npx nuxt build --preset github_pages
+      - name: Fetch latest download manifest
+        run: |
+          echo "NUXT_DOWNLOAD_MANIFEST=$(curl -sL https://github.com/calebsmithdev/wowthing-sync/releases/latest/download/latest.json | jq -c '.')" >> $GITHUB_ENV
+
+      - run: npx nuxt build --preset github_pages
         working-directory: ${{ env.working-directory}}
 
       - name: Upload artifact
