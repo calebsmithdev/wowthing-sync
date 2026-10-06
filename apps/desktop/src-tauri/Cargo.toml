@@ -32,6 +32,7 @@ tauri-plugin-notification = "2.5.1"
 tauri-plugin-log = "2.10.0"
 log = "0.4.34"
 httpdate = "1.0.3"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 tokio = { version = "1.53.2", features = ["macros", "time", "rt"] }
 
 [dependencies.tauri]

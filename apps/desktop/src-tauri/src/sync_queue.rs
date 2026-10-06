@@ -50,6 +50,21 @@ mod tests {
         assert_eq!(queue.take_ready(now + Duration::from_secs(2)), Some(file));
     }
     #[test]
+    fn a_pending_change_survives_discovery_failure_and_recovers() {
+        let now = Instant::now();
+        let file = PathBuf::from("collector.lua");
+        let mut queue = SyncQueue::default();
+        queue.changed(file.clone(), now);
+        // A failed scan supplies no replacement file list. The worker must not
+        // prune pending work until it has a successful discovery result.
+        let failed_scan: Result<Vec<PathBuf>, ()> = Err(());
+        if let Ok(files) = failed_scan {
+            queue.retain(&files);
+        }
+        queue.retain(std::slice::from_ref(&file)); // recovery, same fingerprint
+        assert_eq!(queue.take_ready(now + Duration::from_secs(2)), Some(file));
+    }
+    #[test]
     fn manual_work_coalesces_and_changes_during_upload_are_retained() {
         let mut queue = SyncQueue::default();
         let now = Instant::now();
