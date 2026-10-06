@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::{future::Future, time::Duration};
-use tauri_plugin_store::StoreExt;
+use tauri::Manager;
 
 const WOWTHING_UPLOAD_ENDPOINT: &str = "https://wowthing.org/api/upload/";
 #[derive(Serialize)]
@@ -31,18 +31,13 @@ pub fn submit_addon_data(
 pub(crate) async fn upload_file(
     app: &tauri::AppHandle,
     client: &reqwest::Client,
-    file_path: &str,
+    root: &crate::collector_fs::ApprovedRoot,
+    file_path: &std::path::Path,
 ) -> Result<String, String> {
-    let store = app.store(".settings.dat").map_err(|e| e.to_string())?;
-    let api_key_value = store
-        .get("api-key")
-        .ok_or("Configure your API key in Settings.")?;
-    let api_key = api_key_value
-        .as_str()
-        .filter(|key| !key.trim().is_empty())
-        .ok_or("Configure your API key in Settings.")?;
-    let lua_contents = std::fs::read_to_string(file_path).map_err(|e| e.to_string())?;
-    submit_addon_data_internal(client, WOWTHING_UPLOAD_ENDPOINT, api_key, &lua_contents).await
+    let api_key = app.state::<crate::credentials::SecretManager>().key()?;
+    let lua_contents = String::from_utf8(root.read(file_path)?)
+        .map_err(|_| "Collector is not valid UTF-8".to_string())?;
+    submit_addon_data_internal(client, WOWTHING_UPLOAD_ENDPOINT, &api_key, &lua_contents).await
 }
 #[derive(Debug)]
 pub(crate) struct UploadFailure {

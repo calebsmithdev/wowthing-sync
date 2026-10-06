@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 export interface SyncStatus {
   folder: string | null
+  hasApiKey: boolean
   files: string[]
   isProcessing: boolean
   lastSuccess: number | null
@@ -12,7 +13,7 @@ export interface SyncStatus {
 }
 
 export const emptySyncStatus = (): SyncStatus => ({
-  folder: null, files: [], isProcessing: false, lastSuccess: null, error: null, pending: 0, failures: [], warning: null,
+  folder: null, hasApiKey: false, files: [], isProcessing: false, lastSuccess: null, error: null, pending: 0, failures: [], warning: null,
 })
 export const getSyncStatus = () => invoke<SyncStatus>('get_sync_status')
 export const configureSync = (folder: string | null) => invoke<void>('configure_sync', { folder })

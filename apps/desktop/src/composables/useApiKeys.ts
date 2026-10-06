@@ -1,26 +1,17 @@
-import { API_KEY } from "~/constants";
+import { invoke } from '@tauri-apps/api/core'
+import { useSync } from './useSync'
 
+export interface ApiKeyStatus { hasKey: boolean; loaded: boolean; error: string | null }
+export const saveApiKey = (key: string) => invoke<ApiKeyStatus>('save_api_key', { key })
 export const useApiKeys = () => {
-  const _apiKey = ref('');
-
-  const getKey = async (): Promise<void> => {
-    const value = await getStorageItem<string>(API_KEY)
-    _apiKey.value = value ?? '';
+  const status = useSync()
+  return {
+    hasApiKey: computed(() => status.value.hasApiKey),
+    saveKey: async (key: string) => {
+      const saved = await saveApiKey(key)
+      status.value.hasApiKey = saved.hasKey
+      status.value.warning = saved.error
+      return saved
+    },
   }
-
-  const setKey = async (value: string): Promise<void> => {
-    await saveStorageItem(API_KEY, value)
-    _apiKey.value = value;
-  }
-
-  const apiKey = computed({
-    get: () => _apiKey.value,
-    set: (value: string) => setKey(value),
-  });
-
-  onMounted(() => {
-    getKey();
-  });
-
-  return apiKey;
 }

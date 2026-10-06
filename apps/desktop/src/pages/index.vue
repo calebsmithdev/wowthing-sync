@@ -26,6 +26,6 @@
 </template>
 
 <script setup lang="ts">
-  const apiKey = useApiKeys();
+  const { hasApiKey: apiKey } = useApiKeys();
   const { handleUpload, lastUpdated, lastUpdatedFromNow, isProcessing, formattedLastUpdated } = useInternalFileUpload();
 </script>

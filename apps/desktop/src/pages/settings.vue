@@ -26,6 +26,9 @@
         </template>
       </UInput>
     </UFormField>
+    <p class="text-sm">{{ hasApiKey ? "An API key is saved securely. Enter a key to replace it." : "No API key is saved." }}</p>
+    <UButton :loading="savingKey" :disabled="!apiKey.trim() || savingKey" @click="saveKeyDraft">Save API Key</UButton>
+    <p v-if="keyError" role="alert" class="text-red-400">{{ keyError }}</p>
 
     <UFormField
       label='World of Warcraft "_retail_" Folder'
@@ -73,7 +76,16 @@
 <script setup lang="ts">
   import { open } from '@tauri-apps/plugin-dialog';
 
-  const apiKey = useApiKeys();
+  const { hasApiKey, saveKey } = useApiKeys();
+  const apiKey = ref('');
+  const savingKey = ref(false);
+  const keyError = ref<string | null>(null);
+  const saveKeyDraft = async () => {
+    savingKey.value = true; keyError.value = null;
+    try { const saved = await saveKey(apiKey.value); apiKey.value = ''; keyError.value = saved.error }
+    catch (error) { keyError.value = String(error) }
+    finally { savingKey.value = false }
+  };
   const autoStart = useAutoStart();
   const { folder, getDefaultPath } = useProgramFolder();
   const showPassword = ref(false);

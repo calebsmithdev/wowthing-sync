@@ -1,6 +1,8 @@
 use tauri::Manager;
 // Declare the internal namespaces
+mod collector_fs;
 mod commands;
+mod credentials;
 mod setup;
 mod sync_queue;
 mod sync_service;
@@ -10,8 +12,6 @@ pub fn run() {
     tauri::Builder::default()
         .on_permission_request(|_, kind| setup::permissions::webview_permission_response(kind))
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_persisted_scope::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
@@ -25,6 +25,7 @@ pub fn run() {
             setup::system_tray_menu::setup_system_tray_menu(handle)?;
             setup::logs::setup_logs(handle)?;
 
+            app.manage(credentials::SecretManager::default());
             app.manage(sync_service::SyncService::start(app.handle().clone()));
             Ok(())
         })
@@ -39,7 +40,12 @@ pub fn run() {
             commands::submit_addon_data::submit_addon_data,
             sync_service::get_sync_status,
             sync_service::configure_sync,
-            sync_service::sync_now
+            sync_service::sync_now,
+            credentials::get_api_key_status,
+            credentials::save_api_key,
+            commands::preferences::get_preference,
+            commands::preferences::save_preference,
+            commands::preferences::default_wow_folder
         ])
         .build(tauri::generate_context!())
         .expect("Error while building the Wowthing Sync application")
