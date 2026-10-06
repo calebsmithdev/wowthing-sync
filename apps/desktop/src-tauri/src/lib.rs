@@ -1,6 +1,8 @@
+use tauri::Manager;
 // Declare the internal namespaces
 mod commands;
 mod setup;
+mod sync_service;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +24,7 @@ pub fn run() {
             setup::system_tray_menu::setup_system_tray_menu(handle)?;
             setup::logs::setup_logs(handle)?;
 
+            app.manage(sync_service::SyncService::start(app.handle().clone()));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -32,8 +35,17 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            commands::submit_addon_data::submit_addon_data
+            commands::submit_addon_data::submit_addon_data,
+            sync_service::get_sync_status,
+            sync_service::configure_sync,
+            sync_service::sync_now
         ])
-        .run(tauri::generate_context!())
-        .expect("Error while building the Wowthing Sync application");
+        .build(tauri::generate_context!())
+        .expect("Error while building the Wowthing Sync application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                use tauri::Manager;
+                app.state::<sync_service::SyncService>().shutdown();
+            }
+        });
 }
