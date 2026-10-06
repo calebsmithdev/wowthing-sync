@@ -3,6 +3,7 @@ import { type } from '@tauri-apps/plugin-os';
 import { PROGRAM_FOLDER } from '../constants';
 import * as path from '@tauri-apps/api/path';
 import { getStorageItem, saveStorageItem } from '../utils/storage';
+import { configureSync } from './useSync';
 import { info } from '@tauri-apps/plugin-log';
 
 const defaultMacFolder = '/Applications/World of Warcraft/_retail_';
@@ -26,6 +27,7 @@ export const useProgramFolder = () => {
     if(!value) return;
     await saveStorageItem<string>(PROGRAM_FOLDER, value)
     info(`Program folder set to: ${value}`);
+    await configureSync(value);
     _programFolder.value = value;
   }
 

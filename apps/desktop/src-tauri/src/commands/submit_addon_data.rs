@@ -15,7 +15,11 @@ struct UploadPayload<'a> {
 /// and returns the response string on success.
 #[tauri::command]
 pub async fn submit_addon_data(app: tauri::AppHandle, file_path: &str) -> Result<String, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
     let store = app
         .store_builder(".settings.dat")
         .build()

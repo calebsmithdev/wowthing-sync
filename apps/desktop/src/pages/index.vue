@@ -15,8 +15,9 @@
         </template>
       </div>
 
+      <p v-if="syncError" role="alert" class="mb-4 text-red-400">{{ syncError }}</p>
       <template v-if="apiKey">
-        <UButton @click="handleUpload(true)" :loading="isProcessing" :disabled="isProcessing">Manually Upload Data</UButton>
+        <UButton @click="handleUpload()" :loading="isProcessing" :disabled="isProcessing">Manually Upload Data</UButton>
       </template>
       <template v-else>
         <UButton to="/settings">Configure API</UButton>
@@ -27,13 +28,5 @@
 
 <script setup lang="ts">
   const apiKey = useApiKeys();
-  const { handleUpload, lastUpdated, lastUpdatedFromNow, startFileWatchingProcess, stopFileWatchingProcess, isProcessing, formattedLastUpdated } = useInternalFileUpload();
-
-  onMounted(async () => {
-    await startFileWatchingProcess();
-  })
-
-  onUnmounted(() => {
-    stopFileWatchingProcess();
-  })
+  const { handleUpload, lastUpdated, lastUpdatedFromNow, isProcessing, formattedLastUpdated, syncError } = useInternalFileUpload();
 </script>
