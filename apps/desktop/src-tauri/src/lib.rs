@@ -2,6 +2,7 @@ use tauri::Manager;
 // Declare the internal namespaces
 mod commands;
 mod setup;
+mod sync_queue;
 mod sync_service;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

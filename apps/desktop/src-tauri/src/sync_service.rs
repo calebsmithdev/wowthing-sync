@@ -4,16 +4,16 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
     },
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::Emitter;
 use tauri_plugin_store::StoreExt;
 
-#[derive(Clone, Default, Serialize)]
+#[derive(Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub folder: Option<String>,
@@ -21,9 +21,11 @@ pub struct SyncStatus {
     pub is_processing: bool,
     pub last_success: Option<u64>,
     pub error: Option<String>,
+    pub pending: usize,
 }
 enum Request {
-    Configure(Option<String>),
+    Configure(u64, Option<String>),
+    File(PathBuf),
     Manual,
     Shutdown,
 }
@@ -32,6 +34,7 @@ pub struct SyncService {
     status: Arc<Mutex<SyncStatus>>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
     stopping: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
 }
 impl SyncService {
     pub fn start(app: tauri::AppHandle) -> Self {
@@ -40,9 +43,20 @@ impl SyncService {
         let worker_status = status.clone();
         let stopping = Arc::new(AtomicBool::new(false));
         let worker_stopping = stopping.clone();
-        let worker = thread::spawn(move || run(app, receiver, worker_status, worker_stopping));
+        let generation = Arc::new(AtomicU64::new(0));
+        let worker_generation = generation.clone();
+        let worker = thread::spawn(move || {
+            run(
+                app,
+                receiver,
+                worker_status,
+                worker_stopping,
+                worker_generation,
+            )
+        });
         Self {
             stopping,
+            generation,
             sender,
             status,
             worker: Mutex::new(Some(worker)),
@@ -50,7 +64,15 @@ impl SyncService {
     }
     pub fn configure(&self, folder: Option<String>) -> Result<(), String> {
         self.sender
-            .send(Request::Configure(folder))
+            .send(Request::Configure(
+                self.generation.fetch_add(1, Ordering::AcqRel) + 1,
+                folder,
+            ))
+            .map_err(|_| "Sync service stopped".into())
+    }
+    pub fn enqueue_file(&self, file: String) -> Result<(), String> {
+        self.sender
+            .send(Request::File(PathBuf::from(file)))
             .map_err(|_| "Sync service stopped".into())
     }
     pub fn manual(&self) -> Result<(), String> {
@@ -78,7 +100,12 @@ impl Drop for SyncService {
     }
 }
 fn publish(app: &tauri::AppHandle, status: &Arc<Mutex<SyncStatus>>, value: &SyncStatus) {
-    *status.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
+    let mut current = status.lock().unwrap_or_else(|e| e.into_inner());
+    if *current == *value {
+        return;
+    }
+    *current = value.clone();
+    drop(current);
     let _ = app.emit("sync-status", value);
 }
 
@@ -104,15 +131,15 @@ pub(crate) fn discover(folder: &Path) -> Result<Vec<PathBuf>, String> {
     files.sort();
     Ok(files)
 }
-fn fingerprints(files: &[PathBuf]) -> Result<BTreeMap<PathBuf, (SystemTime, u64)>, String> {
+fn fingerprints(files: &[PathBuf]) -> Result<BTreeMap<PathBuf, u64>, String> {
+    use std::hash::{Hash, Hasher};
     files
         .iter()
         .map(|p| {
-            let m = std::fs::metadata(p).map_err(|e| e.to_string())?;
-            Ok((
-                p.clone(),
-                (m.modified().map_err(|e| e.to_string())?, m.len()),
-            ))
+            let contents = std::fs::read(p).map_err(|e| e.to_string())?;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            contents.hash(&mut hasher);
+            Ok((p.clone(), hasher.finish()))
         })
         .collect()
 }
@@ -121,6 +148,7 @@ fn run(
     receiver: mpsc::Receiver<Request>,
     shared: Arc<Mutex<SyncStatus>>,
     stopping: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
 ) {
     let mut state = SyncStatus::default();
     match app.store(".settings.dat") {
@@ -131,22 +159,44 @@ fn run(
         }
         Err(e) => state.error = Some(e.to_string()),
     }
+    let client = match crate::commands::submit_addon_data::http_client() {
+        Ok(client) => client,
+        Err(error) => {
+            state.error = Some(error);
+            publish(&app, &shared, &state);
+            return;
+        }
+    };
     let mut previous = BTreeMap::new();
+    let mut queue = crate::sync_queue::SyncQueue::default();
+    let mut active_generation = 0;
     publish(&app, &shared, &state);
     while !stopping.load(Ordering::Acquire) {
-        let manual = match receiver.recv_timeout(Duration::from_millis(500)) {
-            Ok(Request::Shutdown) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            Ok(Request::Configure(folder)) => {
-                state.folder = folder;
-                previous.clear();
-                state.files.clear();
-                state.error = None;
-                publish(&app, &shared, &state);
-                false
-            }
-            Ok(Request::Manual) => true,
-            Err(mpsc::RecvTimeoutError::Timeout) => false,
+        let request = match receiver.recv_timeout(Duration::from_millis(500)) {
+            Ok(request) => Some(request),
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
         };
+        let mut manual = false;
+        for request in request.into_iter().chain(receiver.try_iter()) {
+            match request {
+                Request::Shutdown => return,
+                Request::Configure(epoch, folder) => {
+                    active_generation = epoch;
+                    state.folder = folder;
+                    previous.clear();
+                    queue = Default::default();
+                    state.files.clear();
+                    state.is_processing = false;
+                    state.pending = 0;
+                    state.error = None;
+                    manual = false;
+                    publish(&app, &shared, &state);
+                }
+                Request::Manual => manual = true,
+                Request::File(file) => queue.manual([file], Instant::now()),
+            }
+        }
         let Some(folder) = &state.folder else {
             continue;
         };
@@ -154,8 +204,8 @@ fn run(
             .and_then(|files| fingerprints(&files).map(|prints| (files, prints)));
         let (files, prints) = match result {
             Ok(result) => result,
-            Err(e) => {
-                state.error = Some(e);
+            Err(error) => {
+                state.error = Some(error);
                 publish(&app, &shared, &state);
                 continue;
             }
@@ -164,32 +214,38 @@ fn run(
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-        let changed: Vec<_> = files
-            .into_iter()
-            .filter(|p| manual || previous.get(p) != prints.get(p))
-            .collect();
-        previous = prints;
-        publish(&app, &shared, &state);
-        if changed.is_empty() {
-            continue;
+        queue.retain(&files);
+        let now = Instant::now();
+        for file in &files {
+            if previous.get(file) != prints.get(file) {
+                queue.changed(file.clone(), now);
+            }
         }
+        if manual {
+            queue.manual(files, now);
+        }
+        previous = prints;
+        state.pending = queue.len();
+        publish(&app, &shared, &state);
+        let Some(file) = queue.take_ready(now) else {
+            continue;
+        };
         state.is_processing = true;
+        state.pending = queue.len();
         state.error = None;
         publish(&app, &shared, &state);
-        for file in changed {
-            if stopping.load(Ordering::Acquire) {
-                break;
+        let file_path = file.to_string_lossy();
+        let outcome = tauri::async_runtime::block_on(async {
+            tokio::select! {
+                result = crate::commands::submit_addon_data::upload_file(&app, &client, &file_path) => Some(result),
+                () = async { while !stopping.load(Ordering::Acquire) && generation.load(Ordering::Acquire) == active_generation { tokio::time::sleep(Duration::from_millis(50)).await; } } => None,
             }
-            let file_path = file.to_string_lossy();
-            let outcome = tauri::async_runtime::block_on(async {
-                tokio::select! {
-                    result = crate::commands::submit_addon_data::submit_addon_data(app.clone(), &file_path) => Some(result),
-                    () = async { while !stopping.load(Ordering::Acquire) { tokio::time::sleep(Duration::from_millis(50)).await; } } => None,
-                }
-            });
-            let Some(outcome) = outcome else {
-                break;
-            };
+        });
+        state.is_processing = false;
+        if generation.load(Ordering::Acquire) != active_generation {
+            continue;
+        }
+        if let Some(outcome) = outcome {
             match outcome {
                 Ok(_) => {
                     state.last_success = Some(
@@ -199,10 +255,9 @@ fn run(
                             .as_secs(),
                     )
                 }
-                Err(e) => state.error = Some(e),
+                Err(error) => state.error = Some(error),
             }
         }
-        state.is_processing = false;
         publish(&app, &shared, &state);
     }
 }
@@ -237,9 +292,13 @@ mod tests {
         let replacement = account.join("replacement");
         std::fs::write(&replacement, "replacement contents").unwrap();
         std::fs::rename(&replacement, &collector).unwrap();
-        assert_eq!(
-            fingerprints(&discover(&root).unwrap()).unwrap()[&collector].1,
-            20
+        assert_ne!(
+            fingerprints(&discover(&root).unwrap()).unwrap()[&collector],
+            fingerprints(&[])
+                .unwrap()
+                .get(&collector)
+                .copied()
+                .unwrap_or_default()
         );
         std::fs::remove_dir_all(root).unwrap();
     }

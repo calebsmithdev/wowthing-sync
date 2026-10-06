@@ -6,10 +6,11 @@ export interface SyncStatus {
   isProcessing: boolean
   lastSuccess: number | null
   error: string | null
+  pending: number
 }
 
 export const emptySyncStatus = (): SyncStatus => ({
-  folder: null, files: [], isProcessing: false, lastSuccess: null, error: null,
+  folder: null, files: [], isProcessing: false, lastSuccess: null, error: null, pending: 0,
 })
 export const getSyncStatus = () => invoke<SyncStatus>('get_sync_status')
 export const configureSync = (folder: string | null) => invoke<void>('configure_sync', { folder })
