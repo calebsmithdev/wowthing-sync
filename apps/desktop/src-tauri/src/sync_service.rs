@@ -22,6 +22,116 @@ pub struct SyncStatus {
     pub last_success: Option<u64>,
     pub error: Option<String>,
     pub pending: usize,
+    pub failures: Vec<FileFailure>,
+    pub warning: Option<String>,
+}
+#[derive(Clone, PartialEq, Serialize)]
+pub struct FileFailure {
+    pub file: String,
+    pub message: String,
+}
+impl SyncStatus {
+    fn finish_upload(
+        &mut self,
+        file: &Path,
+        outcome: Result<(), String>,
+        now: u64,
+        effects: impl FnOnce(bool, u64) -> Result<(), String>,
+    ) {
+        let successful = outcome.is_ok();
+        self.record_upload(file, outcome, now);
+        self.warning = effects(successful, now).err();
+    }
+    fn record_upload(&mut self, file: &Path, outcome: Result<(), String>, now: u64) {
+        self.is_processing = false;
+        let file = file.to_string_lossy().into_owned();
+        self.failures.retain(|failure| failure.file != file);
+        match outcome {
+            Ok(()) => self.last_success = Some(now),
+            Err(message) => self.failures.push(FileFailure { file, message }),
+        }
+    }
+}
+pub(crate) fn validate_folder(folder: &Path) -> Result<Vec<PathBuf>, String> {
+    if !folder.is_dir() || !folder.join("WTF/Account").is_dir() {
+        return Err(
+            "Choose the World of Warcraft _retail_ folder containing WTF/Account in Settings."
+                .into(),
+        );
+    }
+    let files = discover(folder)?;
+    if files.is_empty() {
+        return Err("No WoWthing_Collector.lua files found. Enable the collector addon and log out of WoW, then choose the folder again.".into());
+    }
+    Ok(files)
+}
+fn stored_last_success(value: Option<serde_json::Value>) -> Option<u64> {
+    let value = value?;
+    value.as_u64().or_else(|| {
+        chrono::DateTime::parse_from_rfc3339(value.as_str()?)
+            .ok()?
+            .timestamp()
+            .try_into()
+            .ok()
+    })
+}
+fn ready_store(app: &tauri::AppHandle) -> Result<(), String> {
+    let store = app
+        .store(".settings.dat")
+        .map_err(|_| "Could not read Settings. Reopen Settings and try again.".to_string())?;
+    if !store
+        .get("api-key")
+        .is_some_and(|v| v.as_str().is_some_and(|key| !key.trim().is_empty()))
+    {
+        return Err("Configure your WoWthing API key in Settings.".into());
+    }
+    Ok(())
+}
+fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    let store = app
+        .store(".settings.dat")
+        .map_err(|_| "Could not access sync preferences".to_string())?;
+    let mut errors = Vec::new();
+    if successful {
+        store.set("last-success", serde_json::json!(now));
+        if store.save().is_err() {
+            errors.push("Upload succeeded, but its timestamp could not be saved.");
+        }
+    }
+    if store
+        .get("notifications-enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        match app.notification().permission_state() {
+            Ok(tauri_plugin_notification::PermissionState::Granted) => {
+                if app
+                    .notification()
+                    .builder()
+                    .title("WoWthing Sync")
+                    .body(if successful {
+                        "Collector file uploaded successfully."
+                    } else {
+                        "A collector upload failed. Open the app for details."
+                    })
+                    .show()
+                    .is_err()
+                {
+                    errors.push(
+                        "Desktop notification failed. Sync results remain available in the app.",
+                    );
+                }
+            }
+            Ok(_) => {} // Background work never prompts for permission.
+            Err(_) => errors.push("Could not check desktop notification permission."),
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join(" "))
+    }
 }
 enum Request {
     Configure(u64, Option<String>),
@@ -63,6 +173,9 @@ impl SyncService {
         }
     }
     pub fn configure(&self, folder: Option<String>) -> Result<(), String> {
+        if let Some(folder) = &folder {
+            validate_folder(Path::new(folder))?;
+        }
         self.sender
             .send(Request::Configure(
                 self.generation.fetch_add(1, Ordering::AcqRel) + 1,
@@ -155,7 +268,12 @@ fn run(
         Ok(store) => {
             state.folder = store
                 .get("program-folder")
-                .and_then(|v| v.as_str().map(String::from))
+                .and_then(|v| v.as_str().map(String::from));
+            state.last_success = stored_last_success(
+                store
+                    .get("last-success")
+                    .or_else(|| store.get("last-updated")),
+            )
         }
         Err(e) => state.error = Some(e.to_string()),
     }
@@ -190,6 +308,8 @@ fn run(
                     state.is_processing = false;
                     state.pending = 0;
                     state.error = None;
+                    state.failures.clear();
+                    state.warning = None;
                     manual = false;
                     publish(&app, &shared, &state);
                 }
@@ -198,18 +318,29 @@ fn run(
             }
         }
         let Some(folder) = &state.folder else {
+            state.error = Some("Choose your World of Warcraft _retail_ folder in Settings.".into());
+            publish(&app, &shared, &state);
             continue;
         };
-        let result = discover(Path::new(folder))
+        if let Err(error) = ready_store(&app) {
+            state.error = Some(error);
+            publish(&app, &shared, &state);
+            continue;
+        }
+        let result = validate_folder(Path::new(folder))
             .and_then(|files| fingerprints(&files).map(|prints| (files, prints)));
         let (files, prints) = match result {
             Ok(result) => result,
             Err(error) => {
                 state.error = Some(error);
+                state.files.clear();
+                // Keep pending settled changes and their deadlines through transient scan errors.
+                state.pending = queue.len();
                 publish(&app, &shared, &state);
                 continue;
             }
         };
+        state.error = None;
         state.files = files
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
@@ -246,17 +377,13 @@ fn run(
             continue;
         }
         if let Some(outcome) = outcome {
-            match outcome {
-                Ok(_) => {
-                    state.last_success = Some(
-                        SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
-                    )
-                }
-                Err(error) => state.error = Some(error),
-            }
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            state.finish_upload(&file, outcome.map(|_| ()), now, |successful, now| {
+                upload_effects(&app, successful, now)
+            });
         }
         publish(&app, &shared, &state);
     }
@@ -280,6 +407,63 @@ pub fn sync_now(service: tauri::State<'_, SyncService>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_and_empty_account_folders_are_errors() {
+        let root = std::env::temp_dir().join(format!("wowthing-empty-{}", std::process::id()));
+        assert!(validate_folder(&root).is_err());
+        std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        assert!(validate_folder(&root).unwrap_err().contains("No WoWthing"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn partial_failure_remains_visible_after_another_file_succeeds() {
+        let mut status = SyncStatus {
+            is_processing: true,
+            ..Default::default()
+        };
+        status.record_upload(
+            Path::new("failed.lua"),
+            Err("authentication failed".into()),
+            1,
+        );
+        assert!(!status.is_processing);
+        assert_eq!(status.last_success, None);
+        status.is_processing = true;
+        status.record_upload(Path::new("successful.lua"), Ok(()), 2);
+        assert!(!status.is_processing);
+        assert_eq!(status.last_success, Some(2));
+        assert_eq!(status.failures.len(), 1);
+        status.record_upload(Path::new("failed.lua"), Ok(()), 3);
+        assert!(status.failures.is_empty());
+        assert_eq!(status.last_success, Some(3));
+    }
+    #[test]
+    fn storage_and_notification_failures_do_not_erase_success_or_leave_processing() {
+        for failure in ["storage failed", "notification failed"] {
+            let mut status = SyncStatus {
+                is_processing: true,
+                ..Default::default()
+            };
+            status.finish_upload(Path::new("collector.lua"), Ok(()), 2, |_, _| {
+                Err(failure.into())
+            });
+            assert!(!status.is_processing);
+            assert_eq!(status.last_success, Some(2));
+            assert_eq!(status.warning.as_deref(), Some(failure));
+        }
+    }
+    #[test]
+    fn migrates_legacy_success_dates_and_ignores_invalid_dates() {
+        assert_eq!(
+            stored_last_success(Some(serde_json::json!("2026-10-06T00:00:00Z"))),
+            Some(1791244800)
+        );
+        assert_eq!(stored_last_success(Some(serde_json::json!(123))), Some(123));
+        assert_eq!(
+            stored_last_success(Some(serde_json::json!("invalid"))),
+            None
+        );
+    }
     #[test]
     fn rescans_new_and_replaced_collectors() {
         let root = std::env::temp_dir().join(format!("wowthing-discovery-{}", std::process::id()));

@@ -5,7 +5,7 @@
 
       <div class="mb-4">
         <template v-if="lastUpdated">
-          Data uploaded
+          Last successful file upload
           <UTooltip :text="formattedLastUpdated" :popper="{placement: 'top'}">
             {{ lastUpdatedFromNow }}
           </UTooltip>
@@ -15,7 +15,6 @@
         </template>
       </div>
 
-      <p v-if="syncError" role="alert" class="mb-4 text-red-400">{{ syncError }}</p>
       <template v-if="apiKey">
         <UButton @click="handleUpload()" :loading="isProcessing" :disabled="isProcessing">Manually Upload Data</UButton>
       </template>
@@ -28,5 +27,5 @@
 
 <script setup lang="ts">
   const apiKey = useApiKeys();
-  const { handleUpload, lastUpdated, lastUpdatedFromNow, isProcessing, formattedLastUpdated, syncError } = useInternalFileUpload();
+  const { handleUpload, lastUpdated, lastUpdatedFromNow, isProcessing, formattedLastUpdated } = useInternalFileUpload();
 </script>
