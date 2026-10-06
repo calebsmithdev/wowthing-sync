@@ -4,7 +4,7 @@
 
     <UAlert
       v-if="loadError"
-      color="red"
+      color="error"
       variant="soft"
       :title="'Debug data unavailable'"
     >
@@ -81,6 +81,7 @@
 </template>
 
 <script setup lang="ts">
+import type { BadgeProps } from '@nuxt/ui';
 import { checkPermissions, isTauri } from '@tauri-apps/api/core';
 import { getName, getVersion } from '@tauri-apps/api/app';
 import { arch, platform, type as osType, version as osVersion } from '@tauri-apps/plugin-os';
@@ -157,20 +158,20 @@ const formatPermissionState = (value: unknown): { status: string; raw?: string }
   }
 };
 
-const badgeColor = (status: string): string => {
+const badgeColor = (status: string): BadgeProps['color'] => {
   switch (status) {
     case 'granted':
-      return 'green';
+      return 'success';
     case 'denied':
     case 'error':
-      return 'red';
+      return 'error';
     case 'prompt':
     case 'prompt-with-rationale':
-      return 'yellow';
+      return 'warning';
     case 'details':
-      return 'blue';
+      return 'info';
     default:
-      return 'gray';
+      return 'neutral';
   }
 };
 

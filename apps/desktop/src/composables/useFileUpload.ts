@@ -18,7 +18,7 @@ export const useInternalFileUpload = () => {
   const isProcessing = ref(false);
   const stopWatching = ref<UnwatchFn>(null);
   const lastUpdatedFromNow = ref('');
-  const lastUpdated = useState(LAST_UPDATED, () => dayjs());
+  const lastUpdated = useState<string | dayjs.Dayjs | null>(LAST_UPDATED, () => dayjs());
   const watchingFiles = useState('watching-files', () => ([]));
   const notifications = useNotifications();
   const formattedLastUpdated = computed(() => dayjs(lastUpdated.value).format('lll'));

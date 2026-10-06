@@ -1,4 +1,4 @@
-import Lara from '@primevue/themes/lara';
+import Lara from '@primeuix/themes/lara';
 import tailwindcss from "@tailwindcss/vite";
 
 const downloadManifestRaw = process.env.NUXT_DOWNLOAD_MANIFEST;
