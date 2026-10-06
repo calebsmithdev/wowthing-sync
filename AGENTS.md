@@ -364,7 +364,7 @@ npm run --prefix ./apps/desktop test:unit
 ### Dependency maintenance (2026-10-06)
 
 * Tauri 2.12: the crate requires Rust 1.90. `setup/permissions.rs` denies unrelated new webview permission requests while leaving notification consent at the platform default; persisted webview decisions may bypass this handler. Native capabilities are unchanged.
-* Updater resources use `await using`; keep `public/polyfills/disposable.js` ahead of app modules and retain the ES2022 build target plus `ESNext.Disposable` types for older system webviews. Unit coverage includes cleanup, permission decisions, and polyfill stability.
+* Updater resources are closed explicitly via `try`/`finally`; do not use `await using` (Vite dev serves it untranspiled, and older WebKit fails with `SyntaxError: Unexpected identifier`). Keep `public/polyfills/disposable.js` ahead of app modules and retain the ES2022 build target plus `ESNext.Disposable` types for older system webviews. Unit coverage includes cleanup, permission decisions, and polyfill stability.
 * See [dependency review](docs/dependency-review.md) for selected versions, validation commands, compatibility changes, and unresolved audit findings.
 * Lockfiles: `Cargo.lock` at the workspace root, plus one `package-lock.json` each in `apps/desktop` and `marketing`. Use `npm ci` for reproducible installs and Cargo `--locked` for checks.
 * Node requirement: `^22.22.3 || ^24.15.0 || >=26.0.0`. Desktop `postinstall` runs `nuxt prepare`; `typecheck` runs `nuxt typecheck` with vue-tsc. Generate desktop assets before standalone Cargo checks.

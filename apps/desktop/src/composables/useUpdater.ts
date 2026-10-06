@@ -13,11 +13,11 @@ export default function useUpdater() {
 
   const handleUpdate = async () => {
     console.log('Attempting to update the app...')
-    {
-      // Dispose before relaunch, including when downloading or installing fails.
-      await using update = await check()
-      if (!update) return
+    // Avoid `await using`: dev builds ship it untranspiled and older webviews can't parse it.
+    const update = await check()
+    if (!update) return
 
+    try {
       let downloaded = 0
       let contentLength = 0
 
@@ -36,6 +36,9 @@ export default function useUpdater() {
             break
         }
       })
+    } finally {
+      // Dispose before relaunch, including when downloading or installing fails.
+      await update.close()
     }
     await relaunch()
   }
@@ -43,8 +46,9 @@ export default function useUpdater() {
   const pollForUpdate = async () => {
     try {
       // Each check owns a Rust resource, even when only inspecting availability.
-      await using update = await check()
+      const update = await check()
       if (!disposed) updateNeeded.value = Boolean(update)
+      await update?.close()
     } catch (error) {
       console.error('Failed to check for updates:', error)
     } finally {

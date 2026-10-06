@@ -51,8 +51,9 @@ and adopted the two features relevant to this desktop app:
   retain the existing consent flow. This covers requests forwarded by each
   platform's webview; previously persisted browser decisions may bypass it.
   Native Tauri capabilities are separate and unchanged.
-- Updater checks and installations use `await using` to close their Rust
-  resource on success and failure, before relaunch. Polling waits for the prior
+- Updater checks and installations close their Rust resource with explicit
+  `try`/`finally` (not `await using`, which Vite dev serves untranspiled and
+  older webviews cannot parse) on success and failure, before relaunch. Polling waits for the prior
   check to finish and stops on unmount; late listeners and results are cleaned up.
 - A blocking external script defines `Symbol.asyncDispose` before app modules
   load on older webviews. TypeScript includes `ESNext.Disposable`, and Vite
