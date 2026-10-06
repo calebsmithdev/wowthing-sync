@@ -11,6 +11,11 @@ export default defineNuxtConfig({
     preference: 'dark'
   },
   app: {
+    head: {
+      script: [
+        { src: '/polyfills/disposable.js', tagPriority: 'critical' },
+      ],
+    },
     pageTransition: {
       name: 'fade',
       mode: 'out-in',
@@ -21,6 +26,9 @@ export default defineNuxtConfig({
     },
   },
   vite: {
+    build: {
+      target: 'es2022',
+    },
     clearScreen: false,
     envPrefix: ['VITE_', 'TAURI_'],
     plugins: [

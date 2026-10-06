@@ -5,6 +5,7 @@ mod setup;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .on_permission_request(|_, kind| setup::permissions::webview_permission_response(kind))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_persisted_scope::init())
@@ -23,13 +24,12 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Don't kill the app when the user clicks close
                 window.hide().unwrap();
                 api.prevent_close();
             }
-            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             commands::submit_addon_data::submit_addon_data

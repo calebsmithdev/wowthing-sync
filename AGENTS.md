@@ -360,3 +360,13 @@ npm run --prefix ./apps/desktop test:unit
 * Tauri config (`apps/desktop/src-tauri/tauri.conf.json`): allowlist section absent (defaults apply); plugins = `fs` (requireLiteralLeadingDot=false) and `updater` (GitHub endpoint, Windows passive install, bundled pubkey); updater artifacts set to `v1Compatible`; bundle targets = `all`; no autostart wiring in config.
 * Nuxt config (`apps/desktop/nuxt.config.ts`): modules = `@nuxt/ui`; SSR disabled (`ssr: false`); no CSP defined in `app` head; no custom path aliases declared; Vite uses Tailwind plugin with strict HMR port 3001.
 * Rust crate (`apps/desktop/src-tauri/Cargo.toml`): default feature `custom-protocol` mapped to `tauri/custom-protocol`; additional plugins via dependencies (store, persisted-scope, fs+watch, shell, process, dialog, os, notification, log, tray-icon feature, reqwest with json+socks); platform-gated deps include autostart, updater, single-instance; `rust-toolchain` file not present in repo root.
+
+### Dependency maintenance (2026-10-06)
+
+* Tauri 2.12: the crate requires Rust 1.90. `setup/permissions.rs` denies unrelated new webview permission requests while leaving notification consent at the platform default; persisted webview decisions may bypass this handler. Native capabilities are unchanged.
+* Updater resources use `await using`; keep `public/polyfills/disposable.js` ahead of app modules and retain the ES2022 build target plus `ESNext.Disposable` types for older system webviews. Unit coverage includes cleanup, permission decisions, and polyfill stability.
+* See [dependency review](docs/dependency-review.md) for selected versions, validation commands, compatibility changes, and unresolved audit findings.
+* Lockfiles: `Cargo.lock` at the workspace root, plus one `package-lock.json` each in `apps/desktop` and `marketing`. Use `npm ci` for reproducible installs and Cargo `--locked` for checks.
+* Node requirement: `^22.22.3 || ^24.15.0 || >=26.0.0`. Desktop `postinstall` runs `nuxt prepare`; `typecheck` runs `nuxt typecheck` with vue-tsc. Generate desktop assets before standalone Cargo checks.
+* Actual validation gaps: TypeScript still has `strict: false`; ESLint references a missing generated Nuxt config; no E2E script is configured. Frontend unit tests use Vitest with Tauri mocks. A debug page exists at `apps/desktop/src/pages/__debug.vue`.
+* CI currently uses floating Node `lts/*` and Rust `stable`: JS tests run on `ubuntu-latest`, Rust tests on `ubuntu-24.04`, and release builds on macOS (ARM/Intel), Ubuntu, and Windows. Local dependency validation used Node 22.22.3 / Rust 1.97.1 on macOS only.

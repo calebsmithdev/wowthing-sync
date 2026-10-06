@@ -74,12 +74,13 @@ pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
             }
             _ => {}
         })
-        .on_tray_icon_event(|tray, event| match event {
-            TrayIconEvent::Click {
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
-            } => {
+            } = event
+            {
                 // Show and focus the main window when the tray is clicked
                 let is_macos = platform() == "macos";
                 if !is_macos {
@@ -90,7 +91,6 @@ pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
                     }
                 }
             }
-            _ => {}
         });
 
     if cfg!(debug_assertions) {

@@ -12,16 +12,15 @@
         v-model="apiKey"
         autocomplete="off"
         class="w-full"
-        :ui="{ icon: { trailing: { pointer: '' } } }"
+        :ui="{ trailing: 'pointer-events-auto' }"
         :type="showPassword ? 'text' : 'password'"
       >
         <template #trailing>
           <UButton
-            color="gray"
+            color="neutral"
             variant="link"
             :icon="showPassword ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'"
-            :padded="false"
-            class="cursor-pointer"
+            class="cursor-pointer p-0"
             @click="toggleShowPassword"
           />
         </template>
