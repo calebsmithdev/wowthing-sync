@@ -10,13 +10,14 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 
 #[derive(Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub folder: Option<String>,
+    pub has_api_key: bool,
     pub files: Vec<String>,
     pub is_processing: bool,
     pub last_success: Option<u64>,
@@ -53,13 +54,7 @@ impl SyncStatus {
     }
 }
 pub(crate) fn validate_folder(folder: &Path) -> Result<Vec<PathBuf>, String> {
-    if !folder.is_dir() || !folder.join("WTF/Account").is_dir() {
-        return Err(
-            "Choose the World of Warcraft _retail_ folder containing WTF/Account in Settings."
-                .into(),
-        );
-    }
-    let files = discover(folder)?;
+    let files = crate::collector_fs::ApprovedRoot::open(folder)?.discover()?;
     if files.is_empty() {
         return Err("No WoWthing_Collector.lua files found. Enable the collector addon and log out of WoW, then choose the folder again.".into());
     }
@@ -76,16 +71,9 @@ fn stored_last_success(value: Option<serde_json::Value>) -> Option<u64> {
     })
 }
 fn ready_store(app: &tauri::AppHandle) -> Result<(), String> {
-    let store = app
-        .store(".settings.dat")
-        .map_err(|_| "Could not read Settings. Reopen Settings and try again.".to_string())?;
-    if !store
-        .get("api-key")
-        .is_some_and(|v| v.as_str().is_some_and(|key| !key.trim().is_empty()))
-    {
-        return Err("Configure your WoWthing API key in Settings.".into());
-    }
-    Ok(())
+    app.state::<crate::credentials::SecretManager>()
+        .key()
+        .map(|_| ())
 }
 fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<(), String> {
     use tauri_plugin_notification::NotificationExt;
@@ -173,9 +161,18 @@ impl SyncService {
         }
     }
     pub fn configure(&self, folder: Option<String>) -> Result<(), String> {
-        if let Some(folder) = &folder {
-            validate_folder(Path::new(folder))?;
-        }
+        let folder = folder
+            .map(|folder| {
+                validate_folder(Path::new(&folder))?;
+                Ok::<_, String>(
+                    Path::new(&folder)
+                        .canonicalize()
+                        .map_err(|_| "WoW folder unavailable".to_string())?
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            })
+            .transpose()?;
         self.sender
             .send(Request::Configure(
                 self.generation.fetch_add(1, Ordering::AcqRel) + 1,
@@ -184,6 +181,14 @@ impl SyncService {
             .map_err(|_| "Sync service stopped".into())
     }
     pub fn enqueue_file(&self, file: String) -> Result<(), String> {
+        let status = self.snapshot();
+        let root = crate::collector_fs::ApprovedRoot::open(Path::new(
+            status
+                .folder
+                .as_deref()
+                .ok_or("Choose a WoW folder in Settings")?,
+        ))?;
+        root.metadata(Path::new(&file))?;
         self.sender
             .send(Request::File(PathBuf::from(file)))
             .map_err(|_| "Sync service stopped".into())
@@ -224,37 +229,47 @@ fn publish(app: &tauri::AppHandle, status: &Arc<Mutex<SyncStatus>>, value: &Sync
 
 /// Rescan directories, rather than holding handles to individual files: rename/replace and
 /// new account folders are discovered even when no frontend is mounted.
+#[cfg(test)]
 pub(crate) fn discover(folder: &Path) -> Result<Vec<PathBuf>, String> {
-    fn visit(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
-        for entry in
-            std::fs::read_dir(path).map_err(|e| format!("Cannot read account folder: {e}"))?
-        {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let kind = entry.file_type().map_err(|e| e.to_string())?;
-            if kind.is_dir() {
-                visit(&entry.path(), files)?;
-            } else if kind.is_file() && entry.file_name() == "WoWthing_Collector.lua" {
-                files.push(entry.path());
-            }
-        }
-        Ok(())
-    }
-    let mut files = Vec::new();
-    visit(&folder.join("WTF/Account"), &mut files)?;
-    files.sort();
-    Ok(files)
+    crate::collector_fs::ApprovedRoot::open(folder)?.discover()
 }
-fn fingerprints(files: &[PathBuf]) -> Result<BTreeMap<PathBuf, u64>, String> {
+#[derive(Clone, PartialEq)]
+struct FileStamp {
+    len: u64,
+    modified: Option<SystemTime>,
+    created: Option<SystemTime>,
+}
+type FingerprintCache = BTreeMap<PathBuf, (FileStamp, u64, Instant)>;
+fn fingerprints(
+    root: &crate::collector_fs::ApprovedRoot,
+    files: &[PathBuf],
+    cache: &mut FingerprintCache,
+) -> Result<BTreeMap<PathBuf, u64>, String> {
     use std::hash::{Hash, Hasher};
-    files
-        .iter()
-        .map(|p| {
-            let contents = std::fs::read(p).map_err(|e| e.to_string())?;
+    let mut fingerprints = BTreeMap::new();
+    for file in files {
+        let metadata = root.metadata(file)?;
+        let stamp = FileStamp {
+            len: metadata.len(),
+            modified: metadata.modified().ok().map(|time| time.into_std()),
+            created: metadata.created().ok().map(|time| time.into_std()),
+        };
+        let cached = cache.get(file).filter(|(previous, _, verified)| {
+            previous == &stamp && verified.elapsed() < Duration::from_secs(30)
+        });
+        let hash = if let Some((_, hash, _)) = cached {
+            *hash
+        } else {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            contents.hash(&mut hasher);
-            Ok((p.clone(), hasher.finish()))
-        })
-        .collect()
+            root.read(file)?.hash(&mut hasher);
+            let hash = hasher.finish();
+            cache.insert(file.clone(), (stamp, hash, Instant::now()));
+            hash
+        };
+        fingerprints.insert(file.clone(), hash);
+    }
+    cache.retain(|file, _| files.contains(file));
+    Ok(fingerprints)
 }
 fn run(
     app: tauri::AppHandle,
@@ -264,6 +279,11 @@ fn run(
     generation: Arc<AtomicU64>,
 ) {
     let mut state = SyncStatus::default();
+    let secret_status = app
+        .state::<crate::credentials::SecretManager>()
+        .reload(&app);
+    state.has_api_key = secret_status.has_key;
+    state.error = secret_status.error;
     match app.store(".settings.dat") {
         Ok(store) => {
             state.folder = store
@@ -286,11 +306,19 @@ fn run(
         }
     };
     let mut previous = BTreeMap::new();
+    let mut cache = FingerprintCache::new();
+    let mut approved = state
+        .folder
+        .as_ref()
+        .and_then(|folder| crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok());
+    if let Some(root) = &approved {
+        state.folder = Some(root.path().to_string_lossy().into_owned());
+    }
     let mut queue = crate::sync_queue::SyncQueue::default();
     let mut active_generation = 0;
     publish(&app, &shared, &state);
     while !stopping.load(Ordering::Acquire) {
-        let request = match receiver.recv_timeout(Duration::from_millis(500)) {
+        let request = match receiver.recv_timeout(Duration::from_secs(1)) {
             Ok(request) => Some(request),
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => None,
@@ -301,8 +329,12 @@ fn run(
                 Request::Shutdown => return,
                 Request::Configure(epoch, folder) => {
                     active_generation = epoch;
+                    approved = folder.as_ref().and_then(|folder| {
+                        crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok()
+                    });
                     state.folder = folder;
                     previous.clear();
+                    cache.clear();
                     queue = Default::default();
                     state.files.clear();
                     state.is_processing = false;
@@ -313,22 +345,53 @@ fn run(
                     manual = false;
                     publish(&app, &shared, &state);
                 }
-                Request::Manual => manual = true,
+                Request::Manual => {
+                    if !app
+                        .state::<crate::credentials::SecretManager>()
+                        .status()
+                        .has_key
+                    {
+                        app.state::<crate::credentials::SecretManager>()
+                            .reload(&app);
+                    }
+                    manual = true;
+                }
                 Request::File(file) => queue.manual([file], Instant::now()),
             }
         }
+        state.has_api_key = app
+            .state::<crate::credentials::SecretManager>()
+            .status()
+            .has_key;
         let Some(folder) = &state.folder else {
             state.error = Some("Choose your World of Warcraft _retail_ folder in Settings.".into());
             publish(&app, &shared, &state);
             continue;
         };
         if let Err(error) = ready_store(&app) {
+            state.has_api_key = false;
             state.error = Some(error);
             publish(&app, &shared, &state);
             continue;
         }
-        let result = validate_folder(Path::new(folder))
-            .and_then(|files| fingerprints(&files).map(|prints| (files, prints)));
+        state.has_api_key = true;
+        if approved.is_none() {
+            approved = crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok();
+        }
+        let Some(root) = &approved else {
+            state.error = Some("WoW folder unavailable. Choose it again in Settings.".into());
+            publish(&app, &shared, &state);
+            continue;
+        };
+        let result = root.discover().and_then(|files| {
+            if files.is_empty() {
+                return Err(
+                    "No WoWthing_Collector.lua files found. Enable the addon and log out of WoW."
+                        .into(),
+                );
+            }
+            fingerprints(root, &files, &mut cache).map(|prints| (files, prints))
+        });
         let (files, prints) = match result {
             Ok(result) => result,
             Err(error) => {
@@ -365,10 +428,9 @@ fn run(
         state.pending = queue.len();
         state.error = None;
         publish(&app, &shared, &state);
-        let file_path = file.to_string_lossy();
         let outcome = tauri::async_runtime::block_on(async {
             tokio::select! {
-                result = crate::commands::submit_addon_data::upload_file(&app, &client, &file_path) => Some(result),
+                result = crate::commands::submit_addon_data::upload_file(&app, &client, root, &file) => Some(result),
                 () = async { while !stopping.load(Ordering::Acquire) && generation.load(Ordering::Acquire) == active_generation { tokio::time::sleep(Duration::from_millis(50)).await; } } => None,
             }
         });
@@ -469,6 +531,8 @@ mod tests {
         let root = std::env::temp_dir().join(format!("wowthing-discovery-{}", std::process::id()));
         let account = root.join("WTF/Account/TEST/SavedVariables");
         std::fs::create_dir_all(&account).unwrap();
+        let root = root.canonicalize().unwrap();
+        let account = root.join("WTF/Account/TEST/SavedVariables");
         assert!(discover(&root).unwrap().is_empty());
         let collector = account.join("WoWthing_Collector.lua");
         std::fs::write(&collector, "first").unwrap();
@@ -476,14 +540,8 @@ mod tests {
         let replacement = account.join("replacement");
         std::fs::write(&replacement, "replacement contents").unwrap();
         std::fs::rename(&replacement, &collector).unwrap();
-        assert_ne!(
-            fingerprints(&discover(&root).unwrap()).unwrap()[&collector],
-            fingerprints(&[])
-                .unwrap()
-                .get(&collector)
-                .copied()
-                .unwrap_or_default()
-        );
+        let approved = crate::collector_fs::ApprovedRoot::open(&root).unwrap();
+        assert_eq!(approved.read(&collector).unwrap(), b"replacement contents");
         std::fs::remove_dir_all(root).unwrap();
     }
 }
