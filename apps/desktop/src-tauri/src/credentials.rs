@@ -7,13 +7,27 @@ trait Vault {
     fn read(&self) -> Result<Option<String>, String>;
     fn write(&self, key: &str) -> Result<(), String>;
 }
-struct OsVault;
+struct OsVault {
+    #[cfg(not(feature = "integration-test"))]
+    service: String,
+    #[cfg(not(feature = "integration-test"))]
+    account: String,
+}
+impl Default for OsVault {
+    fn default() -> Self {
+        Self {
+            #[cfg(not(feature = "integration-test"))]
+            service: "com.calebsmithdev.wowthing-sync".into(),
+            #[cfg(not(feature = "integration-test"))]
+            account: "wowthing-api-key".into(),
+        }
+    }
+}
 const LOCKED: &str = "OS credential storage is locked or unavailable. Unlock your keychain/credential service, then save your API key or retry.";
 #[cfg(not(feature = "integration-test"))]
 impl OsVault {
     fn entry(&self) -> Result<keyring::Entry, String> {
-        keyring::Entry::new("com.calebsmithdev.wowthing-sync", "wowthing-api-key")
-            .map_err(|_| LOCKED.into())
+        keyring::Entry::new(&self.service, &self.account).map_err(|_| LOCKED.into())
     }
 }
 #[cfg(not(feature = "integration-test"))]
@@ -123,10 +137,14 @@ impl SecretManager {
             let store = crate::preferences::store(app)
                 .map_err(|_| "Could not access legacy settings for secure migration".to_string())?;
             let legacy = store.get("api-key");
-            migrate(&OsVault, legacy.as_ref().and_then(|v| v.as_str()), || {
-                store.commit("api-key", None).map_err(|_| "Key saved securely, but legacy settings cleanup failed. Retry after fixing settings permissions.".to_string())?;
-                Ok(())
-            })
+            migrate(
+                &OsVault::default(),
+                legacy.as_ref().and_then(|v| v.as_str()),
+                || {
+                    store.commit("api-key", None).map_err(|_| "Key saved securely, but legacy settings cleanup failed. Retry after fixing settings permissions.".to_string())?;
+                    Ok(())
+                },
+            )
         })();
         match result {
             Ok(key) => {
@@ -168,7 +186,7 @@ impl SecretManager {
     fn save(&self, app: &tauri::AppHandle, key: String) -> Result<ApiKeyStatus, String> {
         let key = validate_key(&key)?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        save_cached(&mut cache, &OsVault, &key, || {
+        save_cached(&mut cache, &OsVault::default(), &key, || {
             let store = crate::preferences::store(app).map_err(|_| {
                 "Key saved securely, but legacy settings could not be accessed. Retry saving."
                     .to_string()
@@ -201,6 +219,60 @@ pub async fn save_api_key(app: tauri::AppHandle, key: String) -> Result<ApiKeySt
     .await
     .map_err(|_| "Could not save API key".to_string())?
 }
+#[cfg(feature = "os-integration-test")]
+pub(crate) fn ci_roundtrip(identity: &str) -> Result<(), String> {
+    let vault = OsVault {
+        service: format!("com.calebsmithdev.{identity}"),
+        account: "synthetic-ci-account".into(),
+    };
+    if vault.read()?.is_some() {
+        return Err("unique credential identity unexpectedly exists".into());
+    }
+    let result = (|| {
+        verified_save(&vault, "synthetic-first-key")?;
+        verified_save(&vault, "synthetic-updated-key")?;
+        Ok(())
+    })();
+    let cleanup = vault
+        .entry()?
+        .delete_credential()
+        .map_err(|_| "Could not remove synthetic credential".to_string());
+    cleanup?;
+    if vault.read()?.is_some() {
+        return Err("Synthetic credential still exists after deletion".into());
+    }
+    result
+}
+#[cfg(feature = "os-integration-test")]
+pub(crate) fn ci_unavailable(identity: &str) -> Result<(), String> {
+    let vault = OsVault {
+        service: format!("com.calebsmithdev.{identity}"),
+        account: "synthetic-ci-account".into(),
+    };
+    if vault.read().is_err() {
+        Ok(())
+    } else {
+        Err("Credential backend unexpectedly available; unavailable probe did not execute".into())
+    }
+}
+
+#[cfg(feature = "os-integration-test")]
+pub(crate) fn ci_cleanup(identity: &str) -> Result<(), String> {
+    let vault = OsVault {
+        service: format!("com.calebsmithdev.{identity}"),
+        account: "synthetic-ci-account".into(),
+    };
+    match vault.entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => {}
+        Err(_) => return Err("Synthetic credential cleanup failed".into()),
+    }
+    if vault.read()?.is_some() {
+        Err("Synthetic credential remains after cleanup".into())
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

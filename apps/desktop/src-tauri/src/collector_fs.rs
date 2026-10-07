@@ -192,4 +192,37 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
         std::fs::remove_file(outside).unwrap();
     }
+    #[cfg(windows)]
+    #[test]
+    fn rejects_windows_file_and_directory_reparse_escapes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("WoW 雪 with spaces");
+        let file = root.join("WTF/Account/SYNTHETIC/SavedVariables/WoWthing_Collector.lua");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "synthetic").unwrap();
+        let approved = ApprovedRoot::open(&root).unwrap();
+        let file = approved
+            .path()
+            .join("WTF/Account/SYNTHETIC/SavedVariables/WoWthing_Collector.lua");
+        let outside = temp.path().join("outside.lua");
+        std::fs::write(&outside, "must not escape").unwrap();
+        std::fs::remove_file(&file).unwrap();
+        // Hosted Windows runners must support symbolic links. Failure is coverage failure,
+        // never a silent pass; local runs without privilege can choose Unix coverage.
+        std::os::windows::fs::symlink_file(&outside, &file)
+            .expect("Windows reparse test requires symlink privilege");
+        assert!(approved.read(&file).is_err());
+        std::fs::remove_file(&file).unwrap();
+        std::fs::remove_dir(file.parent().unwrap()).unwrap();
+        let outside_directory = temp.path().join("outside-directory");
+        std::fs::create_dir(&outside_directory).unwrap();
+        std::fs::write(
+            outside_directory.join(COLLECTOR),
+            "existing escaped directory collector",
+        )
+        .unwrap();
+        std::os::windows::fs::symlink_dir(&outside_directory, file.parent().unwrap()).unwrap();
+        assert!(approved.read(&file).is_err());
+        std::fs::remove_dir(file.parent().unwrap()).unwrap();
+    }
 }
