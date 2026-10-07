@@ -3,14 +3,14 @@
     <div class="max-w-lg space-y-5">
       <template v-if="file">
         <div class="mx-auto size-10 animate-spin rounded-full border-2 border-amber-400/20 border-t-amber-400" aria-hidden="true" />
-        <h1 class="text-3xl font-bold tracking-tight text-white">Your download is starting…</h1>
+        <h1 class="font-display text-3xl font-bold text-white">Your download is starting…</h1>
         <p class="text-slate-400">
           Downloading <span class="text-slate-200">{{ file.name }}</span> ({{ formatSize(file.size) }}).
           If nothing happens, <a :href="file.url" class="text-amber-400 hover:underline">download it directly</a>.
         </p>
       </template>
       <template v-else>
-        <h1 class="text-3xl font-bold tracking-tight text-white">Download unavailable</h1>
+        <h1 class="font-display text-3xl font-bold text-white">Download unavailable</h1>
         <p class="text-slate-400">
           {{ known ? "We couldn't find this download in the latest release." : 'Unknown download platform.' }}
           You can pick a file from the

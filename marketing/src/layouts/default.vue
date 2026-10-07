@@ -3,7 +3,7 @@
     <div aria-hidden="true" class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[44rem] bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(245,158,11,0.22),transparent)]" />
 
     <header class="container flex items-center justify-between py-5">
-      <NuxtLink to="/" class="flex items-center gap-3 font-semibold text-white">
+      <NuxtLink to="/" class="flex items-center gap-3 font-display font-bold tracking-wide text-white">
         <img src="~/assets/images/logo.png" alt="" class="size-9">
         Wowthing Sync
       </NuxtLink>
@@ -19,7 +19,10 @@
 
     <footer class="border-t border-white/5">
       <div class="container flex flex-col gap-3 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-        <p>Open source under the GPL-3.0 license.</p>
+        <div class="space-y-1">
+          <p>Open source under the GPL-3.0 license.</p>
+          <p class="text-xs">World of Warcraft is a trademark of Blizzard Entertainment. Wowthing Sync is not affiliated with Blizzard.</p>
+        </div>
         <div class="flex gap-5">
           <a :href="`${repo}/releases`" class="hover:text-slate-300">Releases</a>
           <a :href="`${repo}/issues`" class="hover:text-slate-300">Report an issue</a>

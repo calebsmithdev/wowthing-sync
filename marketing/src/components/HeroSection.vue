@@ -1,19 +1,19 @@
 <template>
   <section class="container pt-12 pb-20 text-center lg:pt-20">
-    <a v-if="version" :href="releaseUrl" class="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-300 transition hover:border-amber-400/40">
-      <span class="size-1.5 rounded-full bg-amber-400" />
+    <a v-if="version" :href="releaseUrl" class="mx-auto mb-6 inline-flex items-center gap-2 font-display text-xs font-semibold tracking-[0.25em] text-amber-400 uppercase transition hover:text-amber-300">
+      <span class="size-1.5 rotate-45 bg-amber-400" />
       Version {{ version }}<template v-if="publishedAt"> · {{ publishedAt }}</template>
       <span aria-hidden="true">→</span>
     </a>
-    <h1 class="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-balance text-white sm:text-6xl">
-      Keep WoWthing up to date <span class="text-amber-400">without opening a browser</span>
+    <h1 class="mx-auto max-w-4xl font-display text-4xl font-bold text-balance text-white sm:text-5xl">
+      Keep WoWthing up to date <span class="text-gilded">without opening a browser</span>
     </h1>
     <p class="mx-auto mt-6 max-w-2xl text-lg text-pretty text-slate-400">
       A small desktop app that uploads your WoWthing Collector addon data each time you log out. Set it up once and it runs quietly in your system tray.
     </p>
 
     <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-      <a :href="primary.href" class="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-6 py-3 font-semibold text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300">
+      <a :href="primary.href" class="btn-gilded inline-flex items-center gap-2 rounded-lg px-6 py-3 font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300">
         <svg class="size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.61L6.3 8.24a.75.75 0 1 0-1.1 1.02l4.25 4.5a.75.75 0 0 0 1.1 0l4.25-4.5a.75.75 0 0 0-1.1-1.02l-2.95 3.12V2.75Z" /><path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" /></svg>
         {{ primary.label }}
       </a>

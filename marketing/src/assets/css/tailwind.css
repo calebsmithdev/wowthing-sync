@@ -1,7 +1,10 @@
 @import "tailwindcss";
+@import "@fontsource-variable/cinzel/wght.css";
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Display type for headings only; body copy stays sans for readability. */
+  --font-display: "Cinzel Variable", Georgia, serif;
   --color-ink: #0b1120;
 }
 
@@ -9,6 +12,23 @@
   margin-inline: auto;
   padding-inline: 1.25rem;
   max-width: 72rem;
+}
+
+/* Gold leaf headline text. */
+@utility text-gilded {
+  background-image: linear-gradient(180deg, var(--color-amber-200), var(--color-amber-500));
+  background-clip: text;
+  color: transparent;
+}
+
+/* Primary call to action: a gilded button with an inner highlight. */
+@utility btn-gilded {
+  background-image: linear-gradient(180deg, var(--color-amber-300), var(--color-amber-500));
+  box-shadow: inset 0 0 0 1px var(--color-amber-200), 0 8px 30px rgb(245 158 11 / 0.3);
+  color: var(--color-amber-950);
+  &:hover {
+    background-image: linear-gradient(180deg, var(--color-amber-200), var(--color-amber-400));
+  }
 }
 
 @layer base {
