@@ -65,7 +65,7 @@ jobs:
         with:
           name: frontend-assets-${{ inputs.tier }}
           path: apps/desktop/.output/public/
-      - run: node scripts/ci-run.mjs platform-script-contracts 180 node --test scripts/launchers.test.mjs scripts/process-runner.test.mjs scripts/package-check.test.mjs
+      - run: node scripts/ci-run.mjs platform-script-contracts 180 node --test scripts/launchers.test.mjs scripts/process-runner.test.mjs scripts/package-check.test.mjs scripts/nuxt-runtime.test.mjs
       - run: node scripts/ci-run.mjs native-clippy 900 cargo clippy --locked --all-targets -- -D warnings
       - run: node scripts/ci-run.mjs native-unit-worker 900 node scripts/rust-tests.mjs
       - run: node scripts/ci-run.mjs signature-contract 600 node --test scripts/signature-check.test.mjs
