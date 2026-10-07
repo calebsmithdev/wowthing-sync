@@ -3,12 +3,13 @@
 use super::*;
 use std::{
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{Shutdown, TcpListener, TcpStream},
 };
 
 struct Server {
     endpoint: String,
     requests: Arc<Mutex<Vec<serde_json::Value>>>,
+    events: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
 }
@@ -19,6 +20,8 @@ impl Server {
         let endpoint = format!("http://{}/upload/", listener.local_addr().unwrap());
         let requests = Arc::new(Mutex::new(Vec::new()));
         let output = requests.clone();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let trace = events.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
         let responses = Arc::new(responses);
@@ -30,8 +33,9 @@ impl Server {
                         let responses = responses.clone();
                         let output = output.clone();
                         let stopping = stopping.clone();
+                        let trace = trace.clone();
                         handlers.push(thread::spawn(move || {
-                            serve(stream, responses, output, stopping)
+                            serve(stream, responses, output, trace, stopping)
                         }));
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -47,6 +51,7 @@ impl Server {
         Self {
             endpoint,
             requests,
+            events,
             stop,
             thread: Some(thread),
         }
@@ -70,16 +75,24 @@ fn serve(
     mut stream: TcpStream,
     responses: Arc<Vec<(u16, Duration)>>,
     requests: Arc<Mutex<Vec<serde_json::Value>>>,
+    events: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
 ) {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     let mut bytes = Vec::new();
     let mut buffer = [0; 4096];
     let response = loop {
         let count = match stream.read(&mut buffer) {
-            Ok(0) | Err(_) => return, // Cancellation may abandon a connected request.
+            Ok(0) => return, // Cancellation may abandon a connected request.
+            Err(error) => {
+                events.lock().unwrap().push(format!("read: {error}"));
+                return;
+            }
             Ok(count) => count,
         };
         bytes.extend_from_slice(&buffer[..count]);
@@ -105,6 +118,11 @@ fn serve(
                     .copied()
                     .unwrap_or((200, Duration::ZERO));
                 requests.push(body);
+                events.lock().unwrap().push(format!(
+                    "request {}: HTTP {}",
+                    requests.len(),
+                    response.0
+                ));
                 break response;
             }
         }
@@ -113,11 +131,25 @@ fn serve(
     while start.elapsed() < response.1 && !stop.load(Ordering::Acquire) {
         thread::sleep(Duration::from_millis(5));
     }
-    let _ = write!(
-        stream,
+    // Send complete headers, then half-close and wait for the peer to close so
+    // the fixture completes a graceful HTTP/TCP exchange on every platform.
+    let reply = format!(
         "HTTP/1.1 {} Fixture\r\nContent-Length: 0\r\nConnection: close\r\nRetry-After: 0\r\n\r\n",
         response.0
     );
+    if let Err(error) = stream
+        .write_all(reply.as_bytes())
+        .and_then(|()| stream.shutdown(Shutdown::Write))
+    {
+        events.lock().unwrap().push(format!("response: {error}"));
+        return;
+    }
+    // The read timeout bounds cleanup even if a client does not close.
+    while let Ok(count) = stream.read(&mut buffer) {
+        if count == 0 {
+            break;
+        }
+    }
 }
 #[derive(Clone)]
 struct Io {
@@ -171,11 +203,19 @@ fn io(temp: &tempfile::TempDir, server: &Server) -> Io {
     }
 }
 fn wait(label: &str, condition: impl Fn() -> bool) {
+    wait_with_diagnostics(label, condition, String::new);
+}
+fn wait_with_diagnostics(
+    label: &str,
+    condition: impl Fn() -> bool,
+    diagnostics: impl Fn() -> String,
+) {
     let start = Instant::now();
     while !condition() {
         assert!(
             start.elapsed() < Duration::from_secs(15),
-            "timed out: {label}"
+            "timed out: {label}; {}",
+            diagnostics()
         );
         thread::sleep(Duration::from_millis(10));
     }
@@ -305,9 +345,41 @@ fn real_worker_retries_http_failures_and_reports_bounded_timeouts() {
     let service = SyncService::start_with_io(io(&temp, &server));
     configure(&service, &root);
     service.manual().unwrap();
-    wait("real HTTP retries", || {
-        service.snapshot().last_success.is_some()
-    });
+    let diagnostics = || {
+        format!(
+            "worker={}; HTTP={:?}",
+            serde_json::to_string(&service.snapshot()).unwrap(),
+            server.events.lock().unwrap()
+        )
+    };
+    wait_with_diagnostics(
+        "real HTTP retries",
+        || {
+            let state = service.snapshot();
+            state.last_success.is_some() || !state.failures.is_empty()
+        },
+        diagnostics,
+    );
+    assert!(
+        service.snapshot().last_success.is_some(),
+        "HTTP retry sequence failed: {}",
+        diagnostics()
+    );
+    assert_eq!(
+        server
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event.starts_with("request "))
+            .cloned()
+            .collect::<Vec<_>>(),
+        [
+            "request 1: HTTP 503",
+            "request 2: HTTP 429",
+            "request 3: HTTP 200"
+        ]
+    );
     assert_eq!(
         server.bodies(),
         ["retry payload", "retry payload", "retry payload"]

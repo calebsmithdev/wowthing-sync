@@ -692,6 +692,7 @@ mod tests {
         std::fs::rename(&replacement, &collector).unwrap();
         let approved = crate::collector_fs::ApprovedRoot::open(&root).unwrap();
         assert_eq!(approved.read(&collector).unwrap(), b"replacement contents");
+        drop(approved); // Release the held directory before deleting the Windows fixture.
         std::fs::remove_dir_all(root).unwrap();
     }
 }
