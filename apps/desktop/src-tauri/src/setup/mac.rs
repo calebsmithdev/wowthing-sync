@@ -1,4 +1,6 @@
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 
 pub fn setup_mac(app: &AppHandle) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
