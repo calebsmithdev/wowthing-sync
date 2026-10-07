@@ -1,16 +1,18 @@
 @import "tailwindcss";
-@layer tailwind-base, primevue, tailwind-utilities;
 
-@layer tailwind-base {
-  @tailwind base;
-}
-
-@layer tailwind-utilities {
-  @tailwind components;
-  @tailwind utilities;
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-ink: #0b1120;
 }
 
 @utility container {
   margin-inline: auto;
-  padding-inline: 1rem;
+  padding-inline: 1.25rem;
+  max-width: 72rem;
+}
+
+@layer base {
+  body {
+    @apply bg-ink text-slate-300 antialiased;
+  }
 }
