@@ -101,7 +101,6 @@ import {
   resourceDir,
   tempDir,
 } from '@tauri-apps/api/path';
-import { isPermissionGranted as isNotificationPermissionGranted } from '@tauri-apps/plugin-notification';
 import { computed, ref } from 'vue';
 
 interface AppInfo {
@@ -267,13 +266,13 @@ try {
       }),
     );
 
-    const notificationGranted = await isNotificationPermissionGranted();
+    const notificationPermission = useSettings().state.value.notificationPermission;
 
     permissionStates.value = [
       {
         plugin: 'notification-frontend',
         label: 'Notification (OS Permission)',
-        status: notificationGranted ? 'granted' : 'denied',
+        status: notificationPermission,
       },
       ...pluginResults,
     ];

@@ -2,7 +2,6 @@
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{Manager, State};
-use tauri_plugin_store::StoreExt;
 
 trait Vault {
     fn read(&self) -> Result<Option<String>, String>;
@@ -101,18 +100,11 @@ impl SecretManager {
     pub fn reload(&self, app: &tauri::AppHandle) -> ApiKeyStatus {
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         let result = (|| {
-            let store = app
-                .store(".settings.dat")
+            let store = crate::preferences::store(app)
                 .map_err(|_| "Could not access legacy settings for secure migration".to_string())?;
             let legacy = store.get("api-key");
             migrate(&OsVault, legacy.as_ref().and_then(|v| v.as_str()), || {
-                store.delete("api-key");
-                if store.save().is_err() {
-                    if let Some(value) = &legacy {
-                        store.set("api-key", value.clone());
-                    }
-                    return Err("Key saved securely, but legacy settings cleanup failed. Retry after fixing settings permissions.".into());
-                }
+                store.commit("api-key", None).map_err(|_| "Key saved securely, but legacy settings cleanup failed. Retry after fixing settings permissions.".to_string())?;
                 Ok(())
             })
         })();
@@ -157,18 +149,11 @@ impl SecretManager {
         let key = validate_key(&key)?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         save_cached(&mut cache, &OsVault, &key, || {
-            let store = app.store(".settings.dat").map_err(|_| {
+            let store = crate::preferences::store(app).map_err(|_| {
                 "Key saved securely, but legacy settings could not be accessed. Retry saving."
                     .to_string()
             })?;
-            let legacy = store.get("api-key");
-            store.delete("api-key");
-            if store.save().is_err() {
-                if let Some(value) = legacy {
-                    store.set("api-key", value);
-                }
-                return Err("Secure key saved, but legacy cleanup failed. Retry saving after fixing settings permissions.".into());
-            }
+            store.commit("api-key", None).map_err(|_| "Secure key saved, but legacy cleanup failed. Retry saving after fixing settings permissions.".to_string())?;
             Ok(())
         })
     }
@@ -180,8 +165,17 @@ pub fn get_api_key_status(secrets: State<'_, SecretManager>) -> ApiKeyStatus {
 #[tauri::command]
 pub async fn save_api_key(app: tauri::AppHandle, key: String) -> Result<ApiKeyStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let result = app.state::<SecretManager>().save(&app, key)?;
-        app.state::<crate::sync_service::SyncService>().manual()?;
+        let mut result = app.state::<SecretManager>().save(&app, key)?;
+        if app
+            .state::<crate::sync_service::SyncService>()
+            .manual()
+            .is_err()
+        {
+            result.error = Some(
+                "API key saved securely, but the sync service is unavailable. Restart the app."
+                    .into(),
+            );
+        }
         Ok(result)
     })
     .await

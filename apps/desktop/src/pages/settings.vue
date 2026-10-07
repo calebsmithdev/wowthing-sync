@@ -1,110 +1,56 @@
 <template>
-  <div class="space-y-6">
+  <div class="space-y-5">
     <h1>Settings</h1>
+    <p v-if="loading" role="status">Loading settings…</p>
+    <p v-if="error || dialogError" role="alert" class="text-red-400">{{ error || dialogError }}</p>
+    <p v-if="notice" role="status">{{ notice }}</p>
 
-    <UFormField
-      label="API Key"
-      name="apiKey"
-      help="Visit Settings -> Account to find your API Key."
-      class="w-full"
-    >
-      <UInput
-        v-model="apiKey"
-        autocomplete="off"
-        class="w-full"
-        :ui="{ trailing: 'pointer-events-auto' }"
-        :type="showPassword ? 'text' : 'password'"
-      >
+    <UFormField label="API Key" name="apiKey" help="Find your API key in WoWthing Settings → Account. Keys are saved in OS credential storage.">
+      <UInput v-model="apiKeyDraft" autocomplete="off" class="w-full" :type="showPassword ? 'text' : 'password'" :ui="{ trailing: 'pointer-events-auto' }">
         <template #trailing>
-          <UButton
-            color="neutral"
-            variant="link"
-            :icon="showPassword ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'"
-            class="cursor-pointer p-0"
-            @click="toggleShowPassword"
-          />
+          <UButton color="neutral" variant="link" :icon="showPassword ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'" :aria-label="showPassword ? 'Hide API key' : 'Show API key'" @click="showPassword = !showPassword" />
         </template>
       </UInput>
     </UFormField>
-    <p class="text-sm">{{ hasApiKey ? "An API key is saved securely. Enter a key to replace it." : "No API key is saved." }}</p>
-    <UButton :loading="savingKey" :disabled="!apiKey.trim() || savingKey" @click="saveKeyDraft">Save API Key</UButton>
-    <p v-if="keyError" role="alert" class="text-red-400">{{ keyError }}</p>
+    <p class="text-sm">{{ hasApiKey ? 'An API key is saved securely. Enter a key to replace it.' : 'No API key is saved.' }}</p>
+    <UButton :loading="saving === 'api-key'" :disabled="!loaded || busy || !apiKeyDraft.trim()" @click="saveKeyDraft">Save API Key</UButton>
 
-    <UFormField
-      label='World of Warcraft "_retail_" Folder'
-      name="folder"
-      class="w-full"
-    >
-      <UInput
-        v-model="folder"
-        readonly
-        class="w-full"
-        :ui="{
-          root: 'cursor-pointer',
-          base: 'cursor-pointer select-none',
-          trailing: 'cursor-pointer pointer-events-auto text-right'
-        }"
-        @click="openFolderDialog"
-      >
-        <template #trailing>
-          <span
-            class="text-gray-500 dark:text-gray-400 text-xs cursor-pointer"
-            @click.stop="openFolderDialog"
-          >
-            Choose Directory
-          </span>
-        </template>
-      </UInput>
+    <UFormField label='World of Warcraft "_retail_" Folder' name="folder" help="Choose the folder containing WTF/Account and collector addon files.">
+      <UInput :model-value="folderDraft" readonly class="w-full" />
     </UFormField>
-
-    <UButton variant="outline" :loading="updater.busy.value" @click="updater.checkForUpdates(true)">Check for Updates</UButton>
+    <div class="flex gap-2">
+      <UButton variant="outline" :disabled="busy" @click="openFolderDialog">Choose Folder</UButton>
+      <UButton :loading="saving === 'folder'" :disabled="!loaded || busy || !folderDraft || folderDraft === state.folder" @click="saveFolderDraft">Save Folder</UButton>
+    </div>
 
     <div class="space-y-3">
-      <UCheckbox
-        label="Enable desktop notifications"
-        v-model="notificationsEnabled"
-        class="w-full justify-start"
-      />
-
-      <UCheckbox
-        label="Launch WoWthing Sync when you start your computer"
-        v-model="autoStart"
-        class="w-full justify-start"
-      />
+      <UCheckbox label="Enable desktop notifications" :model-value="state.notificationsEnabled" :disabled="!loaded || busy" @update:model-value="setNotifications($event === true)" />
+      <p class="text-sm text-gray-400">Notification delivery permission is not reported by this platform. Check your OS notification settings.</p>
+      <UCheckbox label="Launch WoWthing Sync when you start your computer" :model-value="state.autoStart ?? false" :disabled="!loaded || busy || state.autoStart === null" @update:model-value="setAutostart($event === true)" />
+      <p v-if="state.autoStartError" role="alert" class="text-red-400">{{ state.autoStartError }}</p>
     </div>
+    <UButton variant="outline" :loading="updaterBusy" @click="checkForUpdates(true)">Check for Updates</UButton>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { open } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog'
 
-  const { hasApiKey, saveKey } = useApiKeys();
-  const updater = useUpdater();
-  const apiKey = ref('');
-  const savingKey = ref(false);
-  const keyError = ref<string | null>(null);
-  const saveKeyDraft = async () => {
-    savingKey.value = true; keyError.value = null;
-    try { const saved = await saveKey(apiKey.value); apiKey.value = ''; keyError.value = saved.error }
-    catch (error) { keyError.value = String(error) }
-    finally { savingKey.value = false }
-  };
-  const autoStart = useAutoStart();
-  const { folder, getDefaultPath } = useProgramFolder();
-  const showPassword = ref(false);
-  const { notificationsEnabled } = useNotifications();
-
-  const openFolderDialog = async () => {
-    const defaultPath = await getDefaultPath();
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      defaultPath: defaultPath,
-    });
-    folder.value = Array.isArray(selected) ? selected[0] : selected;
-  }
-
-  const toggleShowPassword = () => {
-    showPassword.value = !showPassword.value;
-  }
+const settings = useSettings()
+const { state, loading, loaded, busy, saving, error, notice, setAutostart, setNotifications } = settings
+const { hasApiKey } = useApiKeys()
+const { busy: updaterBusy, checkForUpdates } = useUpdater()
+const apiKeyDraft = ref('')
+const folderDraft = ref(state.value.folder ?? '')
+const showPassword = ref(false)
+const dialogError = ref<string | null>(null)
+const saveKeyDraft = async () => { if (await settings.saveKey(apiKeyDraft.value)) apiKeyDraft.value = '' }
+const saveFolderDraft = async () => { if (await settings.saveFolder(folderDraft.value)) folderDraft.value = state.value.folder ?? '' }
+const openFolderDialog = async () => {
+  dialogError.value = null
+  try {
+    const selected = await open({ directory: true, multiple: false, defaultPath: folderDraft.value || await settings.defaultFolder() })
+    if (typeof selected === 'string') folderDraft.value = selected
+  } catch (cause) { dialogError.value = String(cause) }
+}
 </script>

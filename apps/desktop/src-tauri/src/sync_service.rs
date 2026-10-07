@@ -11,7 +11,6 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager};
-use tauri_plugin_store::StoreExt;
 
 #[derive(Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +52,7 @@ impl SyncStatus {
         }
     }
 }
+#[cfg(test)]
 pub(crate) fn validate_folder(folder: &Path) -> Result<Vec<PathBuf>, String> {
     let files = crate::collector_fs::ApprovedRoot::open(folder)?.discover()?;
     if files.is_empty() {
@@ -77,13 +77,14 @@ fn ready_store(app: &tauri::AppHandle) -> Result<(), String> {
 }
 fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<(), String> {
     use tauri_plugin_notification::NotificationExt;
-    let store = app
-        .store(".settings.dat")
+    let store = crate::preferences::store(app)
         .map_err(|_| "Could not access sync preferences".to_string())?;
     let mut errors = Vec::new();
     if successful {
-        store.set("last-success", serde_json::json!(now));
-        if store.save().is_err() {
+        if store
+            .commit("last-success", Some(serde_json::json!(now)))
+            .is_err()
+        {
             errors.push("Upload succeeded, but its timestamp could not be saved.");
         }
     }
@@ -122,7 +123,7 @@ fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<
     }
 }
 enum Request {
-    Configure(u64, Option<String>),
+    Configure(u64, Option<crate::collector_fs::ApprovedRoot>),
     File(PathBuf),
     Manual,
     Shutdown,
@@ -160,23 +161,14 @@ impl SyncService {
             worker: Mutex::new(Some(worker)),
         }
     }
-    pub fn configure(&self, folder: Option<String>) -> Result<(), String> {
-        let folder = folder
-            .map(|folder| {
-                validate_folder(Path::new(&folder))?;
-                Ok::<_, String>(
-                    Path::new(&folder)
-                        .canonicalize()
-                        .map_err(|_| "WoW folder unavailable".to_string())?
-                        .to_string_lossy()
-                        .into_owned(),
-                )
-            })
-            .transpose()?;
+    pub fn configure(&self, root: Option<crate::collector_fs::ApprovedRoot>) -> Result<(), String> {
+        if self.stopping.load(Ordering::Acquire) {
+            return Err("Sync service stopped".into());
+        }
         self.sender
             .send(Request::Configure(
                 self.generation.fetch_add(1, Ordering::AcqRel) + 1,
-                folder,
+                root,
             ))
             .map_err(|_| "Sync service stopped".into())
     }
@@ -284,7 +276,7 @@ fn run(
         .reload(&app);
     state.has_api_key = secret_status.has_key;
     state.error = secret_status.error;
-    match app.store(".settings.dat") {
+    match crate::preferences::store(&app) {
         Ok(store) => {
             state.folder = store
                 .get("program-folder")
@@ -327,12 +319,12 @@ fn run(
         for request in request.into_iter().chain(receiver.try_iter()) {
             match request {
                 Request::Shutdown => return,
-                Request::Configure(epoch, folder) => {
+                Request::Configure(epoch, root) => {
                     active_generation = epoch;
-                    approved = folder.as_ref().and_then(|folder| {
-                        crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok()
-                    });
-                    state.folder = folder;
+                    state.folder = root
+                        .as_ref()
+                        .map(|root| root.path().to_string_lossy().into_owned());
+                    approved = root;
                     previous.clear();
                     cache.clear();
                     queue = Default::default();
@@ -363,6 +355,11 @@ fn run(
             .state::<crate::credentials::SecretManager>()
             .status()
             .has_key;
+        if let Err(error) = crate::preferences::store(&app) {
+            state.error = Some(error);
+            publish(&app, &shared, &state);
+            continue;
+        }
         let Some(folder) = &state.folder else {
             state.error = Some("Choose your World of Warcraft _retail_ folder in Settings.".into());
             publish(&app, &shared, &state);
@@ -453,13 +450,6 @@ fn run(
 #[tauri::command]
 pub fn get_sync_status(service: tauri::State<'_, SyncService>) -> SyncStatus {
     service.snapshot()
-}
-#[tauri::command]
-pub fn configure_sync(
-    service: tauri::State<'_, SyncService>,
-    folder: Option<String>,
-) -> Result<(), String> {
-    service.configure(folder)
 }
 #[tauri::command]
 pub fn sync_now(service: tauri::State<'_, SyncService>) -> Result<(), String> {
