@@ -439,6 +439,12 @@ PRs, nightly and release call `.github/workflows/desktop-checks.yml`; `.github/a
 
 Repository administrators must enable the exact required status **Required Desktop CI** in main's branch rule/ruleset (require successful checks and, if desired, up-to-date branches/merge queue). YAML cannot configure this repository setting; no admin rule was changed here. Release signed build/staging waits for the same common checks; only the draft job has contents:write. Secret-free checks never inherit release secrets.
 
+October 7 inspection confirmed the active Main ruleset has no required status
+checks. PR CI starts before merge but cannot prevent merging until that setting
+is enabled. Release builds use `scripts/release-tauri.mjs` to omit empty Apple
+secret variables before invoking Tauri; present credentials and updater signing
+are preserved. Test this boundary with `scripts/launchers.test.mjs`.
+
 ### Expanded CI tiers and isolation (2026-10-06)
 
 See [docs/ci-validation.md](docs/ci-validation.md) for the required check,

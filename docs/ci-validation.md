@@ -6,6 +6,13 @@ A repository administrator must add that exact check under Settings → Branches
 checks if used. YAML cannot change repository protection. No admin settings have
 been changed by this work.
 
+The October 7 ruleset inspection found no required status checks in the active
+Main ruleset. Add **Required Desktop CI** and require an up-to-date branch;
+review the administrator PR bypass if every merge must wait. CI already runs on
+PR creation/updates, main pushes and merge groups. A PR run can finish after a
+merge when its result is not enforced. Keep the post-merge and release gates to
+validate the actual merge commit and release-only signing/package paths.
+
 PRs run frontend lint/type/unit once, then Rust lint/unit/real-worker HTTP tests,
 launcher/process contracts, browser fixtures, both native webview fixtures and
 unsigned debug package inspection on macOS 15 ARM64/Intel, Windows Server 2022 x64
@@ -70,6 +77,12 @@ configured. Windows verifies Authenticode; temporary PFX files are cleaned up.
 Unprovisioned platform signing is recorded truthfully as requiring manual release
 verification. Updater signing uses `TAURI_PRIVATE_KEY` and optional
 `TAURI_PRIVATE_KEY_PASSWORD`; it does not establish OS distribution trust.
+The release Tauri launcher removes empty optional Apple environment variables
+before invoking the CLI. Missing GitHub secrets must not trigger an empty
+certificate import or notarization request. Configured values remain intact,
+including an empty certificate password when a certificate is present; invalid
+credentials still fail. Without a certificate, the committed ad-hoc identity is
+used, which does not provide Developer ID or notarization.
 
 Reports retain native stdout/stderr, structured results/JUnit, runner/architecture,
 OS/webview/toolchain metadata and current-run owned-app crash records. Browser
