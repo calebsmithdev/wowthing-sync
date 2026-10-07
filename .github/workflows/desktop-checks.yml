@@ -78,7 +78,7 @@ jobs:
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
             ~/AppData/Local/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('apps/desktop/package-lock.json') }}
+          key: playwright-${{ matrix.os }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/desktop/package-lock.json') }}
       - run: node ../../scripts/ci-run.mjs browser-install 300 npx playwright install --with-deps chromium
         working-directory: apps/desktop
       - run: node ../../scripts/ci-run.mjs browser-smoke 180 npm run test:e2e

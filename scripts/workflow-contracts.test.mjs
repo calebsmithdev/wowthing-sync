@@ -8,6 +8,32 @@ const require = createRequire(fileURLToPath(new URL('../apps/desktop/package.jso
 const { parse } = require('yaml')
 const directory = new URL('../.github/workflows/', import.meta.url)
 async function workflow(name) { return parse(await readFile(new URL(name, directory), 'utf8')) }
+test('Playwright caches isolate runner images, architectures and locked browser revisions', async () => {
+  const native = (await workflow('desktop-checks.yml')).jobs.native
+  const caches = native.steps.filter(step => step.uses?.split('@')[0] === 'actions/cache')
+    .filter(step => step.with.path.split('\n').some(path => path.endsWith('/ms-playwright')))
+  assert.equal(caches.length, 1)
+  const inputs = caches[0].with
+  assert.equal(inputs['restore-keys'], undefined, 'browser cache must not fall back across architectures')
+  assert.ok([undefined, false, 'false'].includes(inputs.enableCrossOsArchive))
+  const key = (image, os, arch, lock) => inputs.key.replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_, expression) => {
+    const values = {
+      'matrix.os': image,
+      'runner.os': os,
+      'runner.arch': arch,
+      "hashFiles('apps/desktop/package-lock.json')": lock,
+    }
+    assert.ok(Object.hasOwn(values, expression), `unsupported cache expression: ${expression}`)
+    return values[expression]
+  })
+  const images = native.strategy.matrix.os.map(image => {
+    const os = image.startsWith('macos-') ? 'macOS' : image.startsWith('windows-') ? 'Windows' : 'Linux'
+    assert.notEqual(key(image, os, 'ARM64', 'lock-a'), key(image, os, 'X64', 'lock-a'))
+    assert.notEqual(key(image, os, 'X64', 'lock-a'), key(image, os, 'X64', 'lock-b'))
+    return key(image, os, 'X64', 'lock-a')
+  })
+  assert.equal(new Set(images).size, native.strategy.matrix.os.length, 'runner image caches must remain distinct even at the same architecture')
+})
 test('workflow DAG, real runner matrix and required-job topology are enforced', async () => {
   for (const name of await readdir(directory)) {
     if (!/\.ya?ml$/.test(name)) continue
