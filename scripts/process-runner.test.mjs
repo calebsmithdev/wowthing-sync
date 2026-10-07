@@ -190,7 +190,10 @@ test('supervision preserves cwd, environment, output, native exit and inherited-
   const directory = await mkdtemp(join(tmpdir(), 'supervised cwd 雪 spaces-'))
   try {
     const result = await runProcess(process.execPath, ['-e', 'console.log(JSON.stringify({cwd:process.cwd(),value:process.env.WOWTHING_TEST_VALUE}));console.error("owned stderr")'], { cwd: directory, env: { ...process.env, WOWTHING_TEST_VALUE: 'literal value 雪' }, capture: true, timeout: 15000 })
-    assert.deepEqual(JSON.parse(result.stdout), { cwd: await realpath(directory), value: 'literal value 雪' })
+    const observed = JSON.parse(result.stdout)
+    // Windows can preserve the runner's 8.3 TEMP alias in process.cwd().
+    // Resolve both spellings to verify directory identity, including Unicode.
+    assert.deepEqual({ ...observed, cwd: await realpath(observed.cwd) }, { cwd: await realpath(directory), value: 'literal value 雪' })
     assert.equal(result.stderr.trim(), 'owned stderr')
     await assert.rejects(runProcess(process.execPath, ['-e', 'process.exit(7)'], { capture: true, timeout: 15000 }), error => error.report.exitCode === 7 && error.report.signal === null)
     if (process.platform !== 'win32') await assert.rejects(runProcess(process.execPath, ['-e', "process.kill(process.pid,'SIGTERM')"], { capture: true, timeout: 15000 }), error => error.report.signal === 'SIGTERM')
