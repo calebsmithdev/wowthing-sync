@@ -70,11 +70,6 @@ fn stored_last_success(value: Option<serde_json::Value>) -> Option<u64> {
             .ok()
     })
 }
-fn ready_store(app: &tauri::AppHandle) -> Result<(), String> {
-    app.state::<crate::credentials::SecretManager>()
-        .key()
-        .map(|_| ())
-}
 fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<(), String> {
     use tauri_plugin_notification::NotificationExt;
     let store = crate::preferences::store(app)
@@ -121,6 +116,41 @@ fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<
         Err(errors.join(" "))
     }
 }
+/// OS and transport boundary only. Discovery, validation, queueing, retries,
+/// cancellation and persistence remain in the production worker.
+pub(crate) trait WorkerIo: Send + Sync + 'static {
+    fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String>;
+    fn key(&self) -> Result<String, String>;
+    fn reload(&self);
+    fn emit(&self, status: &SyncStatus);
+    fn effects(&self, successful: bool, now: u64) -> Result<(), String>;
+    fn client(&self) -> Result<reqwest::Client, String> {
+        crate::commands::submit_addon_data::http_client()
+    }
+    fn endpoint(&self) -> &str {
+        crate::commands::submit_addon_data::WOWTHING_UPLOAD_ENDPOINT
+    }
+}
+struct AppIo(tauri::AppHandle);
+impl WorkerIo for AppIo {
+    fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String> {
+        crate::preferences::store(&self.0)
+    }
+    fn key(&self) -> Result<String, String> {
+        self.0.state::<crate::credentials::SecretManager>().key()
+    }
+    fn reload(&self) {
+        self.0
+            .state::<crate::credentials::SecretManager>()
+            .reload(&self.0);
+    }
+    fn emit(&self, status: &SyncStatus) {
+        let _ = self.0.emit("sync-status", status);
+    }
+    fn effects(&self, successful: bool, now: u64) -> Result<(), String> {
+        upload_effects(&self.0, successful, now)
+    }
+}
 enum Request {
     Configure(u64, Option<crate::collector_fs::ApprovedRoot>),
     File(PathBuf),
@@ -136,6 +166,9 @@ pub struct SyncService {
 }
 impl SyncService {
     pub fn start(app: tauri::AppHandle) -> Self {
+        Self::start_with_io(AppIo(app))
+    }
+    pub(crate) fn start_with_io(io: impl WorkerIo) -> Self {
         let (sender, receiver) = mpsc::channel();
         let status = Arc::new(Mutex::new(SyncStatus::default()));
         let worker_status = status.clone();
@@ -145,7 +178,7 @@ impl SyncService {
         let worker_generation = generation.clone();
         let worker = thread::spawn(move || {
             run(
-                app,
+                io,
                 receiver,
                 worker_status,
                 worker_stopping,
@@ -208,14 +241,14 @@ impl Drop for SyncService {
         self.shutdown();
     }
 }
-fn publish(app: &tauri::AppHandle, status: &Arc<Mutex<SyncStatus>>, value: &SyncStatus) {
+fn publish(io: &impl WorkerIo, status: &Arc<Mutex<SyncStatus>>, value: &SyncStatus) {
     let mut current = status.lock().unwrap_or_else(|e| e.into_inner());
     if *current == *value {
         return;
     }
     *current = value.clone();
     drop(current);
-    let _ = app.emit("sync-status", value);
+    io.emit(value);
 }
 
 /// Rescan directories, rather than holding handles to individual files: rename/replace and
@@ -288,19 +321,17 @@ async fn until_cancelled<T>(
     }
 }
 fn run(
-    app: tauri::AppHandle,
+    io: impl WorkerIo,
     receiver: mpsc::Receiver<Request>,
     shared: Arc<Mutex<SyncStatus>>,
     stopping: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
 ) {
     let mut state = SyncStatus::default();
-    let secret_status = app
-        .state::<crate::credentials::SecretManager>()
-        .reload(&app);
-    state.has_api_key = secret_status.has_key;
-    state.error = secret_status.error;
-    match crate::preferences::store(&app) {
+    io.reload();
+    state.has_api_key = io.key().is_ok();
+    state.error = io.key().err();
+    match io.preferences() {
         Ok(store) => {
             state.folder = store
                 .get("program-folder")
@@ -313,11 +344,11 @@ fn run(
         }
         Err(e) => state.error = Some(e.to_string()),
     }
-    let client = match crate::commands::submit_addon_data::http_client() {
+    let client = match io.client() {
         Ok(client) => client,
         Err(error) => {
             state.error = Some(error);
-            publish(&app, &shared, &state);
+            publish(&io, &shared, &state);
             return;
         }
     };
@@ -333,7 +364,7 @@ fn run(
     }
     let mut queue = crate::sync_queue::SyncQueue::default();
     let mut active_generation = 0;
-    publish(&app, &shared, &state);
+    publish(&io, &shared, &state);
     while !stopping.load(Ordering::Acquire) {
         let request = match receiver.recv_timeout(Duration::from_secs(1)) {
             Ok(request) => Some(request),
@@ -361,49 +392,44 @@ fn run(
                     scan_failures.clear();
                     state.warning = None;
                     manual = false;
-                    publish(&app, &shared, &state);
+                    publish(&io, &shared, &state);
                 }
                 Request::Manual => {
-                    if !app
-                        .state::<crate::credentials::SecretManager>()
-                        .status()
-                        .has_key
-                    {
-                        app.state::<crate::credentials::SecretManager>()
-                            .reload(&app);
+                    if io.key().is_err() {
+                        io.reload();
                     }
                     manual = true;
                 }
                 Request::File(file) => queue.manual([file], Instant::now()),
             }
         }
-        state.has_api_key = app
-            .state::<crate::credentials::SecretManager>()
-            .status()
-            .has_key;
-        if let Err(error) = crate::preferences::store(&app) {
+        state.has_api_key = io.key().is_ok();
+        if let Err(error) = io.preferences() {
             state.error = Some(error);
-            publish(&app, &shared, &state);
+            publish(&io, &shared, &state);
             continue;
         }
         let Some(folder) = &state.folder else {
             state.error = Some("Choose your World of Warcraft _retail_ folder in Settings.".into());
-            publish(&app, &shared, &state);
+            publish(&io, &shared, &state);
             continue;
         };
-        if let Err(error) = ready_store(&app) {
-            state.has_api_key = false;
-            state.error = Some(error);
-            publish(&app, &shared, &state);
-            continue;
-        }
+        let api_key = match io.key() {
+            Ok(key) => key,
+            Err(error) => {
+                state.has_api_key = false;
+                state.error = Some(error);
+                publish(&io, &shared, &state);
+                continue;
+            }
+        };
         state.has_api_key = true;
         if approved.is_none() {
             approved = crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok();
         }
         let Some(root) = &approved else {
             state.error = Some("WoW folder unavailable. Choose it again in Settings.".into());
-            publish(&app, &shared, &state);
+            publish(&io, &shared, &state);
             continue;
         };
         let result = root.scan().map(|(files, mut failures)| {
@@ -417,7 +443,7 @@ fn run(
                 state.error = Some(error);
                 state.files.clear();
                 state.pending = queue.len();
-                publish(&app, &shared, &state);
+                publish(&io, &shared, &state);
                 continue;
             }
         };
@@ -439,7 +465,7 @@ fn run(
             state.error = Some("No readable, nonempty WoWthing_Collector.lua files found. Enable the addon and log out of WoW.".into());
             state.files.clear();
             state.pending = queue.len();
-            publish(&app, &shared, &state);
+            publish(&io, &shared, &state);
             continue;
         }
         state.error = None;
@@ -458,16 +484,22 @@ fn run(
         }
         previous = prints;
         state.pending = queue.len();
-        publish(&app, &shared, &state);
+        publish(&io, &shared, &state);
         let Some(file) = queue.take_ready(now) else {
             continue;
         };
         state.is_processing = true;
         state.pending = queue.len();
         state.error = None;
-        publish(&app, &shared, &state);
+        publish(&io, &shared, &state);
         let outcome = tauri::async_runtime::block_on(until_cancelled(
-            crate::commands::submit_addon_data::upload_file(&app, &client, root, &file),
+            crate::commands::submit_addon_data::upload_file(
+                &api_key,
+                io.endpoint(),
+                &client,
+                root,
+                &file,
+            ),
             &stopping,
             &generation,
             active_generation,
@@ -482,10 +514,10 @@ fn run(
                 .unwrap_or_default()
                 .as_secs();
             state.finish_upload(&file, outcome.map(|_| ()), now, |successful, now| {
-                upload_effects(&app, successful, now)
+                io.effects(successful, now)
             });
         }
-        publish(&app, &shared, &state);
+        publish(&io, &shared, &state);
     }
 }
 #[tauri::command]
@@ -658,3 +690,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "worker_integration.rs"]
+mod worker_integration;
