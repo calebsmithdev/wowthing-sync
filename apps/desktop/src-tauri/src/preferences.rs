@@ -57,12 +57,21 @@ impl Preferences {
             .cloned()
     }
     pub fn commit(&self, key: &str, value: Option<serde_json::Value>) -> Result<(), String> {
+        self.commit_many([(key, value)])
+    }
+    /// Persist related values with one durable replacement and one in-memory commit.
+    pub fn commit_many<'a>(
+        &self,
+        changes: impl IntoIterator<Item = (&'a str, Option<serde_json::Value>)>,
+    ) -> Result<(), String> {
         let mut values = self.values.lock().unwrap_or_else(|e| e.into_inner());
         let mut updated = values.clone();
-        if let Some(value) = value {
-            updated.insert(key.into(), value);
-        } else {
-            updated.remove(key);
+        for (key, value) in changes {
+            if let Some(value) = value {
+                updated.insert(key.into(), value);
+            } else {
+                updated.remove(key);
+            }
         }
         write_atomic(&self.path, &updated)?;
         *values = updated;
@@ -132,5 +141,41 @@ mod tests {
             .is_err());
         assert_eq!(failed.get("value"), Some(serde_json::json!("old")));
         assert!(blocked.is_dir());
+    }
+
+    #[test]
+    fn related_timestamps_commit_together_or_both_remain_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let store = Preferences::load(path.clone()).unwrap();
+        let changes = || {
+            [
+                ("last-success", Some(serde_json::json!(42))),
+                (
+                    "account-uploads",
+                    Some(serde_json::json!({"collector": 42})),
+                ),
+            ]
+        };
+        store.commit_many(changes()).unwrap();
+        let reloaded = Preferences::load(path).unwrap();
+        for (key, expected) in changes() {
+            assert_eq!(reloaded.get(key), expected);
+        }
+        let blocked = dir.path().join("blocked");
+        std::fs::create_dir(&blocked).unwrap();
+        let values = BTreeMap::from([
+            ("last-success".into(), serde_json::json!(1)),
+            (
+                "account-uploads".into(),
+                serde_json::json!({"collector": 1}),
+            ),
+        ]);
+        let failed = Preferences {
+            path: blocked,
+            values: Mutex::new(values.clone()),
+        };
+        assert!(failed.commit_many(changes()).is_err());
+        assert_eq!(*failed.values.lock().unwrap(), values);
     }
 }

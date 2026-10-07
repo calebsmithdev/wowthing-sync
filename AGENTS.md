@@ -405,7 +405,7 @@ On macOS ARM64 with Node22.22.3/Rust1.97.1: clean `npm ci`, lint, strict typeche
 
 Native plugins: shell, process, dialog, OS, notification, log, desktop autostart/updater/single-instance. Frontend capabilities are core defaults, dialog open, process restart, updater defaults, OS defaults, log defaults, narrowly configured shell open and notification permission query. There are **no frontend FS/store/autostart/notification mutation grants**. Shell open accepts only the fixed GitHub releases/latest URL via the plugin regex; normal WoWthing footer links use webview anchors.
 
-All collector operations use a canonical held `cap-std` directory capability under the selected WoW root, only `WTF/Account/<account>/SavedVariables/WoWthing_Collector.lua`, regular nonempty files <=32MiB and <=1000 account entries. Relative capability opens confine symlink races; Unix nonblocking opens reject FIFOs without hanging. Scan errors for individual accounts stay visible and do not prevent healthy account uploads. Metadata polling is 1 second, cached content fingerprints reverify every30s; a sequential debounced queue retains writes observed after an upload. HTTP client has explicit 10s connect/30s request timeout, <=3 temporary-failure attempts; long Retry-After stops retries. Config generations cancel stale uploads and suppress stale results; shutdown cancellation is bounded.
+All collector operations use a canonical held `cap-std` directory capability under the selected WoW root, only `WTF/Account/<account>/SavedVariables/WoWthing_Collector.lua`, regular nonempty files <=32MiB and <=1000 account entries. Relative capability opens confine symlink races; Unix nonblocking opens reject FIFOs without hanging. Scan errors for individual accounts stay visible and do not prevent healthy account uploads. Native filesystem events wake capability-based scans, with 30-second metadata reconciliation and five-minute content reverification. Watcher setup/runtime failures fall back to one-second polling and 30-second content reverification. Event bursts coalesce into one pending wake; access events and unrelated addon files are ignored. A sequential debounced queue retains writes observed after an upload and drains ready files without a fixed inter-upload delay. HTTP client has explicit 10s connect/30s request timeout, <=3 temporary-failure attempts; long Retry-After stops retries. Config generations cancel stale uploads and suppress stale results; shutdown cancellation is bounded.
 
 API keys use explicit `keyring` native Apple/Windows/Linux secret-service backends, cached in Rust memory. Legacy `.settings.dat` plaintext keys are removed only after secure write/readback verification; locked/unavailable backend errors retain the legacy entry and permit Retry Sync, with no plaintext upload fallback. Preferences migrate existing JSON and commit through synced atomic replacement. Local and PR fixtures never read user data or contact an OS credential store; explicitly opted-in nightly/release hosted probes use unique synthetic entries with cleanup. Linux requires Secret Service plus dbus at runtime; failures are actionable.
 
@@ -469,3 +469,28 @@ vulnerabilities. The audit script exits 1 and retains JSON, so nightly/release
 validation currently fails on those existing npm findings. They were not waived
 or automatically downgraded. Windows/Linux/Intel execution, actual OS store
 probes and real distribution signing still require hosted/manual evidence.
+
+### Background performance (2026-10-07)
+
+The native `notify` watcher observes the selected `WTF/Account` tree only as a
+change hint; event paths never authorize reads. Recursive symlink following is
+disabled where the backend supports it. Discovery, file limits and uploads still
+use the held `ApprovedRoot` capability. Periodic reconciliation covers missed
+events/new directories; same-metadata changes missed by events are detected by
+the five-minute content verification. Failed watchers keep the polling fallback
+until the folder is configured again. No new frontend filesystem permissions.
+
+Successful uploads persist `last-success` and `account-uploads` in one synced
+atomic transaction, including in the isolated integration builder. The Status
+page's ten-second relative-time clock pauses while hidden/minimized and refreshes
+immediately on return. A native `window-visibility` boolean event complements
+document visibility, with initial visibility queried through existing core
+permissions. Automatic updater checks run at startup and six hours after the
+previous check completes; manual/tray checks remain immediate.
+
+Validated locally on macOS ARM64: lint/typecheck, 37 frontend tests, 40 Rust
+tests (nightly endurance excluded), default/integration clippy, Cargo check,
+Chromium smoke, native smoke and native integration including display-timer
+stop/resume on hide/reopen, 25 script tests (platform RPM test skipped), release
+metadata verification and the production debug build. Windows/Linux watcher
+and visibility behavior still require the hosted CI matrix.

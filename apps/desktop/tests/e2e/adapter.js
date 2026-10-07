@@ -10,7 +10,15 @@
     for (const listener of listeners.values()) if (listener.event === event) callbacks.get(listener.handler)?.({ event, id: listener.id, payload })
   }
   window.__SMOKE__ = { calls, settings, status, emit }
+  window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+    unregisterListener(_event, id) {
+      const listener = listeners.get(id)
+      if (listener) callbacks.delete(listener.handler)
+      listeners.delete(id)
+    },
+  }
   window.__TAURI_INTERNALS__ = {
+    metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
     transformCallback(callback, once = false) {
       const id = ++sequence
       callbacks.set(id, (...args) => { if (once) callbacks.delete(id); callback(...args) })
@@ -27,6 +35,8 @@
           return id
         }
         case 'plugin:event|unlisten': listeners.delete(args.eventId); return null
+        case 'plugin:window|is_visible': return true
+        case 'plugin:window|is_minimized': return false
         case 'plugin:app|version': return '__SMOKE_VERSION__'
         case 'plugin:updater|check': return null
         case 'get_settings': return { ...settings }

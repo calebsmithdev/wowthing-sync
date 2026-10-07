@@ -56,6 +56,11 @@ flowchart LR
 Each link downloads the latest build for that platform. All releases, including older versions, are on the [Releases page](https://github.com/calebsmithdev/wowthing-sync/releases).
 Once installed, the app updates itself.
 
+Update checks run at startup and every six hours; you can check manually from
+the tray menu at any time. File changes trigger background syncing, with periodic
+scans as a fallback. Hiding the window pauses display-only timestamp updates
+while syncing continues.
+
 > [!NOTE]
 > On Linux, the app stores your API key with the Secret Service (GNOME Keyring, KWallet and similar),
 > so a keyring must be running. Most desktop environments, including Steam Deck desktop mode, provide one.

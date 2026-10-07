@@ -1,6 +1,16 @@
 // Compiled only into integration-test binaries. Drives the real Vue UI and IPC.
 (() => {
   const errors = []
+  // Observe display-clock lifetime without exposing diagnostics in production UI.
+  const displayTimers = new Set()
+  const setInterval = window.setInterval.bind(window)
+  const clearInterval = window.clearInterval.bind(window)
+  window.setInterval = (callback, delay, ...args) => {
+    const id = setInterval(callback, delay, ...args)
+    if (delay === 10000) displayTimers.add(id)
+    return id
+  }
+  window.clearInterval = id => { displayTimers.delete(id); clearInterval(id) }
   addEventListener('error', event => errors.push(event.message))
   addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
   addEventListener('securitypolicyviolation', event => errors.push(`CSP ${event.violatedDirective}`))
@@ -54,10 +64,13 @@
       await wait(() => document.body.innerText.includes('Save API Key'))
       click('Status')
       await wait(async () => !(await invoke('get_sync_status')).isProcessing)
+      await wait(() => displayTimers.size === 1)
       await control('close')
       await wait(async () => !(await control('state')).visible)
+      await wait(() => displayTimers.size === 0)
       await control('show')
       await wait(async () => (await control('state')).visible)
+      await wait(() => displayTimers.size === 1)
       await control('update-failure')
       await control('tray-update')
       await wait(() => document.body.innerText.includes('Update Available'))

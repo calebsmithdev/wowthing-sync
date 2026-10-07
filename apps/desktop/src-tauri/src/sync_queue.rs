@@ -19,6 +19,9 @@ impl SyncQueue {
             self.pending.insert(file, now);
         }
     }
+    pub fn next_due(&self) -> Option<Instant> {
+        self.pending.values().copied().min()
+    }
     pub fn take_ready(&mut self, now: Instant) -> Option<PathBuf> {
         let file = self
             .pending
@@ -38,6 +41,20 @@ impl SyncQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn deadlines_follow_debounce_and_ready_work_never_requires_a_sleep() {
+        let now = Instant::now();
+        let mut queue = SyncQueue::default();
+        assert_eq!(queue.next_due(), None);
+        queue.changed(PathBuf::from("a"), now);
+        assert_eq!(queue.next_due(), Some(now + Duration::from_secs(1)));
+        queue.manual([PathBuf::from("b"), PathBuf::from("c")], now);
+        assert_eq!(queue.next_due(), Some(now));
+        assert_eq!(queue.take_ready(now), Some(PathBuf::from("b")));
+        assert_eq!(queue.next_due(), Some(now));
+        assert_eq!(queue.take_ready(now), Some(PathBuf::from("c")));
+        assert_eq!(queue.next_due(), Some(now + Duration::from_secs(1)));
+    }
     #[test]
     fn coalesces_and_waits_for_settled_writes() {
         let mut queue = SyncQueue::default();
