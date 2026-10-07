@@ -1,7 +1,7 @@
 use tauri::{
     menu::{MenuBuilder, MenuItem, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
+    AppHandle, Emitter, Manager,
 };
 use tauri_plugin_os::platform;
 
@@ -69,8 +69,12 @@ pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
                 }
             }
             "check-update" => {
-                let w = app.get_webview_window("main").unwrap();
-                w.eval("window.checkForUpdates()").unwrap();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _ =
+                        window.emit("check-for-updates", serde_json::json!({ "source": "tray" }));
+                }
             }
             _ => {}
         })
