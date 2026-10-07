@@ -1,8 +1,7 @@
 use serde::Serialize;
 use std::{future::Future, time::Duration};
-use tauri::Manager;
 
-const WOWTHING_UPLOAD_ENDPOINT: &str = "https://wowthing.org/api/upload/";
+pub(crate) const WOWTHING_UPLOAD_ENDPOINT: &str = "https://wowthing.org/api/upload/";
 #[derive(Serialize)]
 struct UploadPayload<'a> {
     #[serde(rename = "apiKey")]
@@ -29,15 +28,15 @@ pub fn submit_addon_data(
     Ok("Upload queued".into())
 }
 pub(crate) async fn upload_file(
-    app: &tauri::AppHandle,
+    api_key: &str,
+    endpoint: &str,
     client: &reqwest::Client,
     root: &crate::collector_fs::ApprovedRoot,
     file_path: &std::path::Path,
 ) -> Result<String, String> {
-    let api_key = app.state::<crate::credentials::SecretManager>().key()?;
     let lua_contents = String::from_utf8(root.read(file_path)?)
         .map_err(|_| "Collector is not valid UTF-8".to_string())?;
-    submit_addon_data_internal(client, WOWTHING_UPLOAD_ENDPOINT, &api_key, &lua_contents).await
+    submit_addon_data_internal(client, endpoint, api_key, &lua_contents).await
 }
 #[derive(Debug)]
 pub(crate) struct UploadFailure {
