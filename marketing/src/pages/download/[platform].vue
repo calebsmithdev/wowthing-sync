@@ -1,85 +1,44 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center px-6 text-center">
-    <div class="max-w-lg space-y-4">
-      <h1 class="text-3xl font-semibold">Preparing your download…</h1>
-      <p v-if="status === 'loading'">Hang tight while we grab the latest build for your platform.</p>
-      <p v-else class="text-red-500">{{ errorMessage }}</p>
-      <NuxtLink to="/" class="text-primary underline">Return to homepage</NuxtLink>
+  <main class="container flex justify-center py-28 text-center">
+    <div class="max-w-lg space-y-5">
+      <template v-if="file">
+        <div class="mx-auto size-10 animate-spin rounded-full border-2 border-amber-400/20 border-t-amber-400" aria-hidden="true" />
+        <h1 class="text-3xl font-bold tracking-tight text-white">Your download is starting…</h1>
+        <p class="text-slate-400">
+          Downloading <span class="text-slate-200">{{ file.name }}</span> ({{ formatSize(file.size) }}).
+          If nothing happens, <a :href="file.url" class="text-amber-400 hover:underline">download it directly</a>.
+        </p>
+      </template>
+      <template v-else>
+        <h1 class="text-3xl font-bold tracking-tight text-white">Download unavailable</h1>
+        <p class="text-slate-400">
+          {{ known ? "We couldn't find this download in the latest release." : 'Unknown download platform.' }}
+          You can pick a file from the
+          <a :href="releaseUrl" class="text-amber-400 hover:underline">latest release</a>.
+        </p>
+      </template>
+      <NuxtLink to="/" class="inline-block rounded-lg border border-white/15 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/5">
+        Back to the homepage
+      </NuxtLink>
     </div>
-  </div>
+  </main>
 </template>
 
 <script setup lang="ts">
+import type { PlatformSlug } from '~/composables/useDownloads';
+
+// Public routes kept stable for links in the README and elsewhere.
+const ROUTES: readonly PlatformSlug[] = ['mac-silicon', 'mac-intel', 'windows', 'linux'];
+
 const route = useRoute();
-const runtimeConfig = useRuntimeConfig();
+const { asset, releaseUrl } = useDownloads();
 
-const PLATFORM_MAP = {
-  'mac-intel': 'darwin-x86_64',
-  'mac-silicon': 'darwin-aarch64',
-  windows: 'windows-x86_64',
-  linux: 'linux-x86_64'
-} as const;
+const slug = route.params.platform as string;
+const known = (ROUTES as readonly string[]).includes(slug);
+const file = known ? asset(slug as PlatformSlug) : null;
 
-type PlatformSlug = keyof typeof PLATFORM_MAP;
-
-interface ReleaseManifestPlatform {
-  url: string;
+// Resolved at prerender time, so the redirect works without JavaScript.
+if (file) {
+  useHead({ meta: [{ 'http-equiv': 'refresh', content: `0; url=${file.url}` }] });
 }
-
-interface ReleaseManifest {
-  platforms?: Record<string, ReleaseManifestPlatform>;
-}
-
-const manifest = computed<ReleaseManifest | null>(() => {
-  return (runtimeConfig.public.downloadManifest as ReleaseManifest | null) ?? null;
-});
-
-const status = ref<'loading' | 'error'>('loading');
-const errorMessage = ref('');
-
-function isKnownPlatform(value: string | undefined): value is PlatformSlug {
-  return (
-    typeof value === 'string' &&
-    Object.prototype.hasOwnProperty.call(PLATFORM_MAP, value)
-  );
-}
-
-function resolveDownloadUrl(slug: PlatformSlug): string | null {
-  const manifestKey = PLATFORM_MAP[slug];
-  const url = manifest.value?.platforms?.[manifestKey]?.url;
-  return url ?? null;
-}
-
-function handleError(message: string) {
-  status.value = 'error';
-  errorMessage.value = message;
-}
-
-function redirectToDownload(slug: string | undefined) {
-  status.value = 'loading';
-  errorMessage.value = '';
-
-  if (!isKnownPlatform(slug)) {
-    handleError('Unknown download platform. Please pick a link from the downloads page.');
-    return;
-  }
-
-  if (!manifest.value) {
-    handleError('Download info is not available right now. Please try again later.');
-    return;
-  }
-
-  const downloadUrl = resolveDownloadUrl(slug);
-
-  if (!downloadUrl) {
-    handleError('Download is not available right now. Please try again later.');
-    return;
-  }
-
-  window.location.href = downloadUrl;
-}
-
-onMounted(() => {
-  redirectToDownload(route.params.platform as string | undefined);
-});
 </script>

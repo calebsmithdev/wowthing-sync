@@ -7,24 +7,24 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test": "node --test scripts/*.test.mjs",
+    "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@primeuix/themes": "^2.0.3",
     "@tailwindcss/vite": "^4.3.3",
-    "autoprefixer": "^10.6.1",
     "nuxt": "^4.6.0",
-    "postcss": "^8.5.29",
-    "primevue": "^4.5.5",
     "tailwindcss": "^4.3.3",
-    "tailwindcss-primeui": "^0.6.1",
     "vue": "^3.5.43",
-    "vue-router": "^5.3.1"
-  },
-  "devDependencies": {
-    "@primevue/nuxt-module": "^4.5.5"
+    "vue-router": "^5.4.0"
   },
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  },
+  "devDependencies": {
+    "@nuxt/kit": "^4.6.0",
+    "@types/node": "^22.20.5",
+    "typescript": "~5.9.3",
+    "vue-tsc": "^3.3.12"
   }
 }

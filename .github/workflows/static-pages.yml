@@ -4,36 +4,58 @@ on:
   release:
     types:
       - published
+  push:
+    branches: [main]
+    paths:
+      - 'marketing/**'
+      - '.github/workflows/static-pages.yml'
+  pull_request:
+    paths:
+      - 'marketing/**'
+      - '.github/workflows/static-pages.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
+    # Prereleases aren't "latest", so the site keeps pointing at the stable release.
+    if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./marketing
     env:
-      working-directory: ./marketing
       NUXT_APP_BASE_URL: '/${{ github.event.repository.name }}/'
+      # Read release assets with the workflow token to avoid anonymous API rate limits.
+      GITHUB_TOKEN: ${{ github.token }}
+      WOWTHING_RELEASE_TAG: ${{ github.event.release.tag_name }}
     steps:
-      - uses: actions/checkout@v4
-      - run: corepack enable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: lts/*
+          node-version: '22.22.3'
+          cache: npm
+          cache-dependency-path: marketing/package-lock.json
 
-      - run: npm install
-        working-directory: ${{ env.working-directory}}
-
-      - name: Fetch latest download manifest
-        run: |
-          echo "NUXT_DOWNLOAD_MANIFEST=$(curl -sL https://github.com/calebsmithdev/wowthing-sync/releases/latest/download/latest.json | jq -c '.')" >> $GITHUB_ENV
-
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
       - run: npx nuxt build --preset github_pages
-        working-directory: ${{ env.working-directory}}
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: ${{ env.working-directory}}/.output/public
+          path: marketing/.output/public
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     permissions:
       pages: write      # to deploy to Pages
@@ -45,4 +67,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
