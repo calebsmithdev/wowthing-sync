@@ -34,6 +34,8 @@ mod smoke;
 mod sync_queue;
 #[cfg(not(feature = "smoke-test"))]
 mod sync_service;
+#[cfg(feature = "integration-test")]
+mod updater_fixture;
 #[cfg(not(feature = "smoke-test"))]
 mod window_lifecycle;
 

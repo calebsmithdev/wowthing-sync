@@ -7,12 +7,14 @@ trait Vault {
     fn read(&self) -> Result<Option<String>, String>;
     fn write(&self, key: &str) -> Result<(), String>;
 }
+#[cfg_attr(feature = "integration-test", derive(Default))]
 struct OsVault {
     #[cfg(not(feature = "integration-test"))]
     service: String,
     #[cfg(not(feature = "integration-test"))]
     account: String,
 }
+#[cfg(not(feature = "integration-test"))]
 impl Default for OsVault {
     fn default() -> Self {
         Self {

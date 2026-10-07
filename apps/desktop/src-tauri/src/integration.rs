@@ -283,12 +283,16 @@ pub fn run() {
     let mut context = tauri::generate_context!();
     let mut window = context.config_mut().app.windows.remove(0);
     window.visible = true;
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .manage(Arc::new(Counts::default()))
         .manage(PreferencesState(Ok(store)))
         .manage(crate::credentials::SecretManager::default())
-        .manage(crate::settings::SettingsManager::default())
-        .plugin(
+        .manage(crate::settings::SettingsManager::default());
+    let updater_test = std::env::var("WOWTHING_UPDATER_TEST").as_deref() == Ok("1");
+    let builder = if updater_test {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder.plugin(
             tauri::plugin::Builder::<tauri::Wry, serde_json::Value>::new("updater")
                 .invoke_handler(tauri::generate_handler![
                     updater::check,
@@ -296,6 +300,8 @@ pub fn run() {
                 ])
                 .build(),
         )
+    };
+    builder
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, serde_json::Value>::new("dialog")
                 .invoke_handler(tauri::generate_handler![dialog::open])
@@ -314,8 +320,12 @@ pub fn run() {
             }));
             tauri::WebviewWindowBuilder::from_config(app, &window)?
                 .initialization_script(
-                    include_str!("../../tests/e2e/native-integration.js")
-                        .replace("__SMOKE_VERSION__", env!("CARGO_PKG_VERSION")),
+                    (if updater_test {
+                        include_str!("../../tests/e2e/native-updater.js")
+                    } else {
+                        include_str!("../../tests/e2e/native-integration.js")
+                    })
+                    .replace("__SMOKE_VERSION__", env!("CARGO_PKG_VERSION")),
                 )
                 .build()?;
             tray::setup_system_tray_menu(app.handle())?;
@@ -333,7 +343,8 @@ pub fn run() {
             crate::settings::set_notifications,
             crate::settings::default_wow_folder,
             integration_control,
-            integration_report
+            integration_report,
+            crate::updater_fixture::updater_fixture
         ])
         .build(context)
         .expect("isolated native builder failed")

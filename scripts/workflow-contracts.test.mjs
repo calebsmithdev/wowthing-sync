@@ -26,7 +26,7 @@ test('workflow DAG, real runner matrix and required-job topology are enforced', 
   assert.equal(pr.jobs.checks.uses, './.github/workflows/desktop-checks.yml')
   const reusable = await workflow('desktop-checks.yml')
   assert.deepEqual(reusable.jobs.native.strategy.matrix.os, ['macos-15', 'macos-15-intel', 'windows-2022', 'ubuntu-24.04'])
-  assert.deepEqual(reusable.jobs.complete.needs, ['frontend', 'native'])
+  assert.deepEqual(reusable.jobs.complete.needs, ['frontend', 'native', 'audit'])
   assert.equal(reusable.jobs.complete.if, 'always()')
   const release = await workflow('release.yml')
   assert.equal(release.jobs.checks.uses, pr.jobs.checks.uses)
