@@ -2,11 +2,12 @@
 @import "@nuxt/ui";
 @import './transitions.css';
 
-body {
-  @apply text-slate-800 dark:text-slate-200 bg-gray-100 dark:bg-gray-900;
-  padding-bottom: 50px; /* Adjusted to accommodate the fixed header */
-}
+@layer base {
+  body {
+    @apply bg-default text-default;
+  }
 
-h1 {
-  @apply text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white tracking-tight;
+  h1 {
+    @apply text-2xl font-semibold text-highlighted tracking-tight;
+  }
 }

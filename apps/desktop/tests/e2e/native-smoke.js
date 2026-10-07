@@ -18,7 +18,7 @@
   }
   addEventListener('DOMContentLoaded', async () => {
     try {
-      await wait(() => document.body.innerText.includes('Addon Sync') && document.body.innerText.includes('Version __SMOKE_VERSION__'))
+      await wait(() => document.body.innerText.includes('Not synced yet') && document.body.innerText.includes('Version __SMOKE_VERSION__'))
       click('Settings')
       await wait(() => document.querySelector('input[name="apiKey"]') || document.querySelector('input[type="password"]'))
       const input = document.querySelector('input[type="password"]')
@@ -29,10 +29,10 @@
       await wait(() => document.body.innerText.includes('Settings saved.'))
       click('Check for Updates')
       await wait(() => document.body.innerText.includes('You Are Up to Date'))
-      click('Dashboard')
-      await wait(() => document.body.innerText.includes('Manually Upload Data'))
-      click('Manually Upload Data')
-      await wait(() => document.body.innerText.includes('Last successful file upload'))
+      click('Status')
+      await wait(() => document.body.innerText.includes('Watching 1 account'))
+      click('Sync Now')
+      await wait(() => document.body.innerText.includes('Synced '))
     } catch (error) { errors.push(String(error)) }
     await window.__TAURI_INTERNALS__.invoke('smoke_report', { errors })
   }, { once: true })

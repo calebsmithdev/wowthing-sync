@@ -1,11 +1,14 @@
 <template>
   <UAlert
     v-if="visible"
-    :color="phase === 'error' ? 'error' : 'primary'"
+    :color="phase === 'error' ? 'error' : phase === 'up-to-date' ? 'success' : 'primary'"
     variant="soft"
+    :icon="icon"
     :title="title"
     :description="description"
     :actions="actions"
+    :close="!busy"
+    @update:open="isOpen => { if (!isOpen) dismiss() }"
   />
 </template>
 
@@ -14,8 +17,9 @@ import type { ButtonProps } from '@nuxt/ui'
 import { open } from '@tauri-apps/plugin-shell'
 import useUpdater from '../composables/useUpdater'
 
-const { phase, visible, version, error, progress, busy, handleUpdate, checkForUpdates } = useUpdater()
+const { phase, visible, version, error, progress, busy, handleUpdate, checkForUpdates, dismiss } = useUpdater()
 const title = computed(() => ({ idle: 'Updates', checking: 'Checking for Updates', available: 'Update Available', downloading: 'Downloading Update', installing: 'Installing Update', 'up-to-date': 'You Are Up to Date', error: 'Update Failed' })[phase.value])
+const icon = computed(() => phase.value === 'error' ? 'i-lucide-circle-alert' : phase.value === 'up-to-date' ? 'i-lucide-circle-check' : busy.value ? 'i-lucide-loader-circle' : 'i-lucide-info')
 const description = computed(() => {
   if (error.value) return error.value
   if (phase.value === 'available') return `Version ${version.value} is ready to install.`

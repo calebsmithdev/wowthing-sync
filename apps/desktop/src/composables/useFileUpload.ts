@@ -21,6 +21,9 @@ export const useInternalFileUpload = () => {
     lastUpdated,
     lastUpdatedFromNow: computed(() => { void clock.value; return lastUpdated.value?.fromNow() ?? '' }),
     formattedLastUpdated: computed(() => lastUpdated.value?.format('lll') ?? ''),
+    /** Relative time for a unix timestamp; re-evaluates with the shared clock. */
+    fromNow: (unix: number) => { void clock.value; return dayjs.unix(unix).fromNow() },
+    formatted: (unix: number) => dayjs.unix(unix).format('lll'),
     isProcessing: computed(() => status.value.isProcessing),
     watchingFiles: computed(() => status.value.files),
     syncError: computed(() => status.value.error),

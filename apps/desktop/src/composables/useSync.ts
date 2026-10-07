@@ -10,10 +10,12 @@ export interface SyncStatus {
   pending: number
   failures: { file: string; message: string }[]
   warning: string | null
+  /** Last successful upload (unix seconds) per collector file. */
+  uploads: Record<string, number>
 }
 
 export const emptySyncStatus = (): SyncStatus => ({
-  folder: null, hasApiKey: false, files: [], isProcessing: false, lastSuccess: null, error: null, pending: 0, failures: [], warning: null,
+  folder: null, hasApiKey: false, files: [], isProcessing: false, lastSuccess: null, error: null, pending: 0, failures: [], warning: null, uploads: {},
 })
 export const getSyncStatus = () => invoke<SyncStatus>('get_sync_status')
 export const syncNow = () => invoke<null>('sync_now')

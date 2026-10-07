@@ -25,11 +25,53 @@ pub struct SyncStatus {
     pub pending: usize,
     pub failures: Vec<FileFailure>,
     pub warning: Option<String>,
+    /// Last successful upload time per collector file, persisted as `account-uploads`.
+    pub uploads: BTreeMap<String, u64>,
 }
 #[derive(Clone, PartialEq, Serialize)]
 pub struct FileFailure {
     pub file: String,
     pub message: String,
+}
+/// Upload results since the queue was last empty; notified once as a whole.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct BatchSummary {
+    pub uploaded: usize,
+    pub failed: usize,
+}
+impl BatchSummary {
+    fn record(&mut self, successful: bool) {
+        if successful {
+            self.uploaded += 1;
+        } else {
+            self.failed += 1;
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.uploaded == 0 && self.failed == 0
+    }
+    #[cfg_attr(feature = "integration-test", allow(dead_code))]
+    fn message(&self) -> String {
+        let accounts = |n: usize| {
+            if n == 1 {
+                "1 account".to_string()
+            } else {
+                format!("{n} accounts")
+            }
+        };
+        match (self.uploaded, self.failed) {
+            (1, 0) => "Collector data uploaded.".into(),
+            (uploaded, 0) => format!("Collector data uploaded for {}.", accounts(uploaded)),
+            (0, failed) => format!(
+                "Upload failed for {}. Open WoWthing Sync for details.",
+                accounts(failed)
+            ),
+            (uploaded, failed) => format!(
+                "Uploaded {uploaded} of {}. {failed} failed; open WoWthing Sync for details.",
+                accounts(uploaded + failed)
+            ),
+        }
+    }
 }
 impl SyncStatus {
     fn finish_upload(
@@ -48,7 +90,10 @@ impl SyncStatus {
         let file = file.to_string_lossy().into_owned();
         self.failures.retain(|failure| failure.file != file);
         match outcome {
-            Ok(()) => self.last_success = Some(now),
+            Ok(()) => {
+                self.last_success = Some(now);
+                self.uploads.insert(file, now);
+            }
             Err(message) => self.failures.push(FileFailure { file, message }),
         }
     }
@@ -73,49 +118,40 @@ fn stored_last_success(value: Option<serde_json::Value>) -> Option<u64> {
 }
 #[cfg(not(feature = "integration-test"))]
 fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<(), String> {
-    use tauri_plugin_notification::NotificationExt;
     let store = crate::preferences::store(app)
         .map_err(|_| "Could not access sync preferences".to_string())?;
-    let mut errors = Vec::new();
     if successful
         && store
             .commit("last-success", Some(serde_json::json!(now)))
             .is_err()
     {
-        errors.push("Upload succeeded, but its timestamp could not be saved.");
+        return Err("Upload succeeded, but its timestamp could not be saved.".into());
     }
-    if store
+    Ok(())
+}
+#[cfg(not(feature = "integration-test"))]
+fn batch_notification(app: &tauri::AppHandle, summary: BatchSummary) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    let enabled = crate::preferences::store(app)
+        .map_err(|_| "Could not access sync preferences".to_string())?
         .get("notifications-enabled")
         .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        match app.notification().permission_state() {
-            Ok(tauri_plugin_notification::PermissionState::Granted) => {
-                if app
-                    .notification()
-                    .builder()
-                    .title("WoWthing Sync")
-                    .body(if successful {
-                        "Collector file uploaded successfully."
-                    } else {
-                        "A collector upload failed. Open the app for details."
-                    })
-                    .show()
-                    .is_err()
-                {
-                    errors.push(
-                        "Desktop notification failed. Sync results remain available in the app.",
-                    );
-                }
-            }
-            Ok(_) => {} // Background work never prompts for permission.
-            Err(_) => errors.push("Could not check desktop notification permission."),
-        }
+        .unwrap_or(false);
+    if !enabled {
+        return Ok(());
     }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors.join(" "))
+    match app.notification().permission_state() {
+        Ok(tauri_plugin_notification::PermissionState::Granted) => app
+            .notification()
+            .builder()
+            .title("WoWthing Sync")
+            .body(summary.message())
+            .show()
+            .map_err(|_| {
+                "Desktop notification failed. Sync results remain available in the app.".into()
+            }),
+        Ok(_) => Ok(()), // Background work never prompts for permission.
+        Err(_) => Err("Could not check desktop notification permission.".into()),
     }
 }
 /// OS and transport boundary only. Discovery, validation, queueing, retries,
@@ -126,6 +162,10 @@ pub(crate) trait WorkerIo: Send + Sync + 'static {
     fn reload(&self);
     fn emit(&self, status: &SyncStatus);
     fn effects(&self, successful: bool, now: u64) -> Result<(), String>;
+    /// Called once when the queue drains after one or more uploads finished.
+    fn notify(&self, _summary: BatchSummary) -> Result<(), String> {
+        Ok(())
+    }
     fn client(&self) -> Result<reqwest::Client, String> {
         crate::commands::submit_addon_data::http_client()
     }
@@ -153,6 +193,9 @@ impl WorkerIo for AppIo {
     }
     fn effects(&self, successful: bool, now: u64) -> Result<(), String> {
         upload_effects(&self.0, successful, now)
+    }
+    fn notify(&self, summary: BatchSummary) -> Result<(), String> {
+        batch_notification(&self.0, summary)
     }
 }
 enum Request {
@@ -345,7 +388,11 @@ fn run(
                 store
                     .get("last-success")
                     .or_else(|| store.get("last-updated")),
-            )
+            );
+            state.uploads = store
+                .get("account-uploads")
+                .and_then(|value| serde_json::from_value(value).ok())
+                .unwrap_or_default();
         }
         Err(e) => state.error = Some(e.to_string()),
     }
@@ -368,6 +415,7 @@ fn run(
         state.folder = Some(root.path().to_string_lossy().into_owned());
     }
     let mut queue = crate::sync_queue::SyncQueue::default();
+    let mut batch = BatchSummary::default();
     let mut active_generation = 0;
     publish(&io, &shared, &state);
     while !stopping.load(Ordering::Acquire) {
@@ -389,6 +437,7 @@ fn run(
                     previous.clear();
                     cache.clear();
                     queue = Default::default();
+                    batch = BatchSummary::default();
                     state.files.clear();
                     state.is_processing = false;
                     state.pending = 0;
@@ -489,6 +538,12 @@ fn run(
         }
         previous = prints;
         state.pending = queue.len();
+        // Checked after a scan, so writes made during the last upload extend the batch.
+        if queue.len() == 0 && !batch.is_empty() {
+            if let Err(warning) = io.notify(std::mem::take(&mut batch)) {
+                state.warning = Some(warning);
+            }
+        }
         publish(&io, &shared, &state);
         let Some(file) = queue.take_ready(now) else {
             continue;
@@ -518,9 +573,20 @@ fn run(
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
+            let successful = outcome.is_ok();
+            batch.record(successful);
             state.finish_upload(&file, outcome.map(|_| ()), now, |successful, now| {
                 io.effects(successful, now)
             });
+            if successful {
+                let saved = io.preferences().and_then(|store| {
+                    store.commit("account-uploads", Some(serde_json::json!(state.uploads)))
+                });
+                if saved.is_err() && state.warning.is_none() {
+                    state.warning =
+                        Some("Upload succeeded, but its timestamp could not be saved.".into());
+                }
+            }
         }
         publish(&io, &shared, &state);
     }
@@ -566,6 +632,10 @@ mod tests {
         status.record_upload(Path::new("failed.lua"), Ok(()), 3);
         assert!(status.failures.is_empty());
         assert_eq!(status.last_success, Some(3));
+        assert_eq!(
+            status.uploads,
+            BTreeMap::from([("failed.lua".into(), 3), ("successful.lua".into(), 2)])
+        );
     }
     #[test]
     fn storage_and_notification_failures_do_not_erase_success_or_leave_processing() {
@@ -581,6 +651,31 @@ mod tests {
             assert_eq!(status.last_success, Some(2));
             assert_eq!(status.warning.as_deref(), Some(failure));
         }
+    }
+    #[test]
+    fn batch_notifications_summarize_every_upload_in_the_batch() {
+        let summary = |uploaded, failed| BatchSummary { uploaded, failed }.message();
+        assert_eq!(summary(1, 0), "Collector data uploaded.");
+        assert_eq!(summary(3, 0), "Collector data uploaded for 3 accounts.");
+        assert_eq!(
+            summary(0, 1),
+            "Upload failed for 1 account. Open WoWthing Sync for details."
+        );
+        assert_eq!(
+            summary(2, 1),
+            "Uploaded 2 of 3 accounts. 1 failed; open WoWthing Sync for details."
+        );
+        let mut batch = BatchSummary::default();
+        assert!(batch.is_empty());
+        batch.record(true);
+        batch.record(false);
+        assert_eq!(
+            batch,
+            BatchSummary {
+                uploaded: 1,
+                failed: 1
+            }
+        );
     }
     #[test]
     fn migrates_legacy_success_dates_and_ignores_invalid_dates() {

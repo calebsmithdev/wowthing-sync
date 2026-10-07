@@ -343,7 +343,7 @@ Node CI is pinned to **22.22.3**, Rust to **1.97.1** (`rust-toolchain.toml`, rus
 
 | Native command | Arguments / result | Typed frontend entry |
 | --- | --- | --- |
-| `get_sync_status` | `SyncStatus` snapshot | `useSync.ts:getSyncStatus` |
+| `get_sync_status` | `SyncStatus` snapshot, including per-file `uploads` times | `useSync.ts:getSyncStatus` |
 | `sync_now` | enqueue manual sync; `Result<(), String>` | `useSync.ts:syncNow` (queued, not completed) |
 | `submit_addon_data` | `file_path:String`; validated enqueue, `Result<String,String>` | `useThingApi.ts:submitAddonData` (legacy, returns **Upload queued**) |
 | `get_api_key_status` | `ApiKeyStatus` (presence/error only) | native presence diagnostic; UI `useApiKeys.ts` observes sync status |
@@ -351,10 +351,12 @@ Node CI is pinned to **22.22.3**, Rust to **1.97.1** (`rust-toolchain.toml`, rus
 | `get_settings` | `SettingsSnapshot` | `useSettings.ts:hydrate` |
 | `save_sync_folder` | `folder:String`; validated atomic persistence + worker configuration | `useSettings.ts:saveFolder` |
 | `set_autostart` | `enabled:bool`; OS verify + persistence/rollback | `useSettings.ts:setAutostart` |
-| `set_notifications` | `enabled:bool`; preference only | `useSettings.ts:setNotifications` |
+| `set_notifications` | `enabled:bool`; preference only. The worker sends one summary notification per batch, once the queue drains after a scan | `useSettings.ts:setNotifications` |
 | `default_wow_folder` | default folder suggestion; `Result<String,String>` | `useSettings.ts:defaultFolder` |
 
 All native commands are registered in `src-tauri/src/lib.rs`. Settings and credential commands are in `settings.rs` and `credentials.rs`; the app-lifetime polling/queue service is `sync_service.rs`. Commands return actionable errors; bridge initialization failures render in the app. Retry Loading Settings retries a transient IPC hydration failure; unreadable/invalid startup preference files must be repaired followed by an app restart (the valid in-memory store is never overwritten by external edits). Shared plugins hydrate settings, subscribe before sync snapshots and own updater cleanup for the app lifetime. Do not return API keys to frontend state or log them.
+
+UI conventions: the main window is resizable (520×640 default, 440×520 minimum) and follows the OS light/dark appearance. The amber primary uses shade 700 in light mode for contrast (`palette.css`). The design is deliberately flat: hairline-separated rows instead of cards; the header keeps the WoWthing logo and app name beside the tabs. The Status page's headline is the time since the last sync. Accounts are listed with their own last-upload time (`SyncStatus.uploads`, persisted as `account-uploads`) or an inline failure with Retry. `SyncStatusBanner` shows only app-wide problems, plus a summary of account failures on pages other than Status. Settings uses grouped rows, and results render beside the setting that produced them (`useSettings().scope`). Choosing a folder in the OS dialog is the explicit approval and saves immediately. The tray menu shows a live status line from `sync-status` events, plus **Sync Now**. Native smoke/integration scripts (`tests/e2e/native-*.js`) drive the UI by visible text and `#folder-message`; update them when you rename controls.
 
 ### Reproducible validation
 

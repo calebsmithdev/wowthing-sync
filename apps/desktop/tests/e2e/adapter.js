@@ -5,7 +5,7 @@
   const listeners = new Map()
   const calls = []
   const settings = { folder: '/fixture/_retail_', hasApiKey: true, autoStart: false, autoStartError: null, notificationsEnabled: false, notificationPermission: 'unknown' }
-  const status = { folder: settings.folder, hasApiKey: true, files: ['/fixture/collector.lua'], isProcessing: false, lastSuccess: null, error: null, pending: 0, failures: [], warning: null }
+  const status = { folder: settings.folder, hasApiKey: true, files: ['/fixture/collector.lua'], isProcessing: false, lastSuccess: null, error: null, pending: 0, failures: [], warning: null, uploads: {} }
   const emit = (event, payload) => {
     for (const listener of listeners.values()) if (listener.event === event) callbacks.get(listener.handler)?.({ event, id: listener.id, payload })
   }
@@ -42,7 +42,7 @@
         case 'save_sync_folder': settings.folder = status.folder = args.folder; emit('sync-status', { ...status }); return { ...settings }
         case 'set_autostart': settings.autoStart = args.enabled; return { ...settings }
         case 'set_notifications': settings.notificationsEnabled = args.enabled; return { ...settings }
-        case 'sync_now': status.lastSuccess = 1791244800; emit('sync-status', { ...status }); return null
+        case 'sync_now': status.lastSuccess = 1791244800; status.uploads = { '/fixture/collector.lua': 1791244800 }; emit('sync-status', { ...status }); return null
         default: throw new Error(`Unsupported hermetic command: ${command}`)
       }
     },

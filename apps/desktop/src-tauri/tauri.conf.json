@@ -60,9 +60,11 @@
     "windows": [
       {
         "fullscreen": false,
-        "height": 500,
-        "width": 500,
-        "resizable": false,
+        "height": 640,
+        "width": 520,
+        "minHeight": 520,
+        "minWidth": 440,
+        "resizable": true,
         "title": "WoWthing Sync",
         "decorations": true,
         "useHttpsScheme": true,

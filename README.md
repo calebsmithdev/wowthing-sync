@@ -16,9 +16,11 @@ Wowthing Sync is a cross-platform desktop client for [Wowthing](https://wowthing
 ## Features
 
 - Automatically upload the [Wowthing Collector](https://www.curseforge.com/wow/addons/wowthing-collector) addon data on character reload/logout
-- Manually queue addon uploads on demand; syncing continues when navigating to Settings
-- Save API keys securely in OS credential storage and explicitly save folder/preferences
-- View partial failures and retry locked credential connections in the app
+- See when each account last uploaded, with failures and Retry shown on that account
+- Sync Now from the app or the tray menu, which also shows the current sync status
+- Save API keys securely in OS credential storage; a folder chosen in the folder picker is validated and saved immediately
+- View failures for each account and retry locked credential connections in the app
+- Follows your system's light or dark appearance
 
 ## How to Develop
 
