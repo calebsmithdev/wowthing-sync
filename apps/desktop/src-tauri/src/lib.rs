@@ -1,4 +1,6 @@
-#[cfg(not(feature = "smoke-test"))]
+#[cfg(all(feature = "smoke-test", feature = "integration-test"))]
+compile_error!("automation harness features are mutually exclusive");
+#[cfg(not(any(feature = "smoke-test", feature = "integration-test")))]
 use tauri::Manager;
 // Declare the internal namespaces
 #[cfg(not(feature = "smoke-test"))]
@@ -7,11 +9,13 @@ mod collector_fs;
 mod commands;
 #[cfg(not(feature = "smoke-test"))]
 mod credentials;
+#[cfg(feature = "integration-test")]
+mod integration;
 #[cfg(not(feature = "smoke-test"))]
 mod preferences;
 #[cfg(not(feature = "smoke-test"))]
 mod settings;
-#[cfg(not(feature = "smoke-test"))]
+#[cfg(not(any(feature = "smoke-test", feature = "integration-test")))]
 mod setup;
 #[cfg(feature = "smoke-test")]
 mod smoke;
@@ -24,7 +28,9 @@ mod sync_service;
 pub fn run() {
     #[cfg(feature = "smoke-test")]
     smoke::run();
-    #[cfg(not(feature = "smoke-test"))]
+    #[cfg(feature = "integration-test")]
+    integration::run();
+    #[cfg(not(any(feature = "smoke-test", feature = "integration-test")))]
     tauri::Builder::default()
         .on_permission_request(|_, kind| setup::permissions::webview_permission_response(kind))
         .plugin(tauri_plugin_notification::init())

@@ -10,6 +10,7 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+#[cfg(not(feature = "integration-test"))]
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, Default, PartialEq, Serialize)]
@@ -70,6 +71,7 @@ fn stored_last_success(value: Option<serde_json::Value>) -> Option<u64> {
             .ok()
     })
 }
+#[cfg(not(feature = "integration-test"))]
 fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<(), String> {
     use tauri_plugin_notification::NotificationExt;
     let store = crate::preferences::store(app)
@@ -131,7 +133,9 @@ pub(crate) trait WorkerIo: Send + Sync + 'static {
         crate::commands::submit_addon_data::WOWTHING_UPLOAD_ENDPOINT
     }
 }
+#[cfg(not(feature = "integration-test"))]
 struct AppIo(tauri::AppHandle);
+#[cfg(not(feature = "integration-test"))]
 impl WorkerIo for AppIo {
     fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String> {
         crate::preferences::store(&self.0)
@@ -165,6 +169,7 @@ pub struct SyncService {
     generation: Arc<AtomicU64>,
 }
 impl SyncService {
+    #[cfg(not(feature = "integration-test"))]
     pub fn start(app: tauri::AppHandle) -> Self {
         Self::start_with_io(AppIo(app))
     }

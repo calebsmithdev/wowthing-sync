@@ -86,6 +86,7 @@ fn write_atomic(path: &Path, values: &BTreeMap<String, serde_json::Value>) -> Re
 pub fn store(app: &tauri::AppHandle) -> Result<Arc<Preferences>, String> {
     app.state::<PreferencesState>().0.clone()
 }
+#[cfg(not(feature = "integration-test"))]
 pub fn initialize(app: &tauri::AppHandle) -> PreferencesState {
     PreferencesState(
         app.path()

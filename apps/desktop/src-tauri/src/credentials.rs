@@ -9,12 +9,14 @@ trait Vault {
 }
 struct OsVault;
 const LOCKED: &str = "OS credential storage is locked or unavailable. Unlock your keychain/credential service, then save your API key or retry.";
+#[cfg(not(feature = "integration-test"))]
 impl OsVault {
     fn entry(&self) -> Result<keyring::Entry, String> {
         keyring::Entry::new("com.calebsmithdev.wowthing-sync", "wowthing-api-key")
             .map_err(|_| LOCKED.into())
     }
 }
+#[cfg(not(feature = "integration-test"))]
 impl Vault for OsVault {
     fn read(&self) -> Result<Option<String>, String> {
         match self.entry()?.get_password() {
@@ -25,6 +27,24 @@ impl Vault for OsVault {
     }
     fn write(&self, key: &str) -> Result<(), String> {
         self.entry()?.set_password(key).map_err(|_| LOCKED.into())
+    }
+}
+#[cfg(feature = "integration-test")]
+impl Vault for OsVault {
+    fn read(&self) -> Result<Option<String>, String> {
+        match std::fs::read_to_string(crate::integration::root().join("synthetic-vault")) {
+            Ok(key) if key == "smoke-fixture-key" => Ok(Some(key)),
+            Ok(_) => Err("Invalid synthetic vault fixture".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(LOCKED.into()),
+        }
+    }
+    fn write(&self, key: &str) -> Result<(), String> {
+        if key != "smoke-fixture-key" {
+            return Err("Only the synthetic test key is accepted".into());
+        }
+        std::fs::write(crate::integration::root().join("synthetic-vault"), key)
+            .map_err(|_| LOCKED.into())
     }
 }
 pub(crate) fn validate_key(value: &str) -> Result<String, String> {

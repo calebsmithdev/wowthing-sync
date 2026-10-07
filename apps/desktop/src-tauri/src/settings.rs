@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::Manager;
+#[cfg(not(feature = "integration-test"))]
 use tauri_plugin_autostart::ManagerExt;
 
 #[derive(Default)]
@@ -20,10 +21,7 @@ pub struct SettingsSnapshot {
 fn snapshot(app: &tauri::AppHandle) -> Result<SettingsSnapshot, String> {
     let store =
         crate::preferences::store(app).map_err(|_| "Could not read settings".to_string())?;
-    let auto_start = app
-        .autolaunch()
-        .is_enabled()
-        .map_err(|_| "Could not read launch-at-login status. Check OS login settings.".to_string());
+    let auto_start = NativeAutoStart(app).actual();
     Ok(SettingsSnapshot {
         folder: store
             .get("program-folder")
@@ -73,6 +71,7 @@ trait AutoStart {
     fn set(&self, enabled: bool) -> Result<(), String>;
 }
 struct NativeAutoStart<'a>(&'a tauri::AppHandle);
+#[cfg(not(feature = "integration-test"))]
 impl AutoStart for NativeAutoStart<'_> {
     fn actual(&self) -> Result<bool, String> {
         self.0
@@ -87,6 +86,19 @@ impl AutoStart for NativeAutoStart<'_> {
             self.0.autolaunch().disable()
         }
         .map_err(|_| "Could not change launch-at-login registration".into())
+    }
+}
+#[cfg(feature = "integration-test")]
+impl AutoStart for NativeAutoStart<'_> {
+    fn actual(&self) -> Result<bool, String> {
+        Ok(crate::preferences::store(self.0)?
+            .get("fixture-autostart")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false))
+    }
+    fn set(&self, enabled: bool) -> Result<(), String> {
+        crate::preferences::store(self.0)?
+            .commit("fixture-autostart", Some(serde_json::json!(enabled)))
     }
 }
 fn commit_autostart(
