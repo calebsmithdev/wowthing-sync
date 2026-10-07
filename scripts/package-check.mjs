@@ -75,6 +75,7 @@ export async function packageCheck({ release = false } = {}) {
     if (packages.length !== 1) throw new Error('missing or unexpected packages')
     for (const artifact of packages) {
       const temporary = await mkdtemp(join(tmpdir(), 'wowthing-package-'))
+      let safeToRemove = true
       try {
         if (artifact.endsWith('.deb')) {
           const actual = await command('dpkg-deb', ['--field', artifact, 'Version'], { capture: true })
@@ -114,7 +115,8 @@ export async function packageCheck({ release = false } = {}) {
         const native = harness ? await runFixture(entrypoint, resolve(root, `test-results/package-${profile}/${basename(artifact)}`), { auditedBinary: binary }) : null
         if (native && native.version !== version) throw new Error('packaged candidate version mismatch')
         reports.push({ artifact: artifact.replace(root, ''), harness, version, ...identity, launched: harness })
-      } finally { await rm(temporary, { recursive: true, force: true }) }
+      } catch (error) { safeToRemove = error.report?.processClosed !== false && error.report?.treeClosed !== false; throw error }
+      finally { if (safeToRemove) await rm(temporary, { recursive: true, force: true }) }
     }
     }
   }

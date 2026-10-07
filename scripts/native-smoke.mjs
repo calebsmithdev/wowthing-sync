@@ -1,19 +1,16 @@
-import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { writeFile, mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-// This feature replaces the entire builder before any real preferences/secret setup.
-// CI uses xvfb-run on Linux. macOS WKWebView is checked in process, not unsupported tauri-driver.
-const root = fileURLToPath(new URL('../', import.meta.url))
-const build = spawn('cargo', ['build', '--locked', '--manifest-path', 'apps/desktop/src-tauri/Cargo.toml', '--features', 'smoke-test'], { cwd: root, stdio: 'inherit' })
-build.on('error', error => { console.error(error); process.exitCode = 1 })
-build.on('close', code => {
-  if (code !== 0) { process.exitCode = 1; return }
+import { root, command } from './native-integration.mjs'
+const reportDirectory = resolve(root, 'test-results/native-smoke')
+await mkdir(reportDirectory, { recursive: true })
+let report = null, failure = null
+try {
+  await command('cargo', ['build', '--locked', '--manifest-path', 'apps/desktop/src-tauri/Cargo.toml', '--features', 'smoke-test'], { timeout: 20 * 60_000, label: 'smoke-build', reportDirectory })
   const binary = resolve(root, 'target/debug', process.platform === 'win32' ? 'wowthing-sync.exe' : 'wowthing-sync')
-  const child = spawn(binary, [], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] })
-  let output = ''
-  child.stdout.on('data', data => { process.stdout.write(data); output += data.toString() })
-  child.stderr.pipe(process.stderr)
-  const timeout = setTimeout(() => { console.error('Native smoke UI timed out'); child.kill('SIGKILL') }, 45_000)
-  child.on('error', error => { console.error(error); clearTimeout(timeout); process.exitCode = 1 })
-  child.on('close', exit => { clearTimeout(timeout); process.exitCode = exit === 0 && output.includes('NATIVE_SMOKE PASS') ? 0 : 1 })
-})
+  const output = await command(binary, [], { timeout: 45_000, label: 'native-smoke', reportDirectory })
+  const lines = output.stdout.split('\n').filter(line => line.startsWith('NATIVE_SMOKE '))
+  if (lines.length !== 1 || !lines[0].startsWith('NATIVE_SMOKE PASS ')) throw new Error('missing or failed native smoke report')
+  report = JSON.parse(lines[0].slice('NATIVE_SMOKE PASS '.length))
+  if (report.errors.length || report.saved !== 1 || report.synced !== true) throw new Error('native smoke incomplete')
+} catch (error) { failure = error.message; console.error(error.message); process.exitCode = 1 }
+finally { await writeFile(resolve(reportDirectory, 'report.json'), JSON.stringify({ passed: failure === null, failure, native: report }, null, 2)) }

@@ -17,6 +17,9 @@ jobs:
       matrix:
         os: [macos-15, macos-15-intel, windows-2022, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CI_REPORT_DIR: ${{ github.workspace }}/test-results/diagnostics
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,10 +39,12 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: '. -> target'
+      - name: Initialize diagnostic metadata
+        run: node scripts/ci-diagnostics.mjs
       - run: npm ci
         working-directory: apps/desktop
       - name: Frontend checks and built assets
-        run: npm run lint && npm run typecheck && npm run test:unit && npm run generate
+        run: npm run lint && npm run typecheck && npm run test:unit -- --reporter=default --reporter=junit --outputFile=test-results/vitest.xml && npm run generate
         working-directory: apps/desktop
       - name: Native domain checks
         run: cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked && cargo check --locked
@@ -69,10 +74,16 @@ jobs:
       - name: Build production desktop binary without distribution credentials
         run: npm run tauri -- build --debug --no-bundle -- --locked
         working-directory: apps/desktop
-      - name: Upload failed browser traces
-        if: failure()
+      - name: Collect native diagnostics and crash records
+        if: always()
+        run: node scripts/ci-diagnostics.mjs --collect-crashes
+      - name: Preserve diagnostic reports and browser traces
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-failure-${{ matrix.os }}
-          path: apps/desktop/test-results
-          if-no-files-found: ignore
+          name: diagnostics-${{ matrix.os }}
+          path: |
+            test-results/
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
+          if-no-files-found: error
