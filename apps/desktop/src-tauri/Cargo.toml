@@ -21,7 +21,6 @@ tauri-build = { version = "2.7.1", features = [] }
 
 [dependencies]
 serde_json = "1.0.151"
-tauri-plugin-store = "2.5.0"
 tauri-plugin-shell = "2.4.0"
 tauri-plugin-process = "2.4.0"
 tauri-plugin-dialog = "2.8.1"
@@ -30,6 +29,7 @@ tauri-plugin-notification = "2.5.1"
 tauri-plugin-log = "2.10.0"
 log = "0.4.34"
 httpdate = "1.0.3"
+tempfile = "3.27.0"
 libc = "0.2.190"
 cap-std = "4.0.3"
 keyring = { version = "=3.6.3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }

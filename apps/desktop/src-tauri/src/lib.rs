@@ -3,6 +3,8 @@ use tauri::Manager;
 mod collector_fs;
 mod commands;
 mod credentials;
+mod preferences;
+mod settings;
 mod setup;
 mod sync_queue;
 mod sync_service;
@@ -16,7 +18,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
             let handle = &app.handle();
 
@@ -25,7 +26,9 @@ pub fn run() {
             setup::system_tray_menu::setup_system_tray_menu(handle)?;
             setup::logs::setup_logs(handle)?;
 
+            app.manage(preferences::initialize(app.handle()));
             app.manage(credentials::SecretManager::default());
+            app.manage(settings::SettingsManager::default());
             app.manage(sync_service::SyncService::start(app.handle().clone()));
             Ok(())
         })
@@ -39,13 +42,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::submit_addon_data::submit_addon_data,
             sync_service::get_sync_status,
-            sync_service::configure_sync,
             sync_service::sync_now,
             credentials::get_api_key_status,
             credentials::save_api_key,
-            commands::preferences::get_preference,
-            commands::preferences::save_preference,
-            commands::preferences::default_wow_folder
+            settings::get_settings,
+            settings::save_sync_folder,
+            settings::set_autostart,
+            settings::set_notifications,
+            settings::default_wow_folder
         ])
         .build(tauri::generate_context!())
         .expect("Error while building the Wowthing Sync application")

@@ -6,7 +6,7 @@ pub fn setup_desktop(app: &AppHandle) -> tauri::Result<()> {
     {
         app.plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            Some(vec!["--flag1", "--flag2"]), // arbitrary number of args to pass to your app
+            None,
         ))?;
         app.plugin(tauri_plugin_updater::Builder::new().build())?;
         let _ = app.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
