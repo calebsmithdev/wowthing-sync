@@ -1,5 +1,4 @@
 // Explicit opt-in only. Never run on a local user or a self-hosted runner.
-import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -18,28 +17,17 @@ const binary = resolve(root, 'target/debug', process.platform === 'win32' ? 'wow
 try {
   await command('cargo', ['build', '--locked', '--bin', 'wowthing-os-test', '--features', 'os-integration-test'])
   built = true
-  await new Promise((resolvePromise, reject) => {
-    const child = spawn(binary, [], { cwd: root, env: scopedEnvironment, stdio: ['ignore', 'pipe', 'pipe'] })
-    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('OS probe deadline exceeded')) }, 90_000)
-    child.stdout.on('data', data => { stdout += data.toString(); process.stdout.write(data) })
-    child.stderr.on('data', data => { stderr += data.toString(); process.stderr.write(data) })
-    child.once('error', error => { clearTimeout(timer); reject(error) })
-    child.once('close', code => {
-      clearTimeout(timer)
-      try {
-        const reports = stdout.split('\n').filter(line => line.startsWith('OS_INTEGRATION_REPORT '))
-        if (code !== 0 || reports.length !== 1) throw new Error('OS probe missing expected successful report')
-        const report = JSON.parse(reports[0].slice('OS_INTEGRATION_REPORT '.length))
-        if (report.passed !== true || report.marker !== 'WOWTHING_OS_CI_V1') throw new Error('OS adapter probe failed')
-        writeFile(resolve(reportDirectory, `${unavailable ? 'unavailable-' : ''}report.json`), JSON.stringify(report, null, 2)).then(resolvePromise, reject)
-      } catch (error) { reject(error) }
-    })
-  })
+  const result = await command(binary, [], { cwd: root, env: scopedEnvironment, timeout: 90_000, label: 'os-probe', reportDirectory, onStdout: bytes => { stdout += bytes.toString() }, onStderr: bytes => { stderr += bytes.toString() } })
+  const reports = result.stdout.split('\n').filter(line => line.startsWith('OS_INTEGRATION_REPORT '))
+  if (reports.length !== 1) throw new Error('OS probe missing expected successful report')
+  const report = JSON.parse(reports[0].slice('OS_INTEGRATION_REPORT '.length))
+  if (report.passed !== true || report.marker !== 'WOWTHING_OS_CI_V1') throw new Error('OS adapter probe failed')
+  await writeFile(resolve(reportDirectory, `${unavailable ? 'unavailable-' : ''}report.json`), JSON.stringify(report, null, 2))
 } catch (error) { console.error(error); process.exitCode = 1 }
 finally {
   if (built && !unavailable) {
     try {
-      const cleanup = await command(binary, [], { env: { ...scopedEnvironment, WOWTHING_OS_CLEANUP: '1' }, capture: true, timeout: 30_000 })
+      const cleanup = await command(binary, [], { env: { ...scopedEnvironment, WOWTHING_OS_CLEANUP: '1' }, capture: true, timeout: 30_000, label: 'os-cleanup', reportDirectory })
       const line = cleanup.stdout.split('\n').find(line => line.startsWith('OS_INTEGRATION_REPORT '))
       if (!line || JSON.parse(line.slice('OS_INTEGRATION_REPORT '.length)).passed !== true) throw new Error('OS cleanup report missing or failed')
       await writeFile(resolve(reportDirectory, 'cleanup.json'), line.slice('OS_INTEGRATION_REPORT '.length))

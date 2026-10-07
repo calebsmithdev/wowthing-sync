@@ -50,6 +50,9 @@ jobs:
             target: x86_64-pc-windows-msvc
             key: windows-x86_64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CI_REPORT_DIR: ${{ github.workspace }}/test-results/diagnostics
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -70,10 +73,12 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: '. -> target'
+      - name: Initialize diagnostic metadata
+        run: node scripts/ci-diagnostics.mjs
       - run: npm ci
         working-directory: apps/desktop
       - name: Check frontend and generate assets
-        run: npm run lint && npm run typecheck && npm run test:unit && npm run generate
+        run: npm run lint && npm run typecheck && npm run test:unit -- --reporter=default --reporter=junit --outputFile=test-results/vitest.xml && npm run generate
         working-directory: apps/desktop
       - name: Check native code before producing artifacts
         run: cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked && cargo check --locked
@@ -109,6 +114,20 @@ jobs:
         with:
           name: release-${{ matrix.key }}
           path: release-assets/*
+          if-no-files-found: error
+
+      - name: Collect native diagnostics and crash records
+        if: always()
+        run: node scripts/ci-diagnostics.mjs --collect-crashes
+      - name: Preserve diagnostic reports and browser traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-release-${{ matrix.key }}
+          path: |
+            test-results/
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
           if-no-files-found: error
 
   draft-release:
