@@ -21,3 +21,12 @@ test('npm launcher executes the actual pinned Node CLI without cmd shell', async
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout.trim(), /^\d+\.\d+\.\d+$/)
 })
+
+test('CI command wrapper resolves npm and npx before native process supervision', () => {
+  const wrapper = fileURLToPath(new URL('./ci-run.mjs', import.meta.url))
+  for (const executable of ['npm', 'npx']) {
+    const result = spawnSync(process.execPath, [wrapper, `contract-${executable}`, '30', executable, '--version'], { encoding: 'utf8', timeout: 40000 })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /\d+\.\d+\.\d+/)
+  }
+})

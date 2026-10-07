@@ -1,0 +1,15 @@
+name: Nightly Desktop Validation
+on:
+  schedule:
+    - cron: '15 6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-nightly-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    uses: ./.github/workflows/desktop-checks.yml
+    with:
+      tier: nightly
