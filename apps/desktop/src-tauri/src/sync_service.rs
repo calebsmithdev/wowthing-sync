@@ -1,7 +1,7 @@
 //! App-lifetime collector discovery. The worker belongs to the native app, never a page.
 use serde::Serialize;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -80,13 +80,12 @@ fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<
     let store = crate::preferences::store(app)
         .map_err(|_| "Could not access sync preferences".to_string())?;
     let mut errors = Vec::new();
-    if successful {
-        if store
+    if successful
+        && store
             .commit("last-success", Some(serde_json::json!(now)))
             .is_err()
-        {
-            errors.push("Upload succeeded, but its timestamp could not be saved.");
-        }
+    {
+        errors.push("Upload succeeded, but its timestamp could not be saved.");
     }
     if store
         .get("notifications-enabled")
@@ -236,32 +235,57 @@ fn fingerprints(
     root: &crate::collector_fs::ApprovedRoot,
     files: &[PathBuf],
     cache: &mut FingerprintCache,
-) -> Result<BTreeMap<PathBuf, u64>, String> {
+) -> (BTreeMap<PathBuf, u64>, Vec<(PathBuf, String)>) {
     use std::hash::{Hash, Hasher};
     let mut fingerprints = BTreeMap::new();
+    let mut failures = Vec::new();
     for file in files {
-        let metadata = root.metadata(file)?;
-        let stamp = FileStamp {
-            len: metadata.len(),
-            modified: metadata.modified().ok().map(|time| time.into_std()),
-            created: metadata.created().ok().map(|time| time.into_std()),
-        };
-        let cached = cache.get(file).filter(|(previous, _, verified)| {
-            previous == &stamp && verified.elapsed() < Duration::from_secs(30)
-        });
-        let hash = if let Some((_, hash, _)) = cached {
-            *hash
-        } else {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            root.read(file)?.hash(&mut hasher);
-            let hash = hasher.finish();
-            cache.insert(file.clone(), (stamp, hash, Instant::now()));
-            hash
-        };
-        fingerprints.insert(file.clone(), hash);
+        let result = (|| -> Result<u64, String> {
+            let metadata = root.metadata(file)?;
+            let stamp = FileStamp {
+                len: metadata.len(),
+                modified: metadata.modified().ok().map(|time| time.into_std()),
+                created: metadata.created().ok().map(|time| time.into_std()),
+            };
+            let cached = cache.get(file).filter(|(previous, _, verified)| {
+                previous == &stamp && verified.elapsed() < Duration::from_secs(30)
+            });
+            let hash = if let Some((_, hash, _)) = cached {
+                *hash
+            } else {
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                root.read(file)?.hash(&mut hasher);
+                let hash = hasher.finish();
+                cache.insert(file.clone(), (stamp, hash, Instant::now()));
+                hash
+            };
+            Ok(hash)
+        })();
+        match result {
+            Ok(hash) => {
+                fingerprints.insert(file.clone(), hash);
+            }
+            Err(error) => {
+                cache.remove(file);
+                failures.push((file.clone(), error));
+            }
+        }
     }
     cache.retain(|file, _| files.contains(file));
-    Ok(fingerprints)
+    (fingerprints, failures)
+}
+async fn until_cancelled<T>(
+    operation: impl std::future::Future<Output = T>,
+    stopping: &AtomicBool,
+    generation: &AtomicU64,
+    expected: u64,
+) -> Option<T> {
+    // Bias cancellation when configuration changed before a request completed.
+    tokio::select! {
+        biased;
+        () = async { while !stopping.load(Ordering::Acquire) && generation.load(Ordering::Acquire) == expected { tokio::time::sleep(Duration::from_millis(50)).await; } } => None,
+        result = operation => Some(result),
+    }
 }
 fn run(
     app: tauri::AppHandle,
@@ -298,6 +322,7 @@ fn run(
         }
     };
     let mut previous = BTreeMap::new();
+    let mut scan_failures = BTreeSet::new();
     let mut cache = FingerprintCache::new();
     let mut approved = state
         .folder
@@ -333,6 +358,7 @@ fn run(
                     state.pending = 0;
                     state.error = None;
                     state.failures.clear();
+                    scan_failures.clear();
                     state.warning = None;
                     manual = false;
                     publish(&app, &shared, &state);
@@ -380,32 +406,47 @@ fn run(
             publish(&app, &shared, &state);
             continue;
         };
-        let result = root.discover().and_then(|files| {
-            if files.is_empty() {
-                return Err(
-                    "No WoWthing_Collector.lua files found. Enable the addon and log out of WoW."
-                        .into(),
-                );
-            }
-            fingerprints(root, &files, &mut cache).map(|prints| (files, prints))
+        let result = root.scan().map(|(files, mut failures)| {
+            let (prints, read_failures) = fingerprints(root, &files, &mut cache);
+            failures.extend(read_failures);
+            (prints, failures)
         });
-        let (files, prints) = match result {
+        let (prints, failures) = match result {
             Ok(result) => result,
             Err(error) => {
                 state.error = Some(error);
                 state.files.clear();
-                // Keep pending settled changes and their deadlines through transient scan errors.
                 state.pending = queue.len();
                 publish(&app, &shared, &state);
                 continue;
             }
         };
+        // Clear only previous scan errors. Upload failures survive a healthy scan.
+        state
+            .failures
+            .retain(|failure| !scan_failures.contains(&failure.file));
+        scan_failures.clear();
+        for (file, message) in failures {
+            let file = file.to_string_lossy().into_owned();
+            state.failures.retain(|failure| failure.file != file);
+            scan_failures.insert(file.clone());
+            state.failures.push(FileFailure { file, message });
+        }
+        let files: Vec<_> = prints.keys().cloned().collect();
+        queue.retain(&files);
+        previous.retain(|file, _| prints.contains_key(file));
+        if files.is_empty() {
+            state.error = Some("No readable, nonempty WoWthing_Collector.lua files found. Enable the addon and log out of WoW.".into());
+            state.files.clear();
+            state.pending = queue.len();
+            publish(&app, &shared, &state);
+            continue;
+        }
         state.error = None;
         state.files = files
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-        queue.retain(&files);
         let now = Instant::now();
         for file in &files {
             if previous.get(file) != prints.get(file) {
@@ -425,12 +466,12 @@ fn run(
         state.pending = queue.len();
         state.error = None;
         publish(&app, &shared, &state);
-        let outcome = tauri::async_runtime::block_on(async {
-            tokio::select! {
-                result = crate::commands::submit_addon_data::upload_file(&app, &client, root, &file) => Some(result),
-                () = async { while !stopping.load(Ordering::Acquire) && generation.load(Ordering::Acquire) == active_generation { tokio::time::sleep(Duration::from_millis(50)).await; } } => None,
-            }
-        });
+        let outcome = tauri::async_runtime::block_on(until_cancelled(
+            crate::commands::submit_addon_data::upload_file(&app, &client, root, &file),
+            &stopping,
+            &generation,
+            active_generation,
+        ));
         state.is_processing = false;
         if generation.load(Ordering::Acquire) != active_generation {
             continue;
@@ -514,6 +555,88 @@ mod tests {
         assert_eq!(
             stored_last_success(Some(serde_json::json!("invalid"))),
             None
+        );
+    }
+    #[tokio::test]
+    async fn configuration_changes_and_shutdown_cancel_stalled_uploads() {
+        for stop in [false, true] {
+            let stopping = AtomicBool::new(false);
+            let generation = AtomicU64::new(1);
+            let pending = until_cancelled(std::future::pending::<()>(), &stopping, &generation, 1);
+            let change = async {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                if stop {
+                    stopping.store(true, Ordering::Release);
+                } else {
+                    generation.store(2, Ordering::Release);
+                }
+            };
+            let (outcome, ()) = tokio::time::timeout(Duration::from_millis(250), async {
+                tokio::join!(pending, change)
+            })
+            .await
+            .expect("Cancellation must bound shutdown/configuration latency");
+            assert_eq!(outcome, None);
+        }
+        let stale = until_cancelled(
+            std::future::ready("stale result"),
+            &AtomicBool::new(false),
+            &AtomicU64::new(2),
+            1,
+        )
+        .await;
+        assert_eq!(stale, None);
+    }
+    #[test]
+    fn unhealthy_collectors_do_not_block_healthy_account_queue() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let mut candidates = Vec::new();
+        for account in ["GOOD", "EMPTY", "OVERSIZED"] {
+            let file = root.join(format!(
+                "WTF/Account/{account}/SavedVariables/WoWthing_Collector.lua"
+            ));
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(
+                &file,
+                if account == "EMPTY" {
+                    ""
+                } else {
+                    "fixture lua"
+                },
+            )
+            .unwrap();
+            if account == "OVERSIZED" {
+                std::fs::File::create(&file)
+                    .unwrap()
+                    .set_len(crate::collector_fs::MAX_COLLECTOR_BYTES + 1)
+                    .unwrap();
+            }
+            candidates.push(file);
+        }
+        let approved = crate::collector_fs::ApprovedRoot::open(&root).unwrap();
+        let (files, scan_errors) = approved.scan().unwrap();
+        let (prints, read_errors) = fingerprints(&approved, &files, &mut Default::default());
+        assert_eq!(scan_errors.len(), 1);
+        assert_eq!(read_errors.len(), 1);
+        assert_eq!(
+            prints.keys().cloned().collect::<Vec<_>>(),
+            vec![candidates[0].clone()]
+        );
+        let mut queue = crate::sync_queue::SyncQueue::default();
+        let now = Instant::now();
+        queue.manual(prints.into_keys(), now);
+        assert_eq!(queue.take_ready(now), Some(candidates[0].clone()));
+        std::fs::write(&candidates[1], "fixed collector").unwrap();
+        assert_eq!(
+            fingerprints(
+                &approved,
+                &approved.scan().unwrap().0,
+                &mut Default::default()
+            )
+            .0
+            .len(),
+            2
         );
     }
     #[test]

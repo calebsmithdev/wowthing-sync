@@ -21,21 +21,27 @@ impl Preferences {
                 file.take(1024 * 1024 + 1)
                     .read_to_end(&mut bytes)
                     .map_err(|_| {
-                        "Could not read settings. Check app-data permissions.".to_string()
+                        "Could not read settings. Check app-data permissions and restart the app."
+                            .to_string()
                     })?;
                 Some(bytes)
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(_) => return Err("Could not read settings. Check app-data permissions.".into()),
+            Err(_) => {
+                return Err(
+                    "Could not read settings. Check app-data permissions and restart the app."
+                        .into(),
+                )
+            }
         };
         let values = match bytes {
             Some(bytes) if bytes.len() <= 1024 * 1024 => {
                 serde_json::from_slice(&bytes).map_err(|_| {
-                    "Settings file is invalid. Repair or restore it before saving settings."
+                    "Settings file is invalid. Repair or restore it and restart the app before saving settings."
                         .to_string()
                 })?
             }
-            Some(_) => return Err("Settings file exceeds the size limit".into()),
+            Some(_) => return Err("Settings file exceeds the size limit. Repair it and restart the app.".into()),
             None => BTreeMap::new(),
         };
         Ok(Self {

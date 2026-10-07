@@ -8,6 +8,8 @@ use std::{
 
 pub const MAX_COLLECTOR_BYTES: u64 = 32 * 1024 * 1024;
 const COLLECTOR: &str = "WoWthing_Collector.lua";
+pub type ScanFailures = Vec<(PathBuf, String)>;
+pub type ScanResult = (Vec<PathBuf>, ScanFailures);
 pub struct ApprovedRoot {
     path: PathBuf,
     dir: Dir,
@@ -45,11 +47,22 @@ impl ApprovedRoot {
         Ok(relative.to_owned())
     }
     pub fn discover(&self) -> Result<Vec<PathBuf>, String> {
+        let (files, failures) = self.scan()?;
+        if files.is_empty() {
+            if let Some((_, error)) = failures.into_iter().next() {
+                return Err(error);
+            }
+        }
+        Ok(files)
+    }
+    /// Account-directory failures are global; individual collector failures are isolated.
+    pub fn scan(&self) -> Result<ScanResult, String> {
         let accounts = self
             .dir
             .read_dir("WTF/Account")
             .map_err(|_| "Cannot read WoW account directory".to_string())?;
         let mut files = Vec::new();
+        let mut failures = Vec::new();
         for (count, account) in accounts.enumerate() {
             if count >= 1000 {
                 return Err("WoW account directory contains too many entries".into());
@@ -66,15 +79,16 @@ impl ApprovedRoot {
                 .join(account.file_name())
                 .join("SavedVariables")
                 .join(COLLECTOR);
+            let file = self.path.join(&relative);
             match self.dir.metadata(&relative) {
-                Ok(metadata) if metadata.is_file() => { if metadata.len() > MAX_COLLECTOR_BYTES { return Err("A collector file exceeds the 32 MiB upload limit".into()); } files.push(self.path.join(relative)); },
-                Ok(_) => {},
+                Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_COLLECTOR_BYTES => files.push(file),
+                Ok(_) => failures.push((file, "Collector must be a regular file of at most 32 MiB".into())),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
-                Err(_) => return Err("Cannot access collector safely. Check permissions and remove links outside the selected folder.".into()),
+                Err(_) => failures.push((file, "Cannot access collector safely. Check permissions and remove links outside the selected folder.".into())),
             }
         }
         files.sort();
-        Ok(files)
+        Ok((files, failures))
     }
     pub fn metadata(&self, path: &Path) -> Result<cap_std::fs::Metadata, String> {
         self.dir

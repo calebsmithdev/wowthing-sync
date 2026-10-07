@@ -31,6 +31,15 @@ describe('settings drafts', () => {
     invoke.mockResolvedValueOnce({ ...emptySettings(), folder: '/canonical-folder', autoStart: false })
     await wrapper.findAll('button').find(button => button.text() === 'Save Folder')!.trigger('click'); await flushPromises()
     expect(invoke).toHaveBeenLastCalledWith('save_sync_folder', { folder: '/new-folder' })
-    expect(settings.state.value.folder).toBe('/canonical-folder'); wrapper.unmount(); vi.unstubAllGlobals()
+    expect(settings.state.value.folder).toBe('/canonical-folder')
+    // Re-selecting an unchanged path explicitly approves a fresh directory capability.
+    open.mockResolvedValueOnce('/canonical-folder')
+    await wrapper.findAll('button').find(button => button.text() === 'Choose Folder')!.trigger('click'); await flushPromises()
+    const saveFolder = wrapper.findAll('button').find(button => button.text() === 'Save Folder')!
+    expect(saveFolder.attributes('disabled')).toBeUndefined()
+    invoke.mockResolvedValueOnce({ ...emptySettings(), folder: '/canonical-folder', autoStart: false })
+    await saveFolder.trigger('click'); await flushPromises()
+    expect(invoke).toHaveBeenLastCalledWith('save_sync_folder', { folder: '/canonical-folder' })
+    wrapper.unmount(); vi.unstubAllGlobals()
   })
 })

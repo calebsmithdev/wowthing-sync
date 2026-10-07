@@ -16,14 +16,16 @@ Wowthing Sync is a cross-platform desktop client for [Wowthing](https://wowthing
 ## Features
 
 - Automatically upload the [Wowthing Collector](https://www.curseforge.com/wow/addons/wowthing-collector) addon data on character reload/logout
-- Manually upload addon data on demand
+- Manually queue addon uploads on demand; syncing continues when navigating to Settings
+- Save API keys securely in OS credential storage and explicitly save folder/preferences
+- View partial failures and retry locked credential connections in the app
 
 ## How to Develop
 
 ### Prerequisites
 
 - Node.js 22.22.3+, 24.15.0+, or 26+ (matching Nuxt's supported release lines)
-- Rust toolchain with the targets required by [Tauri's platform prerequisites](https://tauri.app/start/prerequisites/)
+- Rust **1.97.1** (pinned in `rust-toolchain.toml`) and targets required by [Tauri's platform prerequisites](https://tauri.app/start/prerequisites/)
 - npm (bundled with Node) and the platform-specific Tauri dependencies for your OS
 
 ### Install dependencies
@@ -38,23 +40,41 @@ npm ci --prefix ./apps/desktop
 npm run --prefix ./apps/desktop tauri:dev
 ```
 
-This launches the Nuxt dev server and the Tauri shell with hot reload.
+This launches a loopback Nuxt dev server and Tauri shell with hot reload and fresh CSP nonces on port3015 (HMR3016). Busy ports are refused; choose another with `TAURI_DEV_PORT`. Avoid running the normal app for tests: it opens your real preferences and OS credentials.
 
 ### Run tests
 
 ```bash
-npm run --prefix ./apps/desktop test:unit
+npm run --prefix ./apps/desktop lint
 npm run --prefix ./apps/desktop typecheck
+npm run --prefix ./apps/desktop test:unit
 npm run --prefix ./apps/desktop generate
-cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo check --locked
+node --test scripts/*.test.mjs
+cd apps/desktop
+npx playwright install chromium
+npm run test:e2e
+npm run test:native
 ```
 
-### Build a release installer (current OS)
+### Build locally (current OS, no distribution credentials)
 
 ```bash
-npm run --prefix ./apps/desktop build
-npm run --prefix ./apps/desktop tauri build
+npm run --prefix ./apps/desktop tauri -- build --debug --no-bundle -- --locked
+# macOS app bundle:
+npm run --prefix ./apps/desktop tauri -- build --debug --bundles app --no-sign --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
 ```
+
+Browser smoke serves built assets with a hermetic Tauri adapter and strict CSP. Native smoke uses the compile-time `smoke-test` builder with synthetic commands: it never accesses your settings, credentials, uploads or live updater. It checks actual WKWebView/WebView2/WebKitGTK boot, CSP and IPC; it does not test OS credential prompts, autostart, notifications, tray menus or signed installation. Linux native smoke needs `xvfb-run -a npm run test:native`. macOS uses in-process automation because tauri-driver does not support WKWebView. Windows/Linux/Intel macOS execution is configured in CI but was not executed on this development machine.
+
+Cargo package version is authoritative. `scripts/release-metadata.mjs` validates input, tag, lockfile, app and signed updater metadata before creating/resuming a matching draft release. No release is published automatically by development commands. Distribution signing credentials are needed only for release artifacts.
+
+The selected `_retail_` folder must contain `WTF/Account` and readable nonempty collector files. Only bounded account `SavedVariables/WoWthing_Collector.lua` files inside that root can upload. Legacy keys migrate only after verified OS credential save; unavailable/locked storage is recoverable with **Retry Sync**. Linux needs a running Secret Service. If startup preferences are unreadable or invalid, repair/restore the file and restart the app; Retry Loading Settings recovers transient bridge errors. Desktop notification consent is reported as unknown because the native API cannot reliably expose OS delivery settings.
+
+See [AGENTS.md](AGENTS.md) for the exact command catalog, security boundaries and platform test matrix.
 
 ## Scripts
 

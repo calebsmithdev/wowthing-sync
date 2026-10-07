@@ -8,10 +8,20 @@
       </ul>
     </template>
     <p v-if="status.warning">{{ status.warning }}</p>
+    <UButton class="mr-3" variant="outline" :loading="retrying" @click="retry">Retry Sync</UButton>
+    <p v-if="retryError">{{ retryError }}</p>
     <NuxtLink to="/settings" class="underline">Open Settings</NuxtLink>
   </div>
 </template>
 
 <script setup lang="ts">
+import { syncNow } from '../composables/useSync'
 const status = useSync()
+const retrying = ref(false)
+const retryError = ref<string | null>(null)
+const retry = async () => {
+  retrying.value = true; retryError.value = null
+  try { await syncNow() } catch (cause) { retryError.value = String(cause) }
+  finally { retrying.value = false }
+}
 </script>

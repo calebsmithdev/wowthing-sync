@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { invoke } from '../mocks/tauri'
 import { emptySyncStatus } from '../../src/composables/useSync'
+import { observeSync } from '../../src/utils/syncObserver'
 const { listen, unlisten } = vi.hoisted(() => ({ listen: vi.fn(), unlisten: vi.fn() }))
 vi.mock('@tauri-apps/api/event', () => ({ listen }))
-import { observeSync } from '../../src/utils/syncObserver'
 
 describe('app lifetime sync observer', () => {
   it('keeps a live event over an older initialization snapshot', async () => {

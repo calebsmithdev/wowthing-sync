@@ -16,7 +16,7 @@
       </div>
 
       <template v-if="apiKey">
-        <UButton @click="handleUpload()" :loading="isProcessing" :disabled="isProcessing">Manually Upload Data</UButton>
+        <UButton :loading="isProcessing" :disabled="isProcessing" @click="handleUpload()">Manually Upload Data</UButton>
       </template>
       <template v-else>
         <UButton to="/settings">Configure API</UButton>

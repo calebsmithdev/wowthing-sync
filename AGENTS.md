@@ -50,7 +50,7 @@ If structure differs, **Agent must scan** `tauri.conf.json`, `package.json`, `nu
 
 **Dev (hot‑reload web + Tauri)**
 
-* `npm dev` or `npm run --prefix ./apps/desktop dev` within `apps/desktop` should:
+* `npm run dev` or `npm run --prefix ./apps/desktop dev` within `apps/desktop` should:
 
   1. launch Nuxt dev server
   2. run `tauri dev` with that URL as devPath
@@ -306,21 +306,9 @@ Agent SHOULD submit a patch that adds these subsections under clearly marked hea
 
 ---
 
-## 16) Quick Validation Commands (copy/paste)
+## 16) Quick Validation Commands
 
-```bash
-# Type/lint/test (frontend)
-npm run --prefix ./apps/desktop typecheck && npm run  --prefix ./apps/desktoplint && npm run --prefix ./apps/desktop test:unit
-
-# Rust
-cargo fmt -- --check && cargo clippy -- -D warnings && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
-
-# Build desktop app (current OS)
-npm run --prefix ./apps/desktop build && npm run --prefix ./apps/desktop tauri build
-
-# Vue Unit Tests
-npm run --prefix ./apps/desktop test:unit
-```
+Use the reproducible validation catalog below. The desktop npm directory is `apps/desktop`; Cargo is a root workspace. Use `npm run --prefix apps/desktop <script>` and Cargo `--locked`. Generate frontend assets before native checks/builds.
 
 ---
 
@@ -347,26 +335,78 @@ npm run --prefix ./apps/desktop test:unit
 
 * `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` When updating any Rust code to verify the build runs without compile errors.
 
-## Command Catalog
+## Current repository context and command catalog (2026-10-06)
 
-| Command | Rust signature | Frontend wrapper | Error cases / notes |
-| --- | --- | --- | --- |
-| `submit_addon_data` | `pub async fn submit_addon_data(app: tauri::AppHandle, file_path: &str) -> Result<String, String>` (`apps/desktop/src-tauri/src/thing_api.rs:14`) | `submitAddonData(filePath: string): Promise<string>` (`apps/desktop/src/composables/useThingApi.ts:1`) | Returns `Err` when the LUA file cannot be read, the WoWthing API replies non-200, or response text conversion fails; currently panics if the persisted store lacks an `api-key` entry. |
+The desktop app is `apps/desktop`; Cargo is a root workspace with `Cargo.lock` and `target/` at the root. `apps/desktop/dist` links to `.output/public`. Run all Cargo commands from the repo root with `--locked`. Cargo package version in `apps/desktop/src-tauri/Cargo.toml` is the only release version source; Tauri config intentionally omits `version`. `scripts/release-metadata.mjs` verifies input/tag/lock/build/updater consistency before creating any draft.
 
----
+Node CI is pinned to **22.22.3**, Rust to **1.97.1** (`rust-toolchain.toml`, rustfmt/clippy). The dependency minimum is Rust 1.90; only the pinned toolchain is tested. Nuxt4/Vue3/NuxtUI4, TypeScript **strict:true**, `@nuxt/eslint`, Vitest and Playwright are configured. Nuxt modules are `@nuxt/ui` and `@nuxt/eslint`. Frontend assets must be generated before standalone Cargo checks.
 
-## Discovered Context
+| Native command | Arguments / result | Typed frontend entry |
+| --- | --- | --- |
+| `get_sync_status` | `SyncStatus` snapshot | `useSync.ts:getSyncStatus` |
+| `sync_now` | enqueue manual sync; `Result<(), String>` | `useSync.ts:syncNow` (queued, not completed) |
+| `submit_addon_data` | `file_path:String`; validated enqueue, `Result<String,String>` | `useThingApi.ts:submitAddonData` (legacy, returns **Upload queued**) |
+| `get_api_key_status` | `ApiKeyStatus` (presence/error only) | native presence diagnostic; UI `useApiKeys.ts` observes sync status |
+| `save_api_key` | `key:String`; `ApiKeyStatus` | `useSettings.ts:saveKey` |
+| `get_settings` | `SettingsSnapshot` | `useSettings.ts:hydrate` |
+| `save_sync_folder` | `folder:String`; validated atomic persistence + worker configuration | `useSettings.ts:saveFolder` |
+| `set_autostart` | `enabled:bool`; OS verify + persistence/rollback | `useSettings.ts:setAutostart` |
+| `set_notifications` | `enabled:bool`; preference only | `useSettings.ts:setNotifications` |
+| `default_wow_folder` | default folder suggestion; `Result<String,String>` | `useSettings.ts:defaultFolder` |
 
-* Tauri config (`apps/desktop/src-tauri/tauri.conf.json`): allowlist section absent (defaults apply); plugins = `fs` (requireLiteralLeadingDot=false) and `updater` (GitHub endpoint, Windows passive install, bundled pubkey); updater artifacts set to `v1Compatible`; bundle targets = `all`; no autostart wiring in config.
-* Nuxt config (`apps/desktop/nuxt.config.ts`): modules = `@nuxt/ui`; SSR disabled (`ssr: false`); no CSP defined in `app` head; no custom path aliases declared; Vite uses Tailwind plugin with strict HMR port 3001.
-* Rust crate (`apps/desktop/src-tauri/Cargo.toml`): default feature `custom-protocol` mapped to `tauri/custom-protocol`; additional plugins via dependencies (store, persisted-scope, fs+watch, shell, process, dialog, os, notification, log, tray-icon feature, reqwest with json+socks); platform-gated deps include autostart, updater, single-instance; `rust-toolchain` file not present in repo root.
+All native commands are registered in `src-tauri/src/lib.rs`. Settings and credential commands are in `settings.rs` and `credentials.rs`; the app-lifetime polling/queue service is `sync_service.rs`. Commands return actionable errors; bridge initialization failures render in the app. Retry Loading Settings retries a transient IPC hydration failure; unreadable/invalid startup preference files must be repaired followed by an app restart (the valid in-memory store is never overwritten by external edits). Shared plugins hydrate settings, subscribe before sync snapshots and own updater cleanup for the app lifetime. Do not return API keys to frontend state or log them.
 
-### Dependency maintenance (2026-10-06)
+### Reproducible validation
 
-* Tauri 2.12: the crate requires Rust 1.90. `setup/permissions.rs` denies unrelated new webview permission requests while leaving notification consent at the platform default; persisted webview decisions may bypass this handler. Native capabilities are unchanged.
-* Updater resources are closed explicitly via `try`/`finally`; do not use `await using` (Vite dev serves it untranspiled, and older WebKit fails with `SyntaxError: Unexpected identifier`). Keep `public/polyfills/disposable.js` ahead of app modules and retain the ES2022 build target plus `ESNext.Disposable` types for older system webviews. Unit coverage includes cleanup, permission decisions, and polyfill stability.
-* See [dependency review](docs/dependency-review.md) for selected versions, validation commands, compatibility changes, and unresolved audit findings.
-* Lockfiles: `Cargo.lock` at the workspace root, plus one `package-lock.json` each in `apps/desktop` and `marketing`. Use `npm ci` for reproducible installs and Cargo `--locked` for checks.
-* Node requirement: `^22.22.3 || ^24.15.0 || >=26.0.0`. Desktop `postinstall` runs `nuxt prepare`; `typecheck` runs `nuxt typecheck` with vue-tsc. Generate desktop assets before standalone Cargo checks.
-* Actual validation gaps: TypeScript still has `strict: false`; ESLint references a missing generated Nuxt config; no E2E script is configured. Frontend unit tests use Vitest with Tauri mocks. A debug page exists at `apps/desktop/src/pages/__debug.vue`.
-* CI currently uses floating Node `lts/*` and Rust `stable`: JS tests run on `ubuntu-latest`, Rust tests on `ubuntu-24.04`, and release builds on macOS (ARM/Intel), Ubuntu, and Windows. Local dependency validation used Node 22.22.3 / Rust 1.97.1 on macOS only.
+```bash
+npm ci --prefix apps/desktop
+npm run --prefix apps/desktop lint
+npm run --prefix apps/desktop typecheck
+npm run --prefix apps/desktop test:unit
+npm run --prefix apps/desktop generate
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo check --locked
+node --test scripts/*.test.mjs
+node scripts/release-metadata.mjs verify
+cd apps/desktop
+npx playwright install chromium
+npm run test:e2e
+npm run test:native
+npm run test:native:dev # isolated native fixture, fresh dev CSP nonce, port3015
+npm run tauri -- build --debug --no-bundle -- --locked
+# macOS bundle without distribution credentials:
+npm run tauri -- build --debug --bundles app --no-sign --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
+```
+
+`npm run tauri:dev` uses `scripts/tauri-dev.mjs`: fresh per-launch script/style nonce, loopback-only Nuxt dev server, port3015 by default, port+1 HMR. Occupied ports are refused before starting; set `TAURI_DEV_PORT` to another unused port. Use this wrapper for desktop development so dev CSP and Vite/Nuxt nonces agree. Do not use `await using`; explicit updater `try/finally` close is necessary for older system webviews. Keep the disposable polyfill and ES2022 build target.
+
+### Test matrix and limits
+
+| Platform | Configured CI | Locally executed here |
+| --- | --- | --- |
+| macOS ARM64 (`macos-15`) | lint/type/unit/Rust checks, browser smoke, native WKWebView smoke, production debug binary | All checks, production/development native smoke, macOS app bundle |
+| macOS Intel (`macos-15-intel`) | Same matrix checks | Not executed locally |
+| Windows x64 (`windows-2022`) | Same, native WebView2 smoke | Not executed locally |
+| Linux x64 (`ubuntu-24.04`) | Same, native WebKitGTK under Xvfb; GTK/WebKit/dbus development libraries | Not executed locally |
+
+Browser `test:e2e` serves generated assets with strict CSP and an adapter injected **only by `scripts/smoke-server.mjs`**. It checks explicit drafts/save failures, folder/save, update state, navigation-visible failures and manual sync. It proves UI behavior, not native OS integration. `test:native` builds with **smoke-test** feature, replacing the entire native builder before any real preferences/credentials/sync/updater/autostart/notification setup. It exercises the real platform webview, generated assets, production CSP, real native fixture IPC, routing, saves/update/manual events and checks JS/CSP failures. The fixture accepts only a synthetic key, cannot upload, and is absent from production builds. Native automation uses an initialization script and completion command; macOS does **not** claim unsupported tauri-driver coverage. The smoke does not prove real credential prompts, OS autostart/notifications, tray menus or signed updater installation; those require platform/manual testing with explicit fixtures. Never launch the normal native app as a test, since that accesses the user's real data.
+
+Rust tests use temp directories/fake credential/OS adapters and fake retry operations; no live upload server/network. They cover missing/empty/replaced/mixed-invalid collectors, path traversal/symlink/FIFO/size defenses, coalescing, retry classification/backoff, partial results/post-upload failures, config/shutdown cancellation, migration, atomic settings and rollback. Frontend unit tests cover listener/snapshot ordering, component buttons and updater cleanup/races. Browser traces/screenshots are ignored local QA artifacts; screenshots for this run are stored in `/tmp`. Release builds gate signed artifacts on all checks and both smoke layers; local development requires no signing credentials.
+
+### Local validation record (2026-10-06)
+
+On macOS ARM64 with Node22.22.3/Rust1.97.1: clean `npm ci`, lint, strict typecheck, **25 Vitest tests**, generate, cargo fmt/clippy(all-targets)/**29 Rust tests**/check(default and smoke feature), **4 Node script tests**, one Chromium UI smoke and real WKWebView production/development smoke all passed. Native smoke reported `errors:[]`, one synthetic key save and manual sync event. Final debug unsigned `.app` was built with updater artifact generation disabled only by local CLI override at `target/debug/bundle/macos/Wowthing Sync.app`; bundle version verified1.0.7. Browser screenshots: `/tmp/wowthing-settings-reviewed.png`, `/tmp/wowthing-dashboard-reviewed.png`. Windows/Linux/Intel macOS CI is configured but has not run in this local session. Real credential-store prompts and signed update installation were deliberately not exercised.
+
+### Security and permissions
+
+Native plugins: shell, process, dialog, OS, notification, log, desktop autostart/updater/single-instance. Frontend capabilities are core defaults, dialog open, process restart, updater defaults, OS defaults, log defaults, narrowly configured shell open and notification permission query. There are **no frontend FS/store/autostart/notification mutation grants**. Shell open accepts only the fixed GitHub releases/latest URL via the plugin regex; normal WoWthing footer links use webview anchors.
+
+All collector operations use a canonical held `cap-std` directory capability under the selected WoW root, only `WTF/Account/<account>/SavedVariables/WoWthing_Collector.lua`, regular nonempty files <=32MiB and <=1000 account entries. Relative capability opens confine symlink races; Unix nonblocking opens reject FIFOs without hanging. Scan errors for individual accounts stay visible and do not prevent healthy account uploads. Metadata polling is 1 second, cached content fingerprints reverify every30s; a sequential debounced queue retains writes observed after an upload. HTTP client has explicit 10s connect/30s request timeout, <=3 temporary-failure attempts; long Retry-After stops retries. Config generations cancel stale uploads and suppress stale results; shutdown cancellation is bounded.
+
+API keys use explicit `keyring` native Apple/Windows/Linux secret-service backends, cached in Rust memory. Legacy `.settings.dat` plaintext keys are removed only after secure write/readback verification; locked/unavailable backend errors retain the legacy entry and permit Retry Sync, with no plaintext upload fallback. Preferences migrate existing JSON and commit through synced atomic replacement. No tests read the user's data or contact an OS credential store. Linux requires Secret Service plus dbus at runtime; failures are actionable.
+
+Production CSP has self/hashed bundled scripts, external CSS, local SVG icons, IPC-only connections and no unsafe-eval/unsafe-inline. Tauri injects hashes/nonces for generated static scripts. Nuxt UI's runtime palette plugin is replaced by static `palette.css` (keep aligned with `app.config.ts`); icons bundle locally in SVG mode. Development uses a fresh nonce via the dev wrapper and Nitro render hook. Future UI changes must rerun native smoke to catch runtime CSS/script injection.
+
+Autostart reflects actual OS state, verifies changes before saving, and attempts OS rollback on persistence failure. Desktop notification APIs do not expose actual delivery consent truthfully: UI reports unknown and points to OS settings; background failures never prompt. Update controller is shared for background/manual/tray events, serializes checks/installs, closes resources before relaunch and suppresses late teardown callbacks. `__debug` remains a development diagnostic page; there is no general-purpose FS/secret diagnostic endpoint.

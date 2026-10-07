@@ -42,3 +42,7 @@ dist-ssr
 
 # Locally staged release artifacts
 /release-assets/
+
+# Hermetic browser QA outputs
+playwright-report/
+test-results/

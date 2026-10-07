@@ -43,7 +43,7 @@ describe('shared updater controller', () => {
     })
     await updater.handleUpdate()
     expect(resource.close).toHaveBeenCalledOnce(); expect(mockRelaunch).toHaveBeenCalledOnce()
-    expect(resource.close.mock.invocationCallOrder[0]).toBeLessThan(mockRelaunch.mock.invocationCallOrder[0]); updater.stop()
+    expect(resource.close.mock.invocationCallOrder[0]!).toBeLessThan(mockRelaunch.mock.invocationCallOrder[0]!); updater.stop()
   })
   it('closes after failed install and exposes the error without relaunch', async () => {
     const resource = createUpdate(); resource.downloadAndInstall.mockRejectedValueOnce(new Error('Download failed'))
@@ -57,17 +57,17 @@ describe('shared updater controller', () => {
     expect(updater.error.value).toContain('Close failed'); expect(mockRelaunch).not.toHaveBeenCalled(); updater.stop()
   })
   it('coalesces duplicate install and manual check while busy', async () => {
-    const pending = deferred<void>(); const resource = createUpdate(); resource.downloadAndInstall.mockReturnValueOnce(pending.promise)
+    const pending = deferred<undefined>(); const resource = createUpdate(); resource.downloadAndInstall.mockReturnValueOnce(pending.promise)
     mockCheck.mockResolvedValueOnce(resource.update); const updater = createUpdater()
     const first = updater.handleUpdate(); const duplicate = updater.handleUpdate(); const check = updater.checkForUpdates()
     await flushPromises(); expect(mockCheck).toHaveBeenCalledOnce(); expect(resource.downloadAndInstall).toHaveBeenCalledOnce()
-    pending.resolve(); await Promise.all([first, duplicate, check]); expect(mockRelaunch).toHaveBeenCalledOnce(); updater.stop()
+    pending.resolve(undefined); await Promise.all([first, duplicate, check]); expect(mockRelaunch).toHaveBeenCalledOnce(); updater.stop()
   })
   it('keeps Update disabled until asynchronous check cleanup releases the lock', async () => {
-    const closing = deferred<void>(); const resource = createUpdate(); resource.close.mockReturnValueOnce(closing.promise)
+    const closing = deferred<undefined>(); const resource = createUpdate(); resource.close.mockReturnValueOnce(closing.promise)
     mockCheck.mockResolvedValueOnce(resource.update); const updater = createUpdater(); const checking = updater.checkForUpdates()
     await flushPromises(); expect(updater.phase.value).toBe('available'); expect(updater.busy.value).toBe(true)
-    closing.resolve(); await checking; expect(updater.busy.value).toBe(false)
+    closing.resolve(undefined); await checking; expect(updater.busy.value).toBe(false)
     const install = createUpdate(); mockCheck.mockResolvedValueOnce(install.update); await updater.handleUpdate()
     expect(install.downloadAndInstall).toHaveBeenCalledOnce(); updater.stop()
   })
@@ -88,8 +88,8 @@ describe('shared updater controller', () => {
     expect(resource.close).toHaveBeenCalledOnce(); expect(resource.downloadAndInstall).not.toHaveBeenCalled(); expect(mockRelaunch).not.toHaveBeenCalled()
   })
   it('does not relaunch after teardown during download', async () => {
-    const pending = deferred<void>(); const resource = createUpdate(); mockCheck.mockResolvedValueOnce(resource.update); resource.downloadAndInstall.mockReturnValueOnce(pending.promise)
-    const updater = createUpdater(); const operation = updater.handleUpdate(); await flushPromises(); updater.stop(); pending.resolve(); await operation
+    const pending = deferred<undefined>(); const resource = createUpdate(); mockCheck.mockResolvedValueOnce(resource.update); resource.downloadAndInstall.mockReturnValueOnce(pending.promise)
+    const updater = createUpdater(); const operation = updater.handleUpdate(); await flushPromises(); updater.stop(); pending.resolve(undefined); await operation
     expect(resource.close).toHaveBeenCalledOnce(); expect(mockRelaunch).not.toHaveBeenCalled()
   })
   it('cleans up late listeners and stops polling', async () => {

@@ -7,6 +7,7 @@ on:
       - 'apps/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'rust-toolchain.toml'
       - 'scripts/**'
       - '.github/workflows/**'
   push:
@@ -15,6 +16,7 @@ on:
       - 'apps/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'rust-toolchain.toml'
       - 'scripts/**'
       - '.github/workflows/**'
 
@@ -24,7 +26,7 @@ concurrency:
 
 jobs:
   vitest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -44,6 +46,6 @@ jobs:
         run: npx nuxi prepare
         working-directory: apps/desktop
 
-      - name: Run unit tests
-        run: npm run test:unit
+      - name: Lint, typecheck and unit tests
+        run: npm run lint && npm run typecheck && npm run test:unit
         working-directory: apps/desktop
