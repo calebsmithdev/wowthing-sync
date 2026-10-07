@@ -28,7 +28,7 @@ jobs:
       - run: node scripts/ci-run.mjs frontend-unit 300 npm run --prefix apps/desktop test:unit -- --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
       - run: node scripts/ci-run.mjs frontend-assets 300 npm run --prefix apps/desktop generate
       - run: node scripts/ci-run.mjs rust-format 120 cargo fmt --all -- --check
-      - run: node scripts/ci-run.mjs script-contracts 180 node --test scripts/ci-gate.test.mjs scripts/release-metadata.test.mjs scripts/workflow-contracts.test.mjs
+      - run: node scripts/ci-run.mjs script-contracts 180 node --test scripts/ci-gate.test.mjs scripts/release-metadata.test.mjs scripts/workflow-contracts.test.mjs scripts/dependency-audit-policy.test.mjs
       - run: node scripts/release-metadata.mjs verify
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -465,9 +465,11 @@ wrong signed versions. Local OS probe entry points refused before OS changes.
 
 Current end-to-end dependency audit reports show 13 npm advisories in both
 all/production dependency sets (4 critical, 8 high, 1 low); RustSec reports no
-vulnerabilities. The audit script exits 1 and retains JSON, so nightly/release
-validation currently fails on those existing npm findings. They were not waived
-or automatically downgraded. Windows/Linux/Intel execution, actual OS store
+vulnerabilities. That historical run used the blocking audit policy. As of
+2026-10-07, completed audits with findings emit a workflow warning and exit 0;
+JSON reports retain findings and original process statuses. Audit execution,
+timeout, parsing and cleanup errors still fail. Dependencies are not automatically
+downgraded. Windows/Linux/Intel execution, actual OS store
 probes and real distribution signing still require hosted/manual evidence.
 
 ### Background performance (2026-10-07)
