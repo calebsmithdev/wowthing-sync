@@ -19,7 +19,7 @@
           v-for="account in accounts"
           :key="account.file"
           class="flex items-center justify-between gap-4 py-2.5 text-sm"
-          :class="account.failure ? 'border-l-2 border-error pl-3' : 'pl-0.5'"
+          :class="account.failure ? 'border-l-2 border-l-error pl-3' : 'pl-0.5'"
         >
           <span class="truncate font-medium" :title="account.file">{{ account.name }}</span>
           <span v-if="account.failure" class="flex shrink-0 items-center gap-2 text-error">
