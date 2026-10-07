@@ -228,13 +228,7 @@ impl WorkerIo for Io {
     }
     fn reload(&self) {}
     fn emit(&self, _: &SyncStatus) {}
-    fn effects(&self, successful: bool, now: u64) -> Result<(), String> {
-        if successful {
-            self.store
-                .commit("last-success", Some(serde_json::json!(now)))?;
-        }
-        Ok(())
-    }
+
     fn notify(&self, summary: BatchSummary) -> Result<(), String> {
         self.notifications.lock().unwrap().push(summary);
         Ok(())

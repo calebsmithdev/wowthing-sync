@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import localizedFormat from 'dayjs/plugin/localizedFormat'
 import { syncNow, useSync } from './useSync'
+import { useVisibleClock } from './useVisibleClock'
 
 dayjs.extend(relativeTime)
 dayjs.extend(localizedFormat)
@@ -9,10 +10,7 @@ dayjs.extend(localizedFormat)
 /** The view observes the native worker; navigation never owns its lifetime. */
 export const useInternalFileUpload = () => {
   const status = useSync()
-  const clock = ref(Date.now())
-  let timer: ReturnType<typeof setInterval> | undefined
-  onMounted(() => { timer = setInterval(() => { clock.value = Date.now() }, 10_000) })
-  onUnmounted(() => { clearInterval(timer) })
+  const clock = useVisibleClock()
   const lastUpdated = computed(() => status.value.lastSuccess ? dayjs.unix(status.value.lastSuccess) : null)
   return {
     handleUpload: async () => {

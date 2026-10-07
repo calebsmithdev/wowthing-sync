@@ -13,7 +13,7 @@ function createUpdate() {
   return { update, close: vi.spyOn(update, 'close').mockResolvedValue(undefined), downloadAndInstall: vi.spyOn(update, 'downloadAndInstall').mockResolvedValue(undefined) }
 }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
-const CHECK_INTERVAL_MS = 5 * 60 * 1000
+const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 describe('shared updater controller', () => {
   let listener: ((event: { payload: { source: 'tray' } }) => void) | undefined
@@ -30,7 +30,9 @@ describe('shared updater controller', () => {
     mockCheck.mockResolvedValueOnce(first.update).mockResolvedValueOnce(second.update)
     const updater = createUpdater(); updater.start(); await flushPromises()
     expect(updater.phase.value).toBe('available'); expect(first.close).toHaveBeenCalledOnce()
-    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS - 1)
+    expect(mockCheck).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
     expect(second.close).toHaveBeenCalledOnce(); expect(first.downloadAndInstall).not.toHaveBeenCalled(); updater.stop()
   })
   it('shows download progress and closes before relaunch', async () => {

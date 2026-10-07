@@ -79,11 +79,11 @@ impl SyncStatus {
         file: &Path,
         outcome: Result<(), String>,
         now: u64,
-        effects: impl FnOnce(bool, u64) -> Result<(), String>,
+        effects: impl FnOnce(bool, &SyncStatus) -> Result<(), String>,
     ) {
         let successful = outcome.is_ok();
         self.record_upload(file, outcome, now);
-        self.warning = effects(successful, now).err();
+        self.warning = effects(successful, self).err();
     }
     fn record_upload(&mut self, file: &Path, outcome: Result<(), String>, now: u64) {
         self.is_processing = false;
@@ -117,19 +117,6 @@ fn stored_last_success(value: Option<serde_json::Value>) -> Option<u64> {
     })
 }
 #[cfg(not(feature = "integration-test"))]
-fn upload_effects(app: &tauri::AppHandle, successful: bool, now: u64) -> Result<(), String> {
-    let store = crate::preferences::store(app)
-        .map_err(|_| "Could not access sync preferences".to_string())?;
-    if successful
-        && store
-            .commit("last-success", Some(serde_json::json!(now)))
-            .is_err()
-    {
-        return Err("Upload succeeded, but its timestamp could not be saved.".into());
-    }
-    Ok(())
-}
-#[cfg(not(feature = "integration-test"))]
 fn batch_notification(app: &tauri::AppHandle, summary: BatchSummary) -> Result<(), String> {
     use tauri_plugin_notification::NotificationExt;
     let enabled = crate::preferences::store(app)
@@ -161,7 +148,6 @@ pub(crate) trait WorkerIo: Send + Sync + 'static {
     fn key(&self) -> Result<String, String>;
     fn reload(&self);
     fn emit(&self, status: &SyncStatus);
-    fn effects(&self, successful: bool, now: u64) -> Result<(), String>;
     /// Called once when the queue drains after one or more uploads finished.
     fn notify(&self, _summary: BatchSummary) -> Result<(), String> {
         Ok(())
@@ -191,18 +177,92 @@ impl WorkerIo for AppIo {
     fn emit(&self, status: &SyncStatus) {
         let _ = self.0.emit("sync-status", status);
     }
-    fn effects(&self, successful: bool, now: u64) -> Result<(), String> {
-        upload_effects(&self.0, successful, now)
-    }
     fn notify(&self, summary: BatchSummary) -> Result<(), String> {
         batch_notification(&self.0, summary)
     }
 }
+const FALLBACK_INTERVAL: Duration = Duration::from_secs(1);
+const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
+const VERIFY_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Native events only wake capability-based scans; they never authorize a path.
+/// A single outstanding wake bounds memory during bursts or stalled uploads.
+struct CollectorWatcher {
+    _watcher: notify::RecommendedWatcher,
+    pending: Arc<AtomicBool>,
+    healthy: Arc<AtomicBool>,
+}
+impl CollectorWatcher {
+    fn start(
+        root: Option<&crate::collector_fs::ApprovedRoot>,
+        sender: &mpsc::Sender<Request>,
+        epoch: u64,
+    ) -> Option<Self> {
+        use notify::Watcher;
+        let accounts = root?.path().join("WTF/Account");
+        let watched = accounts.clone();
+        let pending = Arc::new(AtomicBool::new(false));
+        let healthy = Arc::new(AtomicBool::new(true));
+        let queued = pending.clone();
+        let health = healthy.clone();
+        let sender = sender.clone();
+        let mut watcher = notify::RecommendedWatcher::new(
+            move |result: notify::Result<notify::Event>| {
+                let relevant = match result {
+                    Ok(event) => relevant_event(&event, &watched),
+                    Err(_) => {
+                        health.store(false, Ordering::Release);
+                        true
+                    }
+                };
+                if relevant && !queued.swap(true, Ordering::AcqRel) {
+                    let _ = sender.send(Request::FilesChanged(epoch));
+                }
+            },
+            notify::Config::default().with_follow_symlinks(false),
+        )
+        .ok()?;
+        watcher
+            .watch(&accounts, notify::RecursiveMode::Recursive)
+            .ok()?;
+        Some(Self {
+            _watcher: watcher,
+            pending,
+            healthy,
+        })
+    }
+    fn healthy(&self) -> bool {
+        self.healthy.load(Ordering::Acquire)
+    }
+}
+fn relevant_event(event: &notify::Event, accounts: &Path) -> bool {
+    if matches!(event.kind, notify::EventKind::Access(_)) {
+        return false; // Our own reads must not trigger another scan.
+    }
+    event.need_rescan()
+        || event.paths.is_empty()
+        || event.paths.iter().any(|path| {
+            path.strip_prefix(accounts).is_ok_and(|relative| {
+                let depth = relative.components().count();
+                depth <= 1
+                    || (depth == 2
+                        && relative
+                            .file_name()
+                            .is_some_and(|name| name == "SavedVariables"))
+                    || (depth == 3
+                        && relative
+                            .file_name()
+                            .is_some_and(|name| name == "WoWthing_Collector.lua"))
+            })
+        })
+}
+
 enum Request {
     Configure(u64, Option<crate::collector_fs::ApprovedRoot>),
     File(PathBuf),
     Manual,
     Shutdown,
+    FilesChanged(u64),
 }
 pub struct SyncService {
     sender: mpsc::Sender<Request>,
@@ -224,10 +284,12 @@ impl SyncService {
         let worker_stopping = stopping.clone();
         let generation = Arc::new(AtomicU64::new(0));
         let worker_generation = generation.clone();
+        let wake_sender = sender.clone();
         let worker = thread::spawn(move || {
             run(
                 io,
                 receiver,
+                wake_sender,
                 worker_status,
                 worker_stopping,
                 worker_generation,
@@ -316,6 +378,7 @@ fn fingerprints(
     root: &crate::collector_fs::ApprovedRoot,
     files: &[PathBuf],
     cache: &mut FingerprintCache,
+    verify_after: Duration,
 ) -> (BTreeMap<PathBuf, u64>, Vec<(PathBuf, String)>) {
     use std::hash::{Hash, Hasher};
     let mut fingerprints = BTreeMap::new();
@@ -329,7 +392,7 @@ fn fingerprints(
                 created: metadata.created().ok().map(|time| time.into_std()),
             };
             let cached = cache.get(file).filter(|(previous, _, verified)| {
-                previous == &stamp && verified.elapsed() < Duration::from_secs(30)
+                previous == &stamp && verified.elapsed() < verify_after
             });
             let hash = if let Some((_, hash, _)) = cached {
                 *hash
@@ -352,7 +415,7 @@ fn fingerprints(
             }
         }
     }
-    cache.retain(|file, _| files.contains(file));
+    cache.retain(|file, _| fingerprints.contains_key(file));
     (fingerprints, failures)
 }
 async fn until_cancelled<T>(
@@ -371,6 +434,7 @@ async fn until_cancelled<T>(
 fn run(
     io: impl WorkerIo,
     receiver: mpsc::Receiver<Request>,
+    wake_sender: mpsc::Sender<Request>,
     shared: Arc<Mutex<SyncStatus>>,
     stopping: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
@@ -417,23 +481,41 @@ fn run(
     let mut queue = crate::sync_queue::SyncQueue::default();
     let mut batch = BatchSummary::default();
     let mut active_generation = 0;
+    let mut watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+    let mut next_scan = Instant::now();
     publish(&io, &shared, &state);
     while !stopping.load(Ordering::Acquire) {
-        let request = match receiver.recv_timeout(Duration::from_secs(1)) {
-            Ok(request) => Some(request),
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            Err(mpsc::RecvTimeoutError::Timeout) => None,
+        let deadline = if state.error.is_none() {
+            queue.next_due().map_or(next_scan, |due| due.min(next_scan))
+        } else {
+            next_scan
         };
+        let request =
+            match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(request) => Some(request),
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+            };
         let mut manual = false;
         for request in request.into_iter().chain(receiver.try_iter()) {
             match request {
                 Request::Shutdown => return,
+                Request::FilesChanged(epoch) => {
+                    if epoch == active_generation {
+                        if let Some(watcher) = &watcher {
+                            watcher.pending.store(false, Ordering::Release);
+                        }
+                        // Events are hints only. All discovery/reads still use ApprovedRoot.
+                        cache.clear();
+                    }
+                }
                 Request::Configure(epoch, root) => {
                     active_generation = epoch;
                     state.folder = root
                         .as_ref()
                         .map(|root| root.path().to_string_lossy().into_owned());
                     approved = root;
+                    watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, epoch);
                     previous.clear();
                     cache.clear();
                     queue = Default::default();
@@ -457,6 +539,13 @@ fn run(
                 Request::File(file) => queue.manual([file], Instant::now()),
             }
         }
+        let watching = watcher.as_ref().is_some_and(CollectorWatcher::healthy);
+        next_scan = Instant::now()
+            + if watching {
+                RECONCILE_INTERVAL
+            } else {
+                FALLBACK_INTERVAL
+            };
         state.has_api_key = io.key().is_ok();
         if let Err(error) = io.preferences() {
             state.error = Some(error);
@@ -480,6 +569,7 @@ fn run(
         state.has_api_key = true;
         if approved.is_none() {
             approved = crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok();
+            watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
         }
         let Some(root) = &approved else {
             state.error = Some("WoW folder unavailable. Choose it again in Settings.".into());
@@ -487,7 +577,16 @@ fn run(
             continue;
         };
         let result = root.scan().map(|(files, mut failures)| {
-            let (prints, read_failures) = fingerprints(root, &files, &mut cache);
+            let (prints, read_failures) = fingerprints(
+                root,
+                &files,
+                &mut cache,
+                if watching {
+                    VERIFY_INTERVAL
+                } else {
+                    RECONCILE_INTERVAL
+                },
+            );
             failures.extend(read_failures);
             (prints, failures)
         });
@@ -575,20 +674,23 @@ fn run(
                 .as_secs();
             let successful = outcome.is_ok();
             batch.record(successful);
-            state.finish_upload(&file, outcome.map(|_| ()), now, |successful, now| {
-                io.effects(successful, now)
-            });
-            if successful {
-                let saved = io.preferences().and_then(|store| {
-                    store.commit("account-uploads", Some(serde_json::json!(state.uploads)))
-                });
-                if saved.is_err() && state.warning.is_none() {
-                    state.warning =
-                        Some("Upload succeeded, but its timestamp could not be saved.".into());
+            state.finish_upload(&file, outcome.map(|_| ()), now, |successful, status| {
+                if !successful {
+                    return Ok(());
                 }
-            }
+                io.preferences()
+                    .and_then(|store| {
+                        store.commit_many([
+                            ("last-success", Some(serde_json::json!(now))),
+                            ("account-uploads", Some(serde_json::json!(status.uploads))),
+                        ])
+                    })
+                    .map_err(|_| "Upload succeeded, but its timestamp could not be saved.".into())
+            });
         }
         publish(&io, &shared, &state);
+        // Reconcile writes made during the upload and drain ready work without a fixed sleep.
+        next_scan = Instant::now();
     }
 }
 #[tauri::command]
@@ -603,6 +705,59 @@ pub fn sync_now(service: tauri::State<'_, SyncService>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn watcher_filters_reads_and_unrelated_addons_but_tracks_replacements() {
+        use notify::{
+            event::{AccessKind, ModifyKind, RenameMode},
+            Event, EventKind,
+        };
+        let accounts = Path::new("/fixture/WTF/Account");
+        let collector = accounts.join("MAIN/SavedVariables/WoWthing_Collector.lua");
+        assert!(!relevant_event(
+            &Event::new(EventKind::Access(AccessKind::Read)).add_path(collector.clone()),
+            accounts
+        ));
+        assert!(!relevant_event(
+            &Event::new(EventKind::Modify(ModifyKind::Any))
+                .add_path(accounts.join("MAIN/SavedVariables/Other.lua")),
+            accounts
+        ));
+        assert!(!relevant_event(
+            &Event::new(EventKind::Any).add_path(PathBuf::from("/outside/file")),
+            accounts
+        ));
+        for path in [
+            collector,
+            accounts.to_owned(),
+            accounts.join("NEW"),
+            accounts.join("MAIN/SavedVariables"),
+        ] {
+            assert!(relevant_event(
+                &Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Any))).add_path(path),
+                accounts
+            ));
+        }
+        assert!(relevant_event(&Event::new(EventKind::Any), accounts));
+    }
+
+    #[test]
+    fn periodic_verification_rehashes_even_when_metadata_matches() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp
+            .path()
+            .join("WTF/Account/MAIN/SavedVariables/WoWthing_Collector.lua");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "fixture").unwrap();
+        let root = crate::collector_fs::ApprovedRoot::open(temp.path()).unwrap();
+        let files = root.discover().unwrap();
+        let mut cache = FingerprintCache::new();
+        let (original, _) = fingerprints(&root, &files, &mut cache, VERIFY_INTERVAL);
+        let cached = cache.get_mut(&files[0]).unwrap();
+        cached.1 = original[&files[0]].wrapping_add(1);
+        let (fresh, _) = fingerprints(&root, &files, &mut cache, Duration::ZERO);
+        assert_eq!(fresh, original);
+        assert!(CollectorWatcher::start(None, &mpsc::channel().0, 0).is_none());
+    }
     #[test]
     fn missing_and_empty_account_folders_are_errors() {
         let root = std::env::temp_dir().join(format!("wowthing-empty-{}", std::process::id()));
@@ -748,7 +903,8 @@ mod tests {
         }
         let approved = crate::collector_fs::ApprovedRoot::open(&root).unwrap();
         let (files, scan_errors) = approved.scan().unwrap();
-        let (prints, read_errors) = fingerprints(&approved, &files, &mut Default::default());
+        let (prints, read_errors) =
+            fingerprints(&approved, &files, &mut Default::default(), VERIFY_INTERVAL);
         assert_eq!(scan_errors.len(), 1);
         assert_eq!(read_errors.len(), 1);
         assert_eq!(
@@ -764,7 +920,8 @@ mod tests {
             fingerprints(
                 &approved,
                 &approved.scan().unwrap().0,
-                &mut Default::default()
+                &mut Default::default(),
+                VERIFY_INTERVAL
             )
             .0
             .len(),

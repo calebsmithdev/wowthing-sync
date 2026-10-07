@@ -44,13 +44,7 @@ impl WorkerIo for Io {
     fn emit(&self, status: &SyncStatus) {
         let _ = self.app.emit("sync-status", status);
     }
-    fn effects(&self, success: bool, now: u64) -> Result<(), String> {
-        if success {
-            self.preferences()?
-                .commit("last-success", Some(serde_json::json!(now)))?;
-        }
-        Ok(())
-    }
+
     fn endpoint(&self) -> &str {
         &self.endpoint
     }

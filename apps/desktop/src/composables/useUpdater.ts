@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 
-const CHECK_INTERVAL_MS = 5 * 60 * 1000
+const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 const UP_TO_DATE_VISIBLE_MS = 4000
 export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'up-to-date' | 'error'
 export interface UpdateCheckRequest { source: 'tray' }
