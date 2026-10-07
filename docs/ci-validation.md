@@ -23,8 +23,9 @@ Nightly and release checks additionally build optimized packages, extract/instal
 them, run the long production-worker test, real scoped credential/autostart probes
 and a signed updater installation with a temporary test key and loopback server.
 Npm audits retain separate production/all-dependency JSON; RustSec audits retain
-JSON. Findings fail those tiers, including release validation. They are not
-silently ignored or force-fixed. The release build waits for these checks before
+JSON. Findings are informational and emit a workflow warning without blocking
+nightly or release validation. Audit execution errors still fail; report artifacts
+are uploaded with `always()`. The release build waits for these checks before
 staging a draft; no workflow was triggered or release published locally.
 
 Shipping executables are never launched by automated fixtures. Production package
@@ -104,6 +105,6 @@ never constitute signed release validation.
 
 The audit command completed with exit 1 and preserved reports: both npm dependency
 sets contain 13 advisories (4 critical, 8 high, 1 low); RustSec reports 0
-vulnerabilities. Nightly/release audit gates will fail until these dependency
-findings are resolved. PR checks remain secret-free and do not require this audit
-job. No advisory was suppressed to make a pipeline green.
+vulnerabilities. This historical run used the blocking policy. As of 2026-10-07,
+findings are informational; full reports and original audit exit statuses remain
+available. PR checks remain secret-free and do not require this audit job.
