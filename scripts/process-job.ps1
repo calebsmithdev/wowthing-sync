@@ -1,7 +1,12 @@
-param([Parameter(Mandatory=$true)][string]$Configuration)
+param([Parameter(Mandatory=$true)][string]$Configuration, [switch]$ResolveOnly)
 $ErrorActionPreference = 'Stop'
 $config = Get-Content -LiteralPath $Configuration -Raw | ConvertFrom-Json
-$executable = (Get-Command $config.executable -CommandType Application -ErrorAction Stop).Source
+# PATH can expose several applications with the same name. Bind exactly one
+# scalar path; casting Source[] to string would join paths into an invalid name.
+$application = @(Get-Command -Name $config.executable -CommandType Application -ErrorAction Stop)[0]
+[string]$executable = $application.Source
+if ([string]::IsNullOrWhiteSpace($executable) -or !(Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'Resolved executable is not a file' }
+if ($ResolveOnly) { ConvertTo-Json -Compress @{ executable = $executable }; exit 0 }
 Add-Type -TypeDefinition @'
 using System;
 using System.Text;
