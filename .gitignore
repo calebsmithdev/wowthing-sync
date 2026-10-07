@@ -39,3 +39,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Locally staged release artifacts
+/release-assets/

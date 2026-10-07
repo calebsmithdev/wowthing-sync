@@ -5,10 +5,18 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'apps/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/**'
+      - '.github/workflows/**'
   push:
     branches: [main]
     paths:
       - 'apps/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/**'
+      - '.github/workflows/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,12 +32,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
+          node-version: '22.22.3'
           cache: 'npm'
           cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
         working-directory: apps/desktop
 
       - name: Prepare Nuxt artifacts
