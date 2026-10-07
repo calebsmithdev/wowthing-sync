@@ -147,6 +147,7 @@ impl WorkerIo for Io {
     fn client(&self) -> Result<reqwest::Client, String> {
         reqwest::Client::builder()
             .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(self.timeout)
             .build()
             .map_err(|e| e.to_string())

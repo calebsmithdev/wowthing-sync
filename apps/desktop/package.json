@@ -20,7 +20,10 @@
     "lint": "eslint .",
     "test:e2e": "playwright test",
     "test:native": "node ../../scripts/native-smoke.mjs",
-    "test:native:dev": "node ../../scripts/tauri-dev.mjs --features smoke-test --no-watch"
+    "test:native:dev": "node ../../scripts/tauri-dev.mjs --features smoke-test --no-watch",
+    "test:integration": "node ../../scripts/native-integration.mjs",
+    "test:packages": "node ../../scripts/package-check.mjs",
+    "test:packages:release": "node ../../scripts/package-check.mjs --release"
   },
   "dependencies": {
     "@nuxt/ui": "^4.11.3",

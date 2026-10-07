@@ -55,6 +55,8 @@ features = [ "json", "socks" ]
 default = ["custom-protocol"]
 # Isolated native UI fixture; this feature replaces the entire production builder.
 smoke-test = []
+# Isolated package/worker harness; never distribute builds with this feature.
+integration-test = []
 # this feature is used used for production builds where `devPath` points to the filesystem
 # DO NOT remove this
 custom-protocol = ["tauri/custom-protocol"]
