@@ -153,6 +153,7 @@ mod tests {
             .set_len(MAX_COLLECTOR_BYTES + 1)
             .unwrap();
         assert!(approved.read(&file).is_err());
+        drop(approved); // Windows keeps the directory open for the capability's lifetime.
         std::fs::remove_dir_all(root).unwrap();
     }
     #[cfg(unix)]
