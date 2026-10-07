@@ -13,6 +13,12 @@ and Ubuntu 24.04 x64. The aggregate fails on missing, failed, cancelled or skipp
 required jobs; frontend failure cannot leave it green. Actions and application
 Node/Rust toolchains are pinned; installs use lockfiles.
 
+The desktop `.npmrc` explicitly sets `legacy-peer-deps=false`. Generate its
+lockfile and validate `npm ci` with this setting: a user-level legacy setting can
+otherwise omit peer dependencies and hide failures that occur on clean runners.
+When checking dependency changes locally, use a fresh checkout without
+`node_modules` and run the same `npm ci --prefix apps/desktop` command as CI.
+
 Nightly and release checks additionally build optimized packages, extract/install
 them, run the long production-worker test, real scoped credential/autostart probes
 and a signed updater installation with a temporary test key and loopback server.
