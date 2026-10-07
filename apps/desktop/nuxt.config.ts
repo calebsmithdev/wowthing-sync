@@ -6,6 +6,12 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   modules: ['@nuxt/ui', '@nuxt/eslint'],
   ssr: false,
+  nitro: {
+    externals: {
+      // Keep renderer virtual modules in the bundle before Windows path resolution.
+      inline: ['nuxt/internal/'],
+    },
+  },
   // A static palette replaces Nuxt UI's two runtime inline <style> insertions.
   hooks: {
     'app:resolve': (app) => {
