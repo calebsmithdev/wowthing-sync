@@ -63,10 +63,16 @@ export async function verifyPackageBinary(binary, built, harness, bundleTarget) 
   return { ...identity, ...expected }
 }
 const targets = process.platform === 'darwin' ? 'app' : process.platform === 'win32' ? 'nsis' : 'deb,rpm,appimage'
-async function extract(path, temporary) {
+export async function extractPackage(path, temporary) {
   if (path.endsWith('.app')) { const destination = join(temporary, basename(path)); await cp(path, destination, { recursive: true }); return destination }
   if (path.endsWith('.deb')) await command('dpkg-deb', ['--extract', path, temporary])
-  else if (path.endsWith('.rpm')) await command('bash', ['-o', 'pipefail', '-c', 'rpm2cpio "$1" | cpio -idm --quiet', 'extract-rpm', path], { cwd: temporary })
+  else if (path.endsWith('.rpm')) {
+    // rpm-rs 0.16 omits LONGARCHIVESIZE; Ubuntu rpm2cpio 4.18 copies the payload
+    // but silently exits 1 comparing its byte count to that absent tag. Verify
+    // header/payload digests first, then use libarchive's native RPM reader.
+    await command('rpm', ['--checksig', '--nosignature', path])
+    await command('bsdtar', ['-xf', path, '-C', temporary, '--no-same-owner'])
+  }
   else if (path.endsWith('.AppImage')) await command(path, ['--appimage-extract'], { cwd: temporary })
   else if (path.endsWith('.exe')) {
     if (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') throw new Error('installer requires disposable hosted runner')
@@ -110,7 +116,7 @@ export async function packageCheck({ release = false } = {}) {
           const actual = await command('rpm', ['-qp', '--queryformat', '%{VERSION}', artifact], { capture: true })
           if (actual.stdout.trim() !== version) throw new Error('RPM package version mismatch')
         }
-        const extracted = await extract(artifact, temporary)
+        const extracted = await extractPackage(artifact, temporary)
         const binaryName = harness ? 'Wowthing CI Isolated' : 'Wowthing Sync'
         const candidates = (await files(extracted)).filter(path => [binaryName, binaryName.toLowerCase().replaceAll(' ', '-'), 'wowthing-sync'].includes(basename(path).replace(/\.exe$/, '')))
         if (candidates.length !== 1) throw new Error(`expected one package executable: ${artifact}`)
