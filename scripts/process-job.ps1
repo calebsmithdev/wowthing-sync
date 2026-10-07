@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Configuration, [switch]$ResolveOnly)
+param([Parameter(Mandatory=$true)][string]$Configuration, [switch]$ResolveOnly, [switch]$CommandLineOnly)
 $ErrorActionPreference = 'Stop'
 $config = Get-Content -LiteralPath $Configuration -Raw -Encoding UTF8 | ConvertFrom-Json
 # PATH can expose several applications with the same name. Bind exactly one
@@ -51,7 +51,29 @@ public static class WowthingOwnedJob {
     text.Append('\\',slashes*2); text.Append('"'); return text.ToString();
   }
   static uint Active(IntPtr job) { Accounting a; Check(QueryInformationJobObject(job,1,out a,(uint)Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero)); return a.active; }
-  public static int Run(string executable,string[] args,string cwd,bool waitDescendants) {
+  public static string CommandLine(string executable,string[] args,string mode) {
+    StringBuilder command=new StringBuilder(Quote(executable));
+    if(String.IsNullOrEmpty(mode) || mode=="standard") {
+      foreach(string arg in args) command.Append(" "+Quote(arg));
+    } else if(mode=="nsis") {
+      // NSIS 3.11 parses /S and the terminal /D= remainder itself, not CRT argv.
+      // https://github.com/kichik/nsis/blob/v311/Source/exehead/Main.c#L235-L260
+      if(args.Length==0 || args[0]!="/S") throw new ArgumentException("NSIS requires /S");
+      command.Append(" /S");
+      for(int i=1;i<args.Length;i++) {
+        string arg=args[i];
+        if(i==1 && arg=="/NS") command.Append(" /NS");
+        else if(i==args.Length-1 && arg.StartsWith("/D=",StringComparison.Ordinal)) {
+          string path=arg.Substring(3);
+          if(!System.Text.RegularExpressions.Regex.IsMatch(path,@"^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+[\\/])") || path.IndexOf('"')>=0) throw new ArgumentException("NSIS requires an absolute unquoted directory");
+          foreach(char c in path) if(Char.IsControl(c)) throw new ArgumentException("NSIS directory contains a control character");
+          command.Append(" "+arg);
+        } else throw new ArgumentException("Unsupported NSIS argument or nonterminal /D");
+      }
+    } else throw new ArgumentException("Unsupported Windows argument mode");
+    return command.ToString();
+  }
+  public static int Run(string executable,string[] args,string cwd,bool waitDescendants,string mode) {
     IntPtr job=CreateJobObject(IntPtr.Zero,null); Check(job!=IntPtr.Zero);
     ProcessInfo pi = new ProcessInfo(); bool assigned=false;
     try {
@@ -59,7 +81,7 @@ public static class WowthingOwnedJob {
       Check(SetInformationJobObject(job,9,ref limits,(uint)Marshal.SizeOf(typeof(Limits))));
       Startup startup = new Startup(); startup.cb=(uint)Marshal.SizeOf(typeof(Startup)); startup.flags=0x100;
       startup.input=GetStdHandle(-10); startup.output=GetStdHandle(-11); startup.error=GetStdHandle(-12);
-      StringBuilder command=new StringBuilder(Quote(executable)); foreach(string arg in args) command.Append(" "+Quote(arg));
+      StringBuilder command=new StringBuilder(CommandLine(executable,args,mode));
       Check(CreateProcess(executable,command,IntPtr.Zero,IntPtr.Zero,true,4,IntPtr.Zero,cwd,ref startup,out pi));
       Check(AssignProcessToJobObject(job,pi.process)); assigned=true;
       Check(ResumeThread(pi.thread)!=0xffffffff);
@@ -79,4 +101,5 @@ public static class WowthingOwnedJob {
   }
 }
 '@
-exit [WowthingOwnedJob]::Run($executable, [string[]]$config.args, [string]$config.cwd, [bool]$config.waitDescendants)
+if ($CommandLineOnly) { ConvertTo-Json -Compress @{ commandLine = [WowthingOwnedJob]::CommandLine($executable, [string[]]$config.args, [string]$config.windowsArgumentMode) }; return }
+exit [WowthingOwnedJob]::Run($executable, [string[]]$config.args, [string]$config.cwd, [bool]$config.waitDescendants, [string]$config.windowsArgumentMode)

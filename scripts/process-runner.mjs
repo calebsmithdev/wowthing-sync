@@ -59,7 +59,7 @@ async function cleanupRegistry(directory, owner) {
  * cannot escape parent deadlines. Windows suspended launches use kill-on-close
  * Job Objects; normal wrapper exits also remove their owned descendants. */
 export async function runProcess(executable, args = [], options = {}) {
-  const { timeout = 20 * 60_000, capture = false, label = basename(executable), reportDirectory = process.env.CI_REPORT_DIR, onStdout, onStderr, waitDescendants = false, ...spawnOptions } = options
+  const { timeout = 20 * 60_000, capture = false, label = basename(executable), reportDirectory = process.env.CI_REPORT_DIR, onStdout, onStderr, waitDescendants = false, windowsArgumentMode = 'standard', ...spawnOptions } = options
   const start = Date.now()
   let stdout = '', stderr = '', failure = null, timedOut = false
   let exitCode = null, signal = null, pid = null, processClosed = false, treeClosed = false, cleanup, cleanupFailure = null
@@ -88,7 +88,7 @@ export async function runProcess(executable, args = [], options = {}) {
       launchArgs = [fileURLToPath(import.meta.url), '--wowthing-owned-child']
     }
     if (jobConfig) {
-      await writeFile(jobConfig, JSON.stringify({ executable, args, cwd: spawnOptions.cwd ?? process.cwd(), waitDescendants }))
+      await writeFile(jobConfig, JSON.stringify({ executable, args, cwd: spawnOptions.cwd ?? process.cwd(), waitDescendants, windowsArgumentMode }))
       launched = 'powershell.exe'; launchArgs = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('./process-job.ps1', import.meta.url)), '-Configuration', jobConfig]
     }
     await new Promise((resolvePromise, reject) => {

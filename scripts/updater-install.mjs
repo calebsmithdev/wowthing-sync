@@ -64,7 +64,7 @@ try {
   } else if (process.platform === 'win32') {
     const installer = initialFiles.find(path => path.endsWith('.exe'))
     if (!installer) throw new Error('missing prior installer')
-    await command(installer, ['/S', `/D=${installDir}`], { timeout: 120000, waitDescendants: true })
+    await command(installer, ['/S', '/NS', `/D=${installDir}`], { timeout: 120000, waitDescendants: true, windowsArgumentMode: 'nsis' })
     installed = join(installDir, `${product}.exe`)
   } else {
     const appimage = initialFiles.find(path => path.endsWith('.AppImage'))
@@ -110,7 +110,7 @@ finally {
   if (failure) await writeFile(join(directory, 'report.json'), JSON.stringify({ passed: false, failure, retainedFixture: safe ? null : temporary }, null, 2))
   if (server?.listening) { const closed = new Promise(accept => server.close(accept)); server.closeAllConnections(); await closed }
   if (process.platform === 'win32' && installed) {
-    try { const uninstaller = (await files(join(temporary, 'installed'))).find(path => /uninstall.*\.exe$/i.test(basename(path))); if (!uninstaller) throw new Error('isolated uninstaller missing'); await command(uninstaller, ['/S'], { timeout: 120000, waitDescendants: true }) } catch (error) { console.error(error); safe = false; process.exitCode = 1; await writeFile(join(directory, 'report.json'), JSON.stringify({ passed: false, failure: error.message, retainedFixture: temporary }, null, 2)) }
+    try { const uninstaller = (await files(join(temporary, 'installed'))).find(path => /uninstall.*\.exe$/i.test(basename(path))); if (!uninstaller) throw new Error('isolated uninstaller missing'); await command(uninstaller, ['/S'], { timeout: 120000, waitDescendants: true, windowsArgumentMode: 'nsis' }) } catch (error) { console.error(error); safe = false; process.exitCode = 1; await writeFile(join(directory, 'report.json'), JSON.stringify({ passed: false, failure: error.message, retainedFixture: temporary }, null, 2)) }
   }
   if (safe) await rm(temporary, { recursive: true, force: true })
 }

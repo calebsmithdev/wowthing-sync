@@ -102,6 +102,44 @@ test('an intermediate deadline under an outer supervisor stops only its own subt
 
 const powershell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh'
 const hasPowerShell = spawnSync(powershell, ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], { encoding: 'utf8' }).status === 0
+test('Windows command formatter preserves CRT quoting and uses validated NSIS switches', { skip: !hasPowerShell && process.platform !== 'win32' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nsis formatter 雪-'))
+  const destination = 'C:\\Synthetic root\\Unicode 雪'
+  const cases = [
+    { mode: 'standard', args: ['/S', `/D=${destination}`], expected: `"${process.execPath}" "/S" "/D=${destination}"` },
+    { mode: 'nsis', args: ['/S', '/NS', `/D=${destination}`], expected: `"${process.execPath}" /S /NS /D=${destination}` },
+    { mode: 'nsis', args: ['/S'], expected: `"${process.execPath}" /S` },
+    { mode: 'nsis', args: ['/S', '/D=\\\\server\\share\\Unicode 雪 folder'], expected: `"${process.execPath}" /S /D=\\\\server\\share\\Unicode 雪 folder` },
+    ...[
+      [], ['/s'], ['/S', '/R'], ['/S', '/NS', '/NS'],
+      ['/S', `/D=${destination}`, '/NS'],
+      ['/S', '/D=relative'], ['/S', '/D=C:relative'],
+      ['/S', '/D="C:\\Temp"'], ['/S', '/D=C:\\Temp\nextra'],
+    ].map(args => ({ mode: 'nsis', args })),
+    { mode: 'raw', args: ['/S'] },
+  ]
+  try {
+    const configuration = join(directory, 'configuration.json'), probe = join(directory, 'probe.ps1')
+    await writeFile(configuration, JSON.stringify({ executable: process.execPath, args: [], cwd: directory, cases }))
+    await writeFile(probe, `param([string]$Formatter,[string]$Configuration)
+. $Formatter -Configuration $Configuration -CommandLineOnly | Out-Null
+$results = foreach ($case in $config.cases) {
+  try { @{ commandLine = [WowthingOwnedJob]::CommandLine($executable, [string[]]$case.args, [string]$case.mode); rejected = $false } }
+  catch { @{ rejected = $true; failure = $_.Exception.Message } }
+}
+ConvertTo-Json -Compress -InputObject @($results)
+`)
+    const result = spawnSync(powershell, ['-NoProfile', '-File', probe, fileURLToPath(new URL('./process-job.ps1', import.meta.url)), configuration], { encoding: 'utf8', timeout: 30000 })
+    assert.equal(result.status, 0, result.stderr)
+    const outputs = JSON.parse(result.stdout)
+    assert.equal(outputs.length, cases.length)
+    for (const [index, item] of cases.entries()) {
+      assert.equal(outputs[index].rejected, item.expected === undefined, JSON.stringify(item))
+      if (item.expected !== undefined) assert.equal(outputs[index].commandLine, item.expected)
+      else assert.ok(outputs[index].failure)
+    }
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
 test('PowerShell resolves duplicate PATH commands to the first scalar file and preserves absolute paths', { skip: !hasPowerShell && process.platform !== 'win32' }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'resolver spaces 雪-'))
   try {
