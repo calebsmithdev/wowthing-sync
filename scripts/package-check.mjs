@@ -17,7 +17,7 @@ export async function files(directory) {
 }
 export async function verifyBinary(path, harness) {
   const bytes = await readFile(path)
-  if (!harness && bytes.includes(Buffer.from('NATIVE_SMOKE'))) throw new Error('shipping artifact includes smoke harness')
+  if (!harness && ['NATIVE_SMOKE', 'WOWTHING_OS_CI_V1'].some(value => bytes.includes(Buffer.from(value)))) throw new Error('shipping artifact includes automation harness')
   if (bytes.includes(Buffer.from(marker)) !== harness) throw new Error(`wrong artifact harness identity: ${path}`)
   const expected = process.arch
   let architecture

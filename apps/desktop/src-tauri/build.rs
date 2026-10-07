@@ -3,7 +3,8 @@ fn main() {
     if std::env::var_os("WOWTHING_DISTRIBUTION").is_some() {
         assert!(
             std::env::var_os("CARGO_FEATURE_SMOKE_TEST").is_none()
-                && std::env::var_os("CARGO_FEATURE_INTEGRATION_TEST").is_none(),
+                && std::env::var_os("CARGO_FEATURE_INTEGRATION_TEST").is_none()
+                && std::env::var_os("CARGO_FEATURE_OS_INTEGRATION_TEST").is_none(),
             "distribution builds cannot contain an automation harness"
         );
     }

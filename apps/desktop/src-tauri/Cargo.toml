@@ -9,6 +9,7 @@ license = "MIT"
 repository = "https://github.com/calebsmithdev/wowthing-sync"
 edition = "2021"
 rust-version = "1.90"
+default-run = "wowthing-sync"
 
 [lib]
 name = "wowthing_lib"
@@ -57,6 +58,8 @@ default = ["custom-protocol"]
 smoke-test = []
 # Isolated package/worker harness; never distribute builds with this feature.
 integration-test = []
+# Dedicated hosted-runner probe binary; never used in a shipping build.
+os-integration-test = []
 # this feature is used used for production builds where `devPath` points to the filesystem
 # DO NOT remove this
 custom-protocol = ["tauri/custom-protocol"]
@@ -67,3 +70,8 @@ tauri-plugin-updater = "2.13.1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.5.2"
+
+[[bin]]
+name = "wowthing-os-test"
+path = "src/bin/os-test.rs"
+required-features = ["os-integration-test"]

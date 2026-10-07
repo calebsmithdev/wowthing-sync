@@ -1,3 +1,14 @@
+#[cfg(all(
+    feature = "os-integration-test",
+    any(feature = "smoke-test", feature = "integration-test")
+))]
+compile_error!("OS probe cannot combine with another automation harness");
+#[cfg(feature = "os-integration-test")]
+mod os_integration;
+#[cfg(feature = "os-integration-test")]
+pub fn run_os_integration() {
+    os_integration::run();
+}
 #[cfg(all(feature = "smoke-test", feature = "integration-test"))]
 compile_error!("automation harness features are mutually exclusive");
 #[cfg(not(any(feature = "smoke-test", feature = "integration-test")))]

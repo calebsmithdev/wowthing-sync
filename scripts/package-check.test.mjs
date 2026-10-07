@@ -20,7 +20,7 @@ test('artifact audit rejects automation contamination, missing harness identity 
     await writeFile(path, fixture())
     assert.equal((await verifyBinary(path, false)).architecture, process.arch)
     await assert.rejects(verifyBinary(path, true), /harness identity/)
-    for (const markerText of [marker, 'NATIVE_SMOKE']) {
+    for (const markerText of [marker, 'NATIVE_SMOKE', 'WOWTHING_OS_CI_V1']) {
       await writeFile(path, fixture(process.arch, markerText))
       await assert.rejects(verifyBinary(path, false), /harness/)
     }
