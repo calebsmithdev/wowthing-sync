@@ -1,0 +1,127 @@
+name: Reusable Desktop Checks
+on:
+  workflow_call:
+    inputs:
+      tier:
+        description: pr, nightly, or release
+        type: string
+        default: pr
+permissions:
+  contents: read
+jobs:
+  frontend:
+    name: Frontend static and unit checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI_REPORT_DIR: ${{ github.workspace }}/test-results/diagnostics
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-desktop
+        with:
+          native: 'false'
+      - run: node scripts/ci-gate.mjs --tier ${{ inputs.tier }}
+      - run: node scripts/ci-run.mjs lint 300 npm run --prefix apps/desktop lint
+      - run: node scripts/ci-run.mjs typecheck 300 npm run --prefix apps/desktop typecheck
+      - run: node scripts/ci-run.mjs frontend-unit 300 npm run --prefix apps/desktop test:unit -- --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
+      - run: node scripts/ci-run.mjs frontend-assets 300 npm run --prefix apps/desktop generate
+      - run: node scripts/ci-run.mjs rust-format 120 cargo fmt --all -- --check
+      - run: node scripts/ci-run.mjs script-contracts 180 node --test scripts/ci-gate.test.mjs scripts/release-metadata.test.mjs scripts/workflow-contracts.test.mjs
+      - run: node scripts/release-metadata.mjs verify
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-assets-${{ inputs.tier }}
+          path: apps/desktop/.output/public/
+          if-no-files-found: error
+          retention-days: 2
+          include-hidden-files: true
+      - name: Preserve frontend reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagnostics-${{ inputs.tier }}-frontend
+          path: |
+            test-results/
+            apps/desktop/test-results/
+          if-no-files-found: error
+
+  native:
+    name: Native checks (${{ matrix.os }})
+    needs: frontend
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, windows-2022, ubuntu-24.04]
+    env:
+      CI_REPORT_DIR: ${{ github.workspace }}/test-results/diagnostics
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-desktop
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: frontend-assets-${{ inputs.tier }}
+          path: apps/desktop/.output/public/
+      - run: node scripts/ci-run.mjs platform-script-contracts 180 node --test scripts/launchers.test.mjs scripts/process-runner.test.mjs scripts/package-check.test.mjs
+      - run: node scripts/ci-run.mjs native-clippy 900 cargo clippy --locked --all-targets -- -D warnings
+      - run: node scripts/ci-run.mjs native-unit-worker 900 cargo test --locked
+      - run: node scripts/ci-run.mjs native-check 600 cargo check --locked
+      - run: node scripts/ci-run.mjs fixture-check 600 cargo clippy --locked --all-targets --features integration-test -- -D warnings
+      - run: node scripts/ci-run.mjs os-probe-build-check 600 cargo check --locked --all-targets --features os-integration-test
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/AppData/Local/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/desktop/package-lock.json') }}
+      - run: node ../../scripts/ci-run.mjs browser-install 300 npx playwright install --with-deps chromium
+        working-directory: apps/desktop
+      - run: node ../../scripts/ci-run.mjs browser-smoke 180 npm run test:e2e
+        working-directory: apps/desktop
+      - name: Fast platform webview path
+        if: runner.os != 'Linux'
+        run: node scripts/ci-run.mjs fast-native 1500 node scripts/native-smoke.mjs
+      - name: Expanded platform webview path
+        if: runner.os != 'Linux'
+        run: node scripts/ci-run.mjs worker-native-ui 1500 node scripts/native-integration.mjs
+      - name: Linux platform webview paths in isolated display/session
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- xvfb-run -a node scripts/ci-run.mjs fast-native 1500 node scripts/native-smoke.mjs
+          dbus-run-session -- xvfb-run -a node scripts/ci-run.mjs worker-native-ui 1500 node scripts/native-integration.mjs
+      - name: Unsigned platform packages and isolated upgrade launch
+        if: runner.os != 'Linux'
+        run: node scripts/ci-run.mjs unsigned-packages 2400 node scripts/package-check.mjs
+      - name: Linux packages and isolated upgrade launch
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a node scripts/ci-run.mjs unsigned-packages 2400 node scripts/package-check.mjs
+      - name: Collect current-run native crashes and metadata
+        if: always()
+        run: node scripts/ci-diagnostics.mjs --collect-crashes
+      - name: Preserve native and browser reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagnostics-${{ inputs.tier }}-${{ matrix.os }}
+          path: |
+            test-results/
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
+          if-no-files-found: error
+
+  complete:
+    name: Platform Checks Complete
+    if: always()
+    needs: [frontend, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.22.3'
+      - run: node scripts/ci-gate.mjs frontend native
+        env:
+          REQUIRED_JOB_RESULTS: ${{ toJSON(needs) }}

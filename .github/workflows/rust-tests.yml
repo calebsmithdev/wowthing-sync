@@ -1,89 +1,31 @@
-name: Desktop Checks
+name: Desktop CI
 on:
   pull_request:
-    paths: ['apps/desktop/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/**', '.github/workflows/**']
   push:
     branches: [main]
-    paths: ['apps/desktop/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/**', '.github/workflows/**']
+  merge_group:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: desktop-${{ github.ref }}
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  desktop:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, macos-15-intel, windows-2022, ubuntu-24.04]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    env:
-      CI_REPORT_DIR: ${{ github.workspace }}/test-results/diagnostics
+  checks:
+    uses: ./.github/workflows/desktop-checks.yml
+    with:
+      tier: pr
+  required:
+    name: Required Desktop CI
+    if: always()
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.22.3'
-          cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.97.1'
-          components: rustfmt, clippy
-      - name: Linux native prerequisites
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libdbus-1-dev patchelf xvfb
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: '. -> target'
-      - name: Initialize diagnostic metadata
-        run: node scripts/ci-diagnostics.mjs
-      - run: npm ci
-        working-directory: apps/desktop
-      - name: Frontend checks and built assets
-        run: npm run lint && npm run typecheck && npm run test:unit -- --reporter=default --reporter=junit --outputFile=test-results/vitest.xml && npm run generate
-        working-directory: apps/desktop
-      - name: Native domain checks
-        run: cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked && cargo check --locked
-      - name: Release consistency tests
-        run: node --test scripts/*.test.mjs && node scripts/release-metadata.mjs verify
-      - name: Cache Playwright browser
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/ms-playwright
-            ~/Library/Caches/ms-playwright
-            ~/AppData/Local/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('apps/desktop/package-lock.json') }}
-      - run: npx playwright install --with-deps chromium
-        working-directory: apps/desktop
-      - name: Hermetic browser UI smoke (not native coverage)
-        run: npm run test:e2e
-        working-directory: apps/desktop
-      - name: Native WKWebView/WebView2/WebKitGTK smoke
-        if: runner.os != 'Linux'
-        run: npm run test:native
-        working-directory: apps/desktop
-      - name: Native WebKitGTK smoke under Xvfb
-        if: runner.os == 'Linux'
-        run: xvfb-run -a npm run test:native
-        working-directory: apps/desktop
-      - name: Build production desktop binary without distribution credentials
-        run: npm run tauri -- build --debug --no-bundle -- --locked
-        working-directory: apps/desktop
-      - name: Collect native diagnostics and crash records
-        if: always()
-        run: node scripts/ci-diagnostics.mjs --collect-crashes
-      - name: Preserve diagnostic reports and browser traces
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: diagnostics-${{ matrix.os }}
-          path: |
-            test-results/
-            apps/desktop/test-results/
-            apps/desktop/playwright-report/
-          if-no-files-found: error
+      - run: node scripts/ci-gate.mjs checks
+        env:
+          REQUIRED_JOB_RESULTS: ${{ toJSON(needs) }}
