@@ -36,5 +36,5 @@ test('built UI saves explicit drafts, keeps sync across navigation and reveals u
   await page.getByRole('button', { name: 'Manually Upload Data' }).click()
   await expect(page.getByText('Last successful file upload')).toBeVisible()
   expect(errors).toEqual([])
-  await page.screenshot({ path: process.env.SMOKE_SCREENSHOT ?? '/tmp/wowthing-sync-dashboard.png' })
+  await page.screenshot({ path: process.env.SMOKE_SCREENSHOT ?? test.info().outputPath('dashboard.png') })
 })

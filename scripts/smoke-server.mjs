@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 const repo = fileURLToPath(new URL('../', import.meta.url))
-const root = resolve(repo, 'apps/desktop/dist')
+const root = resolve(repo, 'apps/desktop/.output/public')
 const version = sourceVersion(readFileSync(resolve(repo, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8'), JSON.parse(readFileSync(resolve(repo, 'apps/desktop/src-tauri/tauri.conf.json'))), readFileSync(resolve(repo, 'Cargo.lock'), 'utf8'))
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' }
 const server = createServer(async (request, response) => {
