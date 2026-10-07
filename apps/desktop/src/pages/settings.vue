@@ -57,6 +57,8 @@
       </UInput>
     </UFormField>
 
+    <UButton variant="outline" :loading="updater.busy.value" @click="updater.checkForUpdates(true)">Check for Updates</UButton>
+
     <div class="space-y-3">
       <UCheckbox
         label="Enable desktop notifications"
@@ -77,6 +79,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
 
   const { hasApiKey, saveKey } = useApiKeys();
+  const updater = useUpdater();
   const apiKey = ref('');
   const savingKey = ref(false);
   const keyError = ref<string | null>(null);
