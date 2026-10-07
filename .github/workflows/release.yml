@@ -69,18 +69,39 @@ jobs:
         with:
           name: frontend-assets-release
           path: apps/desktop/.output/public/
+      - name: Configure provisioned platform signing
+        run: node scripts/prepare-release-signing.mjs
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
       - name: Build signed release without publishing
         id: tauri
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           WOWTHING_DISTRIBUTION: '1'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           projectPath: apps/desktop
-          args: --target ${{ matrix.target }} -- --locked
+          args: --target ${{ matrix.target }} --config "${{ github.workspace }}/target/release-signing.json" -- --locked
           includeUpdaterJson: false
       - name: Reject automation in the shipping executable
         run: node scripts/distribution-check.mjs ${{ matrix.target }}
+      - name: Verify real updater and configured platform signatures
+        run: node scripts/ci-run.mjs release-signatures 900 node scripts/distribution-signatures.mjs ${{ matrix.target }}
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
       - name: Validate build metadata and stage signed assets
         run: node scripts/release-metadata.mjs stage
         env:

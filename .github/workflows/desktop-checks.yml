@@ -20,7 +20,9 @@ jobs:
       - uses: ./.github/actions/setup-desktop
         with:
           native: 'false'
-      - run: node scripts/ci-gate.mjs --tier ${{ inputs.tier }}
+      - run: node scripts/ci-gate.mjs --tier "$CI_TIER"
+        env:
+          CI_TIER: ${{ inputs.tier }}
       - run: node scripts/ci-run.mjs lint 300 npm run --prefix apps/desktop lint
       - run: node scripts/ci-run.mjs typecheck 300 npm run --prefix apps/desktop typecheck
       - run: node scripts/ci-run.mjs frontend-unit 300 npm run --prefix apps/desktop test:unit -- --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
@@ -49,7 +51,7 @@ jobs:
     name: Native checks (${{ matrix.os }})
     needs: frontend
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -65,7 +67,8 @@ jobs:
           path: apps/desktop/.output/public/
       - run: node scripts/ci-run.mjs platform-script-contracts 180 node --test scripts/launchers.test.mjs scripts/process-runner.test.mjs scripts/package-check.test.mjs
       - run: node scripts/ci-run.mjs native-clippy 900 cargo clippy --locked --all-targets -- -D warnings
-      - run: node scripts/ci-run.mjs native-unit-worker 900 cargo test --locked
+      - run: node scripts/ci-run.mjs native-unit-worker 900 node scripts/rust-tests.mjs
+      - run: node scripts/ci-run.mjs signature-contract 600 node --test scripts/signature-check.test.mjs
       - run: node scripts/ci-run.mjs native-check 600 cargo check --locked
       - run: node scripts/ci-run.mjs fixture-check 600 cargo clippy --locked --all-targets --features integration-test -- -D warnings
       - run: node scripts/ci-run.mjs os-probe-build-check 600 cargo check --locked --all-targets --features os-integration-test
@@ -93,10 +96,29 @@ jobs:
           dbus-run-session -- xvfb-run -a node scripts/ci-run.mjs worker-native-ui 1500 node scripts/native-integration.mjs
       - name: Unsigned platform packages and isolated upgrade launch
         if: runner.os != 'Linux'
-        run: node scripts/ci-run.mjs unsigned-packages 2400 node scripts/package-check.mjs
+        run: node scripts/ci-run.mjs unsigned-packages 3600 node scripts/package-check.mjs ${{ inputs.tier != 'pr' && '--release' || '' }}
       - name: Linux packages and isolated upgrade launch
         if: runner.os == 'Linux'
-        run: dbus-run-session -- xvfb-run -a node scripts/ci-run.mjs unsigned-packages 2400 node scripts/package-check.mjs
+        run: dbus-run-session -- xvfb-run -a node scripts/ci-run.mjs unsigned-packages 3600 node scripts/package-check.mjs ${{ inputs.tier != 'pr' && '--release' || '' }}
+      - name: Long-run production worker changes
+        if: inputs.tier != 'pr'
+        run: node scripts/ci-run.mjs sync-endurance 1200 node scripts/rust-tests.mjs --endurance
+      - name: Actual disposable credential and autostart adapters
+        if: inputs.tier != 'pr' && runner.os != 'Linux'
+        run: node scripts/ci-run.mjs actual-os-adapters 600 node scripts/os-integration.mjs
+        env:
+          WOWTHING_OS_TESTS: '1'
+      - name: Actual ephemeral Linux Secret Service and unavailable backend
+        if: inputs.tier != 'pr' && runner.os == 'Linux'
+        run: dbus-run-session -- bash scripts/linux-os-probe.sh
+        env:
+          WOWTHING_OS_TESTS: '1'
+      - name: Signed updater rejection, installation and candidate relaunch
+        if: inputs.tier != 'pr' && runner.os != 'Linux'
+        run: node scripts/ci-run.mjs updater-install 3600 node scripts/updater-install.mjs --release
+      - name: Linux signed updater installation in isolated display/session
+        if: inputs.tier != 'pr' && runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a node scripts/ci-run.mjs updater-install 3600 node scripts/updater-install.mjs --release
       - name: Collect current-run native crashes and metadata
         if: always()
         run: node scripts/ci-diagnostics.mjs --collect-crashes
@@ -111,10 +133,30 @@ jobs:
             apps/desktop/playwright-report/
           if-no-files-found: error
 
+  audit:
+    name: Dependency audits
+    if: inputs.tier != 'pr'
+    needs: frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-desktop
+        with:
+          native: 'false'
+      - run: node scripts/ci-run.mjs audit-tool 1200 cargo install cargo-audit --version 0.22.2 --locked
+      - run: node scripts/ci-run.mjs dependency-audits 600 node scripts/dependency-audit.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: dependency-audits-${{ inputs.tier }}
+          path: test-results/
+          if-no-files-found: error
+
   complete:
     name: Platform Checks Complete
     if: always()
-    needs: [frontend, native]
+    needs: [frontend, native, audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -122,6 +164,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.22.3'
-      - run: node scripts/ci-gate.mjs frontend native
+      - run: node scripts/ci-gate.mjs frontend native ${{ inputs.tier != 'pr' && 'audit' || '' }}
         env:
           REQUIRED_JOB_RESULTS: ${{ toJSON(needs) }}

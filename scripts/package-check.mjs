@@ -17,7 +17,7 @@ export async function files(directory) {
 }
 export async function verifyBinary(path, harness) {
   const bytes = await readFile(path)
-  if (!harness && ['NATIVE_SMOKE', 'WOWTHING_OS_CI_V1'].some(value => bytes.includes(Buffer.from(value)))) throw new Error('shipping artifact includes automation harness')
+  if (!harness && ['NATIVE_SMOKE', 'WOWTHING_OS_CI_V1', 'WOWTHING_UPDATER_CI_V1'].some(value => bytes.includes(Buffer.from(value)))) throw new Error('shipping artifact includes automation harness')
   if (bytes.includes(Buffer.from(marker)) !== harness) throw new Error(`wrong artifact harness identity: ${path}`)
   const expected = process.arch
   let architecture
@@ -44,7 +44,7 @@ async function extract(path, temporary) {
   else if (path.endsWith('.AppImage')) await command(path, ['--appimage-extract'], { cwd: temporary })
   else if (path.endsWith('.exe')) {
     if (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') throw new Error('installer requires disposable hosted runner')
-    await command(path, ['/S', `/D=${temporary}`])
+    await command(path, ['/S', `/D=${temporary}`], { waitDescendants: true })
   } else throw new Error(`unsupported package ${path}`)
   return temporary
 }

@@ -393,9 +393,9 @@ npm run tauri -- build --debug --bundles app --no-sign --config '{"bundle":{"cre
 
 Browser `test:e2e` serves generated assets with strict CSP and an adapter injected **only by `scripts/smoke-server.mjs`**. It checks explicit drafts/save failures, folder/save, update state, navigation-visible failures and manual sync. It proves UI behavior, not native OS integration. `test:native` builds with **smoke-test** feature, replacing the entire native builder before any real preferences/credentials/sync/updater/autostart/notification setup. It exercises the real platform webview, generated assets, production CSP, real native fixture IPC, routing, saves/update/manual events and checks JS/CSP failures. The fixture accepts only a synthetic key, cannot upload, and is absent from production builds. Native automation uses an initialization script and completion command; macOS does **not** claim unsupported tauri-driver coverage. The smoke does not prove real credential prompts, OS autostart/notifications, tray menus or signed updater installation; those require platform/manual testing with explicit fixtures. Never launch the normal native app as a test, since that accesses the user's real data.
 
-Rust tests use temp directories/fake credential/OS adapters and fake retry operations; no live upload server/network. They cover missing/empty/replaced/mixed-invalid collectors, path traversal/symlink/FIFO/size defenses, coalescing, retry classification/backoff, partial results/post-upload failures, config/shutdown cancellation, migration, atomic settings and rollback. Frontend unit tests cover listener/snapshot ordering, component buttons and updater cleanup/races. Browser traces/screenshots are ignored local QA artifacts; screenshots for this run are stored in `/tmp`. Release builds gate signed artifacts on all checks and both smoke layers; local development requires no signing credentials.
+Rust tests use temp directories and fake credential/OS adapters; production-worker integration additionally uses real reqwest against a loopback HTTP server. No test contacts wowthing.org. They cover missing/empty/replaced/mixed-invalid collectors, path traversal/symlink/FIFO/size defenses, coalescing, retry classification/backoff, partial results/post-upload failures, config/shutdown cancellation, migration, atomic settings and rollback. Frontend unit tests cover listener/snapshot ordering, component buttons and updater cleanup/races. Browser traces/screenshots are ignored local QA artifacts; screenshots for this run are stored in `/tmp`. Release builds gate signed artifacts on all checks and both smoke layers; local development requires no signing credentials.
 
-### Local validation record (2026-10-06)
+### Baseline validation record before expanded CI (2026-10-06)
 
 On macOS ARM64 with Node22.22.3/Rust1.97.1: clean `npm ci`, lint, strict typecheck, **25 Vitest tests**, generate, cargo fmt/clippy(all-targets)/**29 Rust tests**/check(default and smoke feature), **4 Node script tests**, one Chromium UI smoke and real WKWebView production/development smoke all passed. Native smoke reported `errors:[]`, one synthetic key save and manual sync event. Final debug unsigned `.app` was built with updater artifact generation disabled only by local CLI override at `target/debug/bundle/macos/Wowthing Sync.app`; bundle version verified1.0.7. Browser screenshots: `/tmp/wowthing-settings-reviewed.png`, `/tmp/wowthing-dashboard-reviewed.png`. Windows/Linux/Intel macOS CI is configured but has not run in this local session. Real credential-store prompts and signed update installation were deliberately not exercised.
 
@@ -405,7 +405,7 @@ Native plugins: shell, process, dialog, OS, notification, log, desktop autostart
 
 All collector operations use a canonical held `cap-std` directory capability under the selected WoW root, only `WTF/Account/<account>/SavedVariables/WoWthing_Collector.lua`, regular nonempty files <=32MiB and <=1000 account entries. Relative capability opens confine symlink races; Unix nonblocking opens reject FIFOs without hanging. Scan errors for individual accounts stay visible and do not prevent healthy account uploads. Metadata polling is 1 second, cached content fingerprints reverify every30s; a sequential debounced queue retains writes observed after an upload. HTTP client has explicit 10s connect/30s request timeout, <=3 temporary-failure attempts; long Retry-After stops retries. Config generations cancel stale uploads and suppress stale results; shutdown cancellation is bounded.
 
-API keys use explicit `keyring` native Apple/Windows/Linux secret-service backends, cached in Rust memory. Legacy `.settings.dat` plaintext keys are removed only after secure write/readback verification; locked/unavailable backend errors retain the legacy entry and permit Retry Sync, with no plaintext upload fallback. Preferences migrate existing JSON and commit through synced atomic replacement. No tests read the user's data or contact an OS credential store. Linux requires Secret Service plus dbus at runtime; failures are actionable.
+API keys use explicit `keyring` native Apple/Windows/Linux secret-service backends, cached in Rust memory. Legacy `.settings.dat` plaintext keys are removed only after secure write/readback verification; locked/unavailable backend errors retain the legacy entry and permit Retry Sync, with no plaintext upload fallback. Preferences migrate existing JSON and commit through synced atomic replacement. Local and PR fixtures never read user data or contact an OS credential store; explicitly opted-in nightly/release hosted probes use unique synthetic entries with cleanup. Linux requires Secret Service plus dbus at runtime; failures are actionable.
 
 Production CSP has self/hashed bundled scripts, external CSS, local SVG icons, IPC-only connections and no unsafe-eval/unsafe-inline. Tauri injects hashes/nonces for generated static scripts. Nuxt UI's runtime palette plugin is replaced by static `palette.css` (keep aligned with `app.config.ts`); icons bundle locally in SVG mode. Development uses a fresh nonce via the dev wrapper and Nitro render hook. Future UI changes must rerun native smoke to catch runtime CSS/script injection.
 
@@ -436,3 +436,34 @@ Every supervised command can persist JSON status plus bounded stdout/stderr. Nat
 PRs, nightly and release call `.github/workflows/desktop-checks.yml`; `.github/actions/setup-desktop` pins Node/Rust setup and shares native prerequisites. Frontend lint/type/unit/static formatting run once; OS-sensitive Rust domain/real-worker tests, both native UI layers, browser behavior and unsigned packages run on all four real hosted runners. Frontend assets are passed as an artifact before standalone Cargo checks. Main CI has no workflow-level path exclusions and also handles merge queues. `Required Desktop CI` runs with `always()` and rejects failure/cancelled/skipped/missing required results, including failed matrix jobs via the common aggregate. YAML structure/DAG checks and actionlint complement executable gate negative tests. Official first-party action commits were verified before pinning; hosted runners support their Node24 action runtime while app tooling remains Node22.22.3.
 
 Repository administrators must enable the exact required status **Required Desktop CI** in main's branch rule/ruleset (require successful checks and, if desired, up-to-date branches/merge queue). YAML cannot configure this repository setting; no admin rule was changed here. Release signed build/staging waits for the same common checks; only the draft job has contents:write. Secret-free checks never inherit release secrets.
+
+### Expanded CI tiers and isolation (2026-10-06)
+
+See [docs/ci-validation.md](docs/ci-validation.md) for the required check,
+production/harness artifact guarantee, tier matrix, signing secret names and
+consumer-OS manual release checklist. Nightly/release use optimized packages,
+real worker endurance, disposable actual OS adapters, dependency audits and
+actual signed test-key updater installation/relaunch. Local real OS stores are
+never probed. The standalone `signature-audit` feature builds only a read-only
+Minisign verifier; it is rejected in distribution builds. Native integration
+may enable its actual updater adapter only inside the compiled isolated builder.
+
+### Expanded local validation record (2026-10-06)
+
+macOS ARM64: lint/typecheck/25 Vitest tests, Chromium smoke, fast native smoke,
+32 Rust tests plus the separately executed real-worker endurance test, default
+and integration clippy, signature-audit check, 13 script contracts and actionlint
+passed. Optimized production `.app` inspection/extraction/hash/version checks
+passed without launch; the separately identified optimized worker/UI package
+launched and migrated synthetic preferences. Actual signed updater installation
+passed in debug and optimized mode: typed invalid-signature rejection, exact
+installed candidate hash and runtime package version 1.0.8 after relaunch.
+The standalone verifier accepts valid signatures and rejects modified bytes and
+wrong signed versions. Local OS probe entry points refused before OS changes.
+
+Current end-to-end dependency audit reports show 13 npm advisories in both
+all/production dependency sets (4 critical, 8 high, 1 low); RustSec reports no
+vulnerabilities. The audit script exits 1 and retains JSON, so nightly/release
+validation currently fails on those existing npm findings. They were not waived
+or automatically downgraded. Windows/Linux/Intel execution, actual OS store
+probes and real distribution signing still require hosted/manual evidence.
