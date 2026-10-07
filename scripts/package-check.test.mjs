@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, cp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { verifyBinary, verifyPackageBinary, expectedPackageIdentity } from './package-check.mjs'
+import { verifyBinary, verifyPackageBinary, expectedPackageIdentity, extractPackage } from './package-check.mjs'
 import { marker } from './native-integration.mjs'
 function fixture(architecture = process.arch, text = '') {
   const bytes = Buffer.alloc(256)
@@ -28,6 +28,28 @@ test('artifact audit rejects automation contamination, missing harness identity 
     await verifyBinary(path, true)
     await writeFile(path, fixture(process.arch === 'arm64' ? 'x64' : 'arm64'))
     await assert.rejects(verifyBinary(path, false), /architecture mismatch/)
+  } finally { await rm(temporary, { recursive: true, force: true }) }
+})
+test('RPM extraction verifies package digests and rejects corrupt or truncated payloads', { skip: process.platform !== 'linux' }, async () => {
+  const temporary = await mkdtemp(join(tmpdir(), 'rpm-extraction-'))
+  try {
+    const fixture = new URL('./fixtures/rpm-rs-0.16.rpm', import.meta.url)
+    const artifact = join(temporary, 'RPM Unicode 雪 with spaces.rpm')
+    const extracted = join(temporary, 'extracted'); await mkdir(extracted)
+    await cp(fixture, artifact)
+    await extractPackage(artifact, extracted)
+    assert.equal(await readFile(join(extracted, 'usr/share/wowthing-ci-rpm-fixture/Unicode 雪 with spaces.txt'), 'utf8'), 'synthetic package fixture\n')
+    const bytes = await readFile(fixture)
+    // Alter only the gzip CRC: libarchive can extract this, but RPM's compressed
+    // payload digest must reject it before any extraction takes place.
+    const corrupt = Buffer.from(bytes); corrupt[bytes.length - 6] ^= 1
+    const failures = [corrupt, bytes.subarray(0, bytes.length - 30)]
+    for (const [index, invalid] of failures.entries()) {
+      const target = join(temporary, `invalid-${index}`); await mkdir(target)
+      await writeFile(artifact, invalid)
+      await assert.rejects(extractPackage(artifact, target), error => error.report?.passed === false && /failed with exit/.test(error.message))
+      assert.deepEqual(await readdir(target), [])
+    }
   } finally { await rm(temporary, { recursive: true, force: true }) }
 })
 test('package audit requires the exact first bundle token patch and every remaining byte', async () => {
