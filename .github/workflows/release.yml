@@ -1,103 +1,152 @@
-name: 'Publish Release'
+name: Publish Release
 on:
   workflow_dispatch:
     inputs:
       vendor_version:
         type: string
-        description: "Vendor Version (semver) for the release -- what will be visible."
-        default: "0.0.1"
+        description: 'Must equal the version already committed in apps/desktop/src-tauri/Cargo.toml'
         required: true
 
-jobs:
-  create_release_tag:
-    name: "Create release tag"
-    env:
-      VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.event.inputs.vendor_version }}
+  cancel-in-progress: false
 
-    runs-on: ubuntu-latest
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
     outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
+      version: ${{ steps.metadata.outputs.version }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: '22.22.3'
+      - run: node --test scripts/release-metadata.test.mjs
+      - id: metadata
+        run: node scripts/release-metadata.mjs verify
+        env:
+          RELEASE_VERSION: ${{ inputs.vendor_version }}
 
-      - uses: softprops/action-gh-release@v2
-        id: create_release
-        name: Create release
-        with:
-          tag_name: "v${{ env.VENDOR_VERSION }}"
-          name: "v${{ env.VENDOR_VERSION }}"
-          body: "v${{ env.VENDOR_VERSION }}"
-          prerelease: false
-          draft: true
-          fail_on_unmatched_files: true
-
-  publish-tauri:
-    needs: create_release_tag
-    env:
-      RELEASE_ID: ${{ needs.create_release_tag.outputs.release_id }}
-      VENDOR_VERSION: ${{ github.event.inputs.vendor_version || '0.0.1' }}
+  build:
+    needs: validate
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-24.04'
-            args: ''
-          - platform: 'windows-latest'
-            args: ''
-
-    runs-on: ${{ matrix.platform }}
+          - os: macos-15
+            target: aarch64-apple-darwin
+            key: darwin-aarch64
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            key: darwin-x86_64
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            key: linux-x86_64
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            key: windows-x86_64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - run: git tag v${{ env.VENDOR_VERSION }}
-      - name: setup node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
-
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+          node-version: '22.22.3'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@master
         with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-24.04' # This must match the platform value defined above.
+          toolchain: '1.97.1'
+          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-0=2.44.0-2 \
-            libwebkit2gtk-4.1-dev=2.44.0-2 \
-            libjavascriptcoregtk-4.1-0=2.44.0-2 \
-            libjavascriptcoregtk-4.1-dev=2.44.0-2 \
-            gir1.2-javascriptcoregtk-4.1=2.44.0-2 \
-            gir1.2-webkit2-4.1=2.44.0-2 \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libdbus-1-dev patchelf
+      - uses: swatinem/rust-cache@v2
         with:
-          workspaces: 'apps/desktop/src-tauri -> target'
-
-      - name: install frontend dependencies
-        run: npm ci
+          workspaces: '. -> target'
+      - run: npm ci
         working-directory: apps/desktop
-
-      - uses: tauri-apps/tauri-action@v0
+      - name: Check frontend and generate assets
+        run: npm run typecheck && npm run test:unit && npm run generate
+        working-directory: apps/desktop
+      - name: Check native code before producing artifacts
+        run: cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked && cargo check --locked
+      - name: Build signed release without publishing
+        id: tauri
+        uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         with:
           projectPath: apps/desktop
-          releaseId: ${{ env.RELEASE_ID }}
-          releaseDraft: true
-          prerelease: true
-          args: ${{ matrix.args }}
+          args: --target ${{ matrix.target }} -- --locked
+          includeUpdaterJson: false
+      - name: Validate build metadata and stage signed assets
+        run: node scripts/release-metadata.mjs stage
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          BUILT_APP_VERSION: ${{ steps.tauri.outputs.appVersion }}
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          RELEASE_PLATFORM: ${{ matrix.key }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.key }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  draft-release:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify complete updater metadata before creating a release
+        run: node scripts/release-metadata.mjs merge
+      - name: Verify any existing tag identifies this exact commit
+        shell: bash
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
+          fi
+      - name: Create or resume the matching draft after all checks pass
+        id: draft
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft,tagName,targetCommitish > "$RUNNER_TEMP/existing-release.json"; then
+            export EXISTING_RELEASE_FILE="$RUNNER_TEMP/existing-release.json"
+            export EXISTING_TAG_SHA="$(git rev-list -n 1 "$RELEASE_TAG" 2>/dev/null || true)"
+            node scripts/release-metadata.mjs existing
+          else
+            flags=()
+            if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --draft --title "$RELEASE_TAG" --notes "WoWthing Sync $RELEASE_VERSION" "${flags[@]}"
+            echo 'upload=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload validated assets to the draft
+        if: steps.draft.outputs.upload == 'true'
+        shell: bash
+        run: |
+          find release-assets -name 'metadata-*.json' -delete
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber
