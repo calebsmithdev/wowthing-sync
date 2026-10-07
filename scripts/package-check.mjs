@@ -36,6 +36,32 @@ export async function verifyBinary(path, harness) {
   if (architecture !== expected) throw new Error(`architecture mismatch ${architecture}/${expected}`)
   return { architecture, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length }
 }
+export async function expectedPackageIdentity(built, harness, bundleTarget) {
+  const source = await verifyBinary(built, harness)
+  const token = Buffer.from('__TAURI_BUNDLE_TYPE_VAR_UNK')
+  const variant = new Map([['deb', 'DEB'], ['rpm', 'RPM'], ['nsis', 'NSS']]).get(bundleTarget)
+  let expectedSha256
+  if (variant) {
+    // CLI2.12.1 patches only the first token, then restores the target binary.
+    // Compare every packaged byte against that exact, documented transformation:
+    // https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.1/crates/tauri-bundler/src/bundle.rs#L90-L96
+    const bytes = await readFile(built)
+    const offset = bytes.indexOf(token)
+    if (offset < 0) throw new Error(`missing original Tauri bundle type token: ${built}`)
+    const patched = Buffer.from(`__TAURI_BUNDLE_TYPE_VAR_${variant}`)
+    expectedSha256 = createHash('sha256').update(bytes.subarray(0, offset)).update(patched).update(bytes.subarray(offset + token.length)).digest('hex')
+  } else if (['app', 'appimage'].includes(bundleTarget)) {
+    // AppImage's source is the postprocessed AppDir executable; macOS is not patched.
+    expectedSha256 = source.sha256
+  } else throw new Error(`unsupported bundle type comparison: ${bundleTarget}`)
+  return { sourceSha256: source.sha256, expectedSha256, bundleTarget }
+}
+export async function verifyPackageBinary(binary, built, harness, bundleTarget) {
+  const identity = await verifyBinary(binary, harness)
+  const expected = await expectedPackageIdentity(built, harness, bundleTarget)
+  if (identity.sha256 !== expected.expectedSha256) throw new Error(`extracted binary differs from expected packaged executable (${bundleTarget}): expected ${expected.expectedSha256}, actual ${identity.sha256}`)
+  return { ...identity, ...expected }
+}
 const targets = process.platform === 'darwin' ? 'app' : process.platform === 'win32' ? 'nsis' : 'deb,rpm,appimage'
 async function extract(path, temporary) {
   if (path.endsWith('.app')) { const destination = join(temporary, basename(path)); await cp(path, destination, { recursive: true }); return destination }
@@ -89,15 +115,13 @@ export async function packageCheck({ release = false } = {}) {
         const candidates = (await files(extracted)).filter(path => [binaryName, binaryName.toLowerCase().replaceAll(' ', '-'), 'wowthing-sync'].includes(basename(path).replace(/\.exe$/, '')))
         if (candidates.length !== 1) throw new Error(`expected one package executable: ${artifact}`)
         const binary = candidates[0]
-        const identity = await verifyBinary(binary, harness)
         let built = resolve(root, `target/${profile}`, `${binaryName}${process.platform === 'win32' ? '.exe' : ''}`)
         if (artifact.endsWith('.AppImage')) {
           const postprocessed = (await files(resolve(root, `target/${profile}/bundle/appimage`))).filter(path => path.includes('.AppDir/') && basename(path) === basename(binary))
           if (postprocessed.length !== 1) throw new Error('missing postprocessed AppImage build source')
           built = postprocessed[0]
         }
-        const builtIdentity = await verifyBinary(built, harness)
-        if (builtIdentity.sha256 !== identity.sha256) throw new Error('extracted binary differs from just-built executable')
+        const identity = await verifyPackageBinary(binary, built, harness, bundleTarget)
         if (process.platform === 'darwin') {
           const actual = await command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(extracted, 'Contents/Info.plist')], { capture: true })
           if (actual.stdout.trim() !== version) throw new Error('bundle version mismatch')

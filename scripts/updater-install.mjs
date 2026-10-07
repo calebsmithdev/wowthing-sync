@@ -6,7 +6,7 @@ import { resolve, join, basename } from 'node:path'
 import { createHash } from 'node:crypto'
 import { tauriInvocation } from './launchers.mjs'
 import { root, marker, command } from './native-integration.mjs'
-import { files, verifyBinary } from './package-check.mjs'
+import { files, verifyBinary, expectedPackageIdentity } from './package-check.mjs'
 const directory = resolve(root, 'test-results/updater-install')
 await mkdir(directory, { recursive: true })
 const temporary = await realpath(await mkdtemp(join(tmpdir(), 'wowthing-updater-')))
@@ -73,7 +73,12 @@ try {
     await cp(appimage, installed); await chmod(installed, 0o755)
   }
   const executable = process.platform === 'darwin' ? join(installed, 'Contents/MacOS', product) : installed
-  const expected = process.platform === 'darwin' ? hash(await readFile(join(staged['1.0.8'], `${product}.app/Contents/MacOS`, product))) : process.platform === 'win32' ? hash(await readFile(resolve(root, `target/${profile}`, `${product}.exe`))) : hash(candidate)
+  const candidateIdentity = process.platform === 'linux' ? null : await expectedPackageIdentity(
+    process.platform === 'darwin' ? join(staged['1.0.8'], `${product}.app/Contents/MacOS`, product) : resolve(root, `target/${profile}`, `${product}.exe`),
+    true,
+    bundle,
+  )
+  const expected = candidateIdentity?.expectedSha256 ?? hash(candidate)
   const before = hash(await readFile(executable))
   if (process.platform !== 'linux') await verifyBinary(executable, true)
   else {
@@ -99,7 +104,7 @@ try {
   if (report.marker !== 'WOWTHING_UPDATER_CI_V1' || report.passed !== true || report.version !== '1.0.8' || !report.lastSuccess || downloadCount !== 2) throw new Error('installed candidate proof failed')
   const preferences = JSON.parse(await readFile(join(temporary, 'settings.json'), 'utf8'))
   if ('api-key' in preferences || !preferences['last-success']) throw new Error('upgrade persistence failed')
-  await writeFile(join(directory, 'report.json'), JSON.stringify({ passed: true, previous: '1.0.6', candidate: report.version, signatureRejected: true, installedHashBefore: before, installedHashAfter: after, expectedCandidateHash: expected, downloads: downloadCount, profile }, null, 2))
+  await writeFile(join(directory, 'report.json'), JSON.stringify({ passed: true, previous: '1.0.6', candidate: report.version, signatureRejected: true, installedHashBefore: before, installedHashAfter: after, expectedCandidateHash: expected, candidateIdentity, downloads: downloadCount, profile }, null, 2))
 } catch (error) { failure = error.message; safe = error.report?.processClosed !== false && error.report?.treeClosed !== false; console.error(error); process.exitCode = 1 }
 finally {
   if (failure) await writeFile(join(directory, 'report.json'), JSON.stringify({ passed: false, failure, retainedFixture: safe ? null : temporary }, null, 2))
