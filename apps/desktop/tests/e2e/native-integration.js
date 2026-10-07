@@ -1,4 +1,4 @@
-// Compiled only into integration-test binaries. No automation server.
+// Compiled only into integration-test binaries. Drives the real Vue UI and IPC.
 (() => {
   const errors = []
   addEventListener('error', event => errors.push(event.message))
@@ -7,18 +7,71 @@
   const wait = async predicate => {
     const deadline = Date.now() + 30000
     while (!await predicate()) {
-      if (Date.now() > deadline) throw new Error('Native integration deadline exceeded')
+      if (Date.now() > deadline) throw new Error(`Native integration deadline: ${document.body?.innerText}`)
       await new Promise(resolve => setTimeout(resolve, 50))
     }
   }
+  const click = text => {
+    const node = [...document.querySelectorAll('a,button')].find(node => node.textContent.trim() === text && !node.disabled)
+    if (!node) throw new Error(`Missing enabled control: ${text}`)
+    node.click()
+  }
+  const input = value => {
+    const node = document.querySelector('input[type=password]')
+    node.value = value
+    node.dispatchEvent(new Event('input', { bubbles: true }))
+  }
   addEventListener('DOMContentLoaded', async () => {
     const invoke = window.__TAURI_INTERNALS__.invoke
+    const control = action => invoke('integration_control', { action })
     try {
       await wait(() => document.body.innerText.includes('Version __SMOKE_VERSION__'))
+      click('Settings')
+      await wait(() => document.body.innerText.includes('Retry Loading Settings'))
+      click('Retry Loading Settings')
+      await wait(() => document.body.innerText.includes('An API key is saved securely'))
+      input('invalid key with spaces')
+      await wait(() => [...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Save API Key' && !b.disabled))
+      click('Save API Key')
+      await wait(() => document.body.innerText.includes('without spaces'))
+      if (document.querySelector('input[type=password]').value !== 'invalid key with spaces') throw new Error('Failed save erased draft')
+      input('smoke-fixture-key')
+      click('Save API Key')
+      await wait(() => document.body.innerText.includes('Settings saved.'))
+      await control('invalid-folder')
+      click('Choose Folder')
+      await wait(() => document.querySelector('input[readonly]').value.includes('not-a-wow-folder'))
+      click('Save Folder')
+      await wait(() => document.querySelector('[role=alert]'))
+      await control('valid-folder')
+      click('Choose Folder')
+      await wait(() => !document.querySelector('input[readonly]').value.includes('not-a-wow-folder'))
+      click('Save Folder')
+      await wait(() => document.body.innerText.includes('Settings saved.'))
+      await control('write')
       await invoke('sync_now')
-      await wait(async () => (await invoke('get_sync_status')).lastSuccess > 1767225600)
-      const settings = await invoke('get_settings')
-      if (!settings.hasApiKey || settings.notificationsEnabled) throw new Error('Synthetic upgrade settings did not hydrate')
+      await wait(async () => (await invoke('get_sync_status')).isProcessing)
+      click('Dashboard')
+      await wait(() => document.body.innerText.includes('Manually Upload Data'))
+      click('Settings')
+      await wait(() => document.body.innerText.includes('Save API Key'))
+      click('Dashboard')
+      await wait(async () => !(await invoke('get_sync_status')).isProcessing)
+      await control('close')
+      await wait(async () => !(await control('state')).visible)
+      await control('show')
+      await wait(async () => (await control('state')).visible)
+      await control('update-failure')
+      await control('tray-update')
+      await wait(() => document.body.innerText.includes('Update Available'))
+      click('Update')
+      await wait(() => document.body.innerText.includes('Synthetic installer failure'))
+      await wait(async () => { const state = await control('state'); return state.closed === state.created })
+      await control('update-success')
+      click('Check Again')
+      await wait(() => document.body.innerText.includes('Update Available'))
+      click('Update')
+      await wait(async () => (await control('state')).relaunched === 1)
     } catch (error) { errors.push(String(error)) }
     await invoke('integration_report', { errors })
   }, { once: true })

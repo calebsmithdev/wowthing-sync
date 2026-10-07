@@ -18,17 +18,20 @@ export async function command(command, args, options = {}) {
     child.once('close', code => { clearTimeout(timeout); code === 0 ? resolvePromise({ stdout, stderr }) : reject(new Error(`${command} failed (${code}): ${stderr}`)) })
   })
 }
-export async function runFixture(binary, reportDirectory = resolve(root, 'test-results/native-integration')) {
+export async function runFixture(binary, reportDirectory = resolve(root, 'test-results/native-integration'), { auditedBinary = binary } = {}) {
+  if (!(await readFile(auditedBinary)).includes(Buffer.from(marker))) throw new Error('refusing to launch a binary without isolated harness identity')
   const temporary = await mkdtemp(join(tmpdir(), 'wowthing-isolated-'))
   const folder = join(temporary, 'WoW Unicode 雪 with spaces', '_retail_')
   const saved = join(folder, 'WTF/Account/SYNTHETIC/SavedVariables')
   await mkdir(saved, { recursive: true })
+  await mkdir(join(temporary, 'not-a-wow-folder')) // Existing invalid folder reaches production validation.
   await mkdir(reportDirectory, { recursive: true })
   await writeFile(join(temporary, 'fixture-marker'), marker)
   await writeFile(join(saved, 'WoWthing_Collector.lua'), 'synthetic packaged collector')
   // Previous1.0.6 preferences: candidate runs its production migration and writes.
   await writeFile(join(temporary, 'settings.json'), JSON.stringify({ 'api-key': 'smoke-fixture-key', 'program-folder': folder, 'last-updated': '2026-01-01T00:00:00Z', 'notifications-enabled': false }))
   let uploads = 0
+  let navigationWriteUploaded = false
   const server = createServer(async (request, response) => {
     try {
       let body = ''
@@ -36,7 +39,8 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
       const payload = JSON.parse(body)
       if (request.method !== 'POST' || request.url !== '/upload/' || payload.apiKey !== 'smoke-fixture-key' || !payload.luaFile.startsWith('synthetic')) throw new Error('unexpected fixture upload')
       uploads++
-      setTimeout(() => { response.writeHead(200); response.end() }, 200)
+      if (payload.luaFile === 'synthetic write during native navigation') navigationWriteUploaded = true
+      setTimeout(() => { response.writeHead(200); response.end() }, 750)
     } catch { response.writeHead(400); response.end() }
   })
   await new Promise((resolvePromise, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolvePromise) })
@@ -55,7 +59,7 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
           const lines = stdout.split('\n').filter(line => line.startsWith('INTEGRATION_REPORT '))
           if (lines.length !== 1) throw new Error('missing or duplicate native report')
           report = JSON.parse(lines[0].slice('INTEGRATION_REPORT '.length))
-          if (code !== 0 || report.marker !== marker || report.passed !== true || report.errors.length || !report.migrated || uploads < 1) throw new Error('native integration did not pass')
+          if (code !== 0 || report.marker !== marker || report.passed !== true || report.errors.length || !report.migrated || uploads < 1 || !navigationWriteUploaded || !report.resourcesClosed || !report.windowLifecycle || !report.updater) throw new Error('native integration did not pass')
           resolvePromise()
         } catch (error) { reject(error) }
       })
@@ -66,7 +70,7 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
   } finally {
     await writeFile(join(reportDirectory, 'stdout.log'), stdout)
     await writeFile(join(reportDirectory, 'stderr.log'), stderr)
-    await writeFile(join(reportDirectory, 'report.json'), JSON.stringify({ report: report ?? null, uploads }, null, 2))
+    await writeFile(join(reportDirectory, 'report.json'), JSON.stringify({ report: report ?? null, uploads, navigationWriteUploaded }, null, 2))
     const closed = new Promise(resolvePromise => server.close(resolvePromise))
     server.closeAllConnections()
     await closed

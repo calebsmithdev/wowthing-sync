@@ -23,6 +23,8 @@ mod smoke;
 mod sync_queue;
 #[cfg(not(feature = "smoke-test"))]
 mod sync_service;
+#[cfg(not(feature = "smoke-test"))]
+mod window_lifecycle;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -52,13 +54,7 @@ pub fn run() {
             app.manage(sync_service::SyncService::start(app.handle().clone()));
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Don't kill the app when the user clicks close
-                window.hide().unwrap();
-                api.prevent_close();
-            }
-        })
+        .on_window_event(window_lifecycle::on_event)
         .invoke_handler(tauri::generate_handler![
             commands::submit_addon_data::submit_addon_data,
             sync_service::get_sync_status,

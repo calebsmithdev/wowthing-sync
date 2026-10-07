@@ -55,29 +55,7 @@ pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(is_macos)
         .icon(handle.default_window_icon().unwrap().clone())
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "restart" => {
-                tauri::process::restart(&app.env());
-            }
-            "quit" => {
-                app.exit(0);
-            }
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    window.show().unwrap();
-                    window.set_focus().unwrap();
-                }
-            }
-            "check-update" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    let _ =
-                        window.emit("check-for-updates", serde_json::json!({ "source": "tray" }));
-                }
-            }
-            _ => {}
-        })
+        .on_menu_event(|app, event| dispatch_menu(app, event.id.as_ref()))
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
@@ -105,4 +83,30 @@ pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
 
     tray_icon_builder.build(handle)?;
     Ok(())
+}
+
+/// Shared by real tray callbacks and compile-time native integration dispatch.
+pub(crate) fn dispatch_menu(app: &AppHandle, id: &str) {
+    match id {
+        "restart" => {
+            tauri::process::restart(&app.env());
+        }
+        "quit" => {
+            app.exit(0);
+        }
+        "show" => {
+            if let Some(window) = app.get_webview_window("main") {
+                window.show().unwrap();
+                window.set_focus().unwrap();
+            }
+        }
+        "check-update" => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.emit("check-for-updates", serde_json::json!({ "source": "tray" }));
+            }
+        }
+        _ => {}
+    }
 }
