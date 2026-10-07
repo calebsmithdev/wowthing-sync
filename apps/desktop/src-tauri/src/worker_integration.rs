@@ -391,14 +391,43 @@ fn real_worker_retries_http_failures_and_reports_bounded_timeouts() {
         timeout: Duration::from_millis(100),
         ..io(&fresh, &server)
     };
+    let preferences = io.store.clone();
     let service = SyncService::start_with_io(io);
     configure(&service, &root);
+    let start = Instant::now();
     service.manual().unwrap();
-    wait("bounded timeout failure", || {
-        !service.snapshot().failures.is_empty()
-    });
-    assert_eq!(server.bodies().len(), 3);
-    assert_eq!(service.snapshot().last_success, None);
+    let diagnostics = || {
+        format!(
+            "elapsed={:?}; worker={}; HTTP={:?}",
+            start.elapsed(),
+            serde_json::to_string(&service.snapshot()).unwrap(),
+            server.events.lock().unwrap()
+        )
+    };
+    wait_with_diagnostics(
+        "bounded timeout failure",
+        || !service.snapshot().failures.is_empty(),
+        diagnostics,
+    );
+    // Three 100ms deadlines plus the real 1s/2s retry backoff must finish
+    // before the fixture's first delayed response, allowing scheduler slack.
+    assert!(
+        start.elapsed() < Duration::from_secs(8),
+        "{}",
+        diagnostics()
+    );
+    let state = service.snapshot();
+    assert!(!state.is_processing);
+    assert_eq!(state.failures.len(), 1);
+    assert_eq!(
+        state.failures[0].message,
+        "Could not reach WoWthing. Try again later."
+    );
+    // A request can time out before the server receives its body. Exact retry
+    // counts are proved by the HTTP sequence above and retry_upload unit tests.
+    assert!(server.bodies().len() <= 3, "{}", diagnostics());
+    assert_eq!(state.last_success, None);
+    assert_eq!(preferences.get("last-success"), None);
     service.shutdown();
 }
 #[test]
