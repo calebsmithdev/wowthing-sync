@@ -73,6 +73,11 @@ fn integration_report(app: tauri::AppHandle, errors: Vec<String>) {
         && counts.created.load(Ordering::Acquire) == counts.closed.load(Ordering::Acquire);
     let lifecycle =
         counts.hidden.load(Ordering::Acquire) && counts.reopened.load(Ordering::Acquire);
+    let lifecycle_details = serde_json::json!({
+        "hidden": counts.hidden.load(Ordering::Acquire),
+        "reopenRequested": counts.reopen_requested.load(Ordering::Acquire),
+        "reopened": counts.reopened.load(Ordering::Acquire),
+    });
     let updater = counts.downloads.load(Ordering::Acquire) == 2
         && counts.relaunched.load(Ordering::Acquire) == 1;
     let passed = errors.is_empty()
@@ -86,7 +91,7 @@ fn integration_report(app: tauri::AppHandle, errors: Vec<String>) {
         && updater;
     println!(
         "INTEGRATION_REPORT {}",
-        serde_json::json!({"marker": HARNESS_MARKER, "passed":passed,"errors":errors,"version":env!("CARGO_PKG_VERSION"),"migrated":migrated,"resourcesClosed":resources_closed,"windowLifecycle":lifecycle,"updater":updater,"status":status})
+        serde_json::json!({"marker": HARNESS_MARKER, "passed":passed,"errors":errors,"version":env!("CARGO_PKG_VERSION"),"migrated":migrated,"resourcesClosed":resources_closed,"windowLifecycle":lifecycle,"windowLifecycleDetails":lifecycle_details,"updater":updater,"status":status})
     );
     app.exit(if passed { 0 } else { 1 });
 }
@@ -102,6 +107,7 @@ struct Counts {
     hydrate_failed: AtomicBool,
     invalid_folder: AtomicBool,
     hidden: AtomicBool,
+    reopen_requested: AtomicBool,
     reopened: AtomicBool,
 }
 #[tauri::command]
@@ -161,20 +167,26 @@ fn integration_control(app: tauri::AppHandle, action: String) -> Result<serde_js
         "close" => window.close().map_err(|e| e.to_string())?,
         "show" => {
             tray::dispatch_menu(&app, "show");
-            if counts.hidden.load(Ordering::Acquire) && window.is_visible().unwrap_or(false) {
-                counts.reopened.store(true, Ordering::Release);
-            }
+            counts.reopen_requested.store(true, Ordering::Release);
         }
         "tray-update" => tray::dispatch_menu(&app, "check-update"),
-        "state" => {
-            if !window.is_visible().unwrap_or(true) {
-                counts.hidden.store(true, Ordering::Release);
-            }
-        }
+        "state" => {}
         _ => return Err("unknown fixture control".into()),
     }
+    let visible = window.is_visible().map_err(|e| e.to_string())?;
+    if action == "state" {
+        // Show/hide dispatch is asynchronous on GTK. Record the transition from
+        // the same native observation the frontend actually waits for.
+        if !visible {
+            counts.hidden.store(true, Ordering::Release);
+        } else if counts.hidden.load(Ordering::Acquire)
+            && counts.reopen_requested.load(Ordering::Acquire)
+        {
+            counts.reopened.store(true, Ordering::Release);
+        }
+    }
     Ok(
-        serde_json::json!({"visible": window.is_visible().map_err(|e| e.to_string())?, "created":counts.created.load(Ordering::Acquire), "closed":counts.closed.load(Ordering::Acquire), "downloads":counts.downloads.load(Ordering::Acquire), "relaunched":counts.relaunched.load(Ordering::Acquire)}),
+        serde_json::json!({"visible": visible, "created":counts.created.load(Ordering::Acquire), "closed":counts.closed.load(Ordering::Acquire), "downloads":counts.downloads.load(Ordering::Acquire), "relaunched":counts.relaunched.load(Ordering::Acquire)}),
     )
 }
 mod dialog {
