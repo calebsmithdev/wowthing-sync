@@ -111,7 +111,7 @@ export async function packageCheck({ release = false } = {}) {
           if (actual.stdout.trim() !== version) throw new Error('Windows executable version mismatch')
         }
         const entrypoint = artifact.endsWith('.AppImage') ? join(extracted, 'squashfs-root/AppRun') : binary
-        const native = harness ? await runFixture(entrypoint, resolve(root, `test-results/package-${profile}/${basename(artifact)}`)) : null
+        const native = harness ? await runFixture(entrypoint, resolve(root, `test-results/package-${profile}/${basename(artifact)}`), { auditedBinary: binary }) : null
         if (native && native.version !== version) throw new Error('packaged candidate version mismatch')
         reports.push({ artifact: artifact.replace(root, ''), harness, version, ...identity, launched: harness })
       } finally { await rm(temporary, { recursive: true, force: true }) }
