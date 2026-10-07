@@ -17,7 +17,7 @@ describe('disposal compatibility for older webviews', () => {
     // A later polyfill execution must preserve the key captured by Resource.
     const resource = { [disposalSymbol]: () => 'closed' }
     runInNewContext(polyfill, { Symbol: symbols })
-    expect(resource[symbols.asyncDispose!]()).toBe('closed')
+    expect(resource[symbols.asyncDispose!]!()).toBe('closed')
   })
 
   it('preserves a native disposal symbol', () => {

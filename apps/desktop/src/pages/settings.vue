@@ -3,6 +3,7 @@
     <h1>Settings</h1>
     <p v-if="loading" role="status">Loading settings…</p>
     <p v-if="error || dialogError" role="alert" class="text-red-400">{{ error || dialogError }}</p>
+    <UButton v-if="!loaded && !loading" @click="settings.hydrate(true)">Retry Loading Settings</UButton>
     <p v-if="notice" role="status">{{ notice }}</p>
 
     <UFormField label="API Key" name="apiKey" help="Find your API key in WoWthing Settings → Account. Keys are saved in OS credential storage.">
@@ -20,7 +21,7 @@
     </UFormField>
     <div class="flex gap-2">
       <UButton variant="outline" :disabled="busy" @click="openFolderDialog">Choose Folder</UButton>
-      <UButton :loading="saving === 'folder'" :disabled="!loaded || busy || !folderDraft || folderDraft === state.folder" @click="saveFolderDraft">Save Folder</UButton>
+      <UButton :loading="saving === 'folder'" :disabled="!loaded || busy || !folderDraft || !folderSelected && folderDraft === state.folder" @click="saveFolderDraft">Save Folder</UButton>
     </div>
 
     <div class="space-y-3">
@@ -42,15 +43,16 @@ const { hasApiKey } = useApiKeys()
 const { busy: updaterBusy, checkForUpdates } = useUpdater()
 const apiKeyDraft = ref('')
 const folderDraft = ref(state.value.folder ?? '')
+const folderSelected = ref(false)
 const showPassword = ref(false)
 const dialogError = ref<string | null>(null)
 const saveKeyDraft = async () => { if (await settings.saveKey(apiKeyDraft.value)) apiKeyDraft.value = '' }
-const saveFolderDraft = async () => { if (await settings.saveFolder(folderDraft.value)) folderDraft.value = state.value.folder ?? '' }
+const saveFolderDraft = async () => { if (await settings.saveFolder(folderDraft.value)) { folderDraft.value = state.value.folder ?? ''; folderSelected.value = false } }
 const openFolderDialog = async () => {
   dialogError.value = null
   try {
     const selected = await open({ directory: true, multiple: false, defaultPath: folderDraft.value || await settings.defaultFolder() })
-    if (typeof selected === 'string') folderDraft.value = selected
+    if (typeof selected === 'string') { folderDraft.value = selected; folderSelected.value = true }
   } catch (cause) { dialogError.value = String(cause) }
 }
 </script>

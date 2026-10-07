@@ -66,17 +66,28 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libdbus-1-dev patchelf
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libdbus-1-dev patchelf xvfb
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: '. -> target'
       - run: npm ci
         working-directory: apps/desktop
       - name: Check frontend and generate assets
-        run: npm run typecheck && npm run test:unit && npm run generate
+        run: npm run lint && npm run typecheck && npm run test:unit && npm run generate
         working-directory: apps/desktop
       - name: Check native code before producing artifacts
         run: cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked && cargo check --locked
+      - name: Hermetic browser smoke before release artifacts
+        run: npx playwright install --with-deps chromium && npm run test:e2e
+        working-directory: apps/desktop
+      - name: Isolated native smoke before release artifacts
+        if: runner.os != 'Linux'
+        run: npm run test:native
+        working-directory: apps/desktop
+      - name: Isolated Linux native smoke before release artifacts
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:native
+        working-directory: apps/desktop
       - name: Build signed release without publishing
         id: tauri
         uses: tauri-apps/tauri-action@v0

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { invoke } from '../mocks/tauri'
 import { createSettings, emptySettings } from '../../src/composables/useSettings'
 
@@ -12,6 +12,16 @@ describe('typed shared settings', () => {
     expect(invoke).toHaveBeenCalledExactlyOnceWith('get_settings')
     pending.resolve({ ...emptySettings(), autoStart: true }); await Promise.all([first, second])
     await settings.hydrate(); expect(invoke).toHaveBeenCalledOnce(); expect(settings.state.value.autoStart).toBe(true)
+  })
+  it('clears a bridge load error after a successful explicit retry', async () => {
+    invoke.mockRejectedValueOnce(new Error('bridge unavailable')).mockResolvedValueOnce({ ...emptySettings(), folder: '/recovered' })
+    const settings = createSettings()
+    await settings.hydrate()
+    expect(settings.loaded.value).toBe(false); expect(settings.loading.value).toBe(false)
+    expect(settings.error.value).toContain('bridge unavailable')
+    await settings.hydrate(true)
+    expect(settings.loaded.value).toBe(true); expect(settings.error.value).toBeNull()
+    expect(settings.state.value.folder).toBe('/recovered')
   })
   it('retains working settings and reconciles actual OS state after save failure', async () => {
     const settings = createSettings(); settings.state.value.folder = '/working'

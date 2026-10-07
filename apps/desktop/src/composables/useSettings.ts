@@ -24,7 +24,7 @@ export function createSettings() {
     if (hydration) return hydration
     if (loaded.value && !force) return Promise.resolve()
     loading.value = true
-    hydration = invoke<SettingsSnapshot>('get_settings').then(value => { state.value = value; loaded.value = true })
+    hydration = invoke<SettingsSnapshot>('get_settings').then(value => { state.value = value; loaded.value = true; error.value = null })
       .catch(cause => { error.value = String(cause) }).finally(() => { loading.value = false; hydration = undefined })
     return hydration
   }

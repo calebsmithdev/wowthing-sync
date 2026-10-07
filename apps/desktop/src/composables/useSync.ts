@@ -16,5 +16,5 @@ export const emptySyncStatus = (): SyncStatus => ({
   folder: null, hasApiKey: false, files: [], isProcessing: false, lastSuccess: null, error: null, pending: 0, failures: [], warning: null,
 })
 export const getSyncStatus = () => invoke<SyncStatus>('get_sync_status')
-export const syncNow = () => invoke<void>('sync_now')
+export const syncNow = () => invoke<null>('sync_now')
 export const useSync = () => useState<SyncStatus>('native-sync', emptySyncStatus)

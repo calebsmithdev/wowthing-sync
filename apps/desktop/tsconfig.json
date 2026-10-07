@@ -4,7 +4,7 @@
     "target": "ES2022",
     "lib": ["ES2022", "ESNext.Disposable", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "strict": false,
+    "strict": true,
     "types": [
       "vitest/globals"
     ]

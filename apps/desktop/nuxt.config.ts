@@ -4,14 +4,26 @@ import { defineNuxtConfig } from "nuxt/config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   devtools: { enabled: false },
-  modules: ['@nuxt/ui'],
+  modules: ['@nuxt/ui', '@nuxt/eslint'],
   ssr: false,
+  // A static palette replaces Nuxt UI's two runtime inline <style> insertions.
+  hooks: {
+    'app:resolve': (app) => {
+      app.plugins = app.plugins.filter(plugin => !plugin.src.includes('/@nuxt/ui/dist/runtime/plugins/colors'))
+    },
+  },
+  icon: {
+    mode: 'svg',
+    provider: 'none',
+    clientBundle: { scan: true, icons: ['heroicons:eye', 'heroicons:eye-slash', 'lucide:loader-circle', 'lucide:check', 'lucide:chevron-down', 'lucide:external-link', 'lucide:circle-check', 'lucide:circle-alert'] },
+  },
   telemetry: false,
   colorMode: {
     preference: 'dark'
   },
   app: {
     head: {
+      title: 'WoWthing Sync',
       script: [
         { src: '/polyfills/disposable.js', tagPriority: 'critical' },
       ],
@@ -26,6 +38,7 @@ export default defineNuxtConfig({
     },
   },
   vite: {
+    html: { cspNonce: process.env.TAURI_DEV_NONCE },
     build: {
       target: 'es2022',
     },
@@ -36,11 +49,11 @@ export default defineNuxtConfig({
     ],
     server: {
       strictPort: true,
-      hmr: {
-				protocol: "ws",
-				host: "0.0.0.0",
-				port: 3001
-			},
+      ws: {
+        protocol: 'ws',
+        host: '127.0.0.1',
+        port: Number(process.env.TAURI_DEV_PORT ?? 3000) + 1,
+      },
 			watch: {
 				ignored: ["**/src-tauri/**"]
 			}
@@ -48,9 +61,10 @@ export default defineNuxtConfig({
   },
   css: [
     '~/assets/styles/main.css',
+    '~/assets/styles/palette.css',
   ],
   devServer: {
-		host: "0.0.0.0"
+		host: "127.0.0.1"
 	},
   postcss: {
     plugins: {

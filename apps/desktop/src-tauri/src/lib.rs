@@ -1,16 +1,30 @@
+#[cfg(not(feature = "smoke-test"))]
 use tauri::Manager;
 // Declare the internal namespaces
+#[cfg(not(feature = "smoke-test"))]
 mod collector_fs;
+#[cfg(not(feature = "smoke-test"))]
 mod commands;
+#[cfg(not(feature = "smoke-test"))]
 mod credentials;
+#[cfg(not(feature = "smoke-test"))]
 mod preferences;
+#[cfg(not(feature = "smoke-test"))]
 mod settings;
+#[cfg(not(feature = "smoke-test"))]
 mod setup;
+#[cfg(feature = "smoke-test")]
+mod smoke;
+#[cfg(not(feature = "smoke-test"))]
 mod sync_queue;
+#[cfg(not(feature = "smoke-test"))]
 mod sync_service;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(feature = "smoke-test")]
+    smoke::run();
+    #[cfg(not(feature = "smoke-test"))]
     tauri::Builder::default()
         .on_permission_request(|_, kind| setup::permissions::webview_permission_response(kind))
         .plugin(tauri_plugin_notification::init())

@@ -35,7 +35,6 @@ export function createUpdater() {
     setPhase('checking')
     busy.value = true
     operation = (async () => {
-      let installed = false
       // Keep explicit try/finally. `await using` breaks older system webviews.
       const update = await check()
       if (!update) { setPhase('up-to-date'); return }
@@ -56,11 +55,10 @@ export function createUpdater() {
           }
           if (event.event === 'Finished') { progress.value = 100; setPhase('installing') }
         })
-        installed = true
       } finally {
         await update.close()
       }
-      if (installed && !disposed) await relaunch()
+      if (!disposed) await relaunch()
     })().catch(cause => {
       if (!disposed) { error.value = String(cause); visible.value = true; phase.value = 'error' }
     }).finally(() => {
