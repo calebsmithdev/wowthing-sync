@@ -92,6 +92,7 @@ jobs:
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           projectPath: apps/desktop
+          tauriScript: node ../../scripts/release-tauri.mjs
           args: --target ${{ matrix.target }} --config "${{ github.workspace }}/target/release-signing.json" -- --locked
           includeUpdaterJson: false
       - name: Reject automation in the shipping executable

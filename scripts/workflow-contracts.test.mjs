@@ -55,6 +55,8 @@ test('workflow DAG, real runner matrix and required-job topology are enforced', 
   assert.deepEqual(reusable.jobs.complete.needs, ['frontend', 'native', 'audit'])
   assert.equal(reusable.jobs.complete.if, 'always()')
   const release = await workflow('release.yml')
+  const buildAction = release.jobs.build.steps.find(step => step.id === 'tauri')
+  assert.equal(buildAction.with.tauriScript, 'node ../../scripts/release-tauri.mjs')
   assert.equal(release.jobs.checks.uses, pr.jobs.checks.uses)
   assert.ok(release.jobs.build.needs.includes('checks'))
   assert.ok(release.jobs['draft-release'].needs.includes('checks'))
