@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, readdir, rm, mkdir, cp, chmod, writeFile, realpath } from 'node:fs/promises'
 import { join, delimiter } from 'node:path'
 import { tmpdir } from 'node:os'
-import { runProcess } from './process-runner.mjs'
+import { runProcess, terminateTree } from './process-runner.mjs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
@@ -138,8 +138,9 @@ test('unconfirmed POSIX registry cleanup retains the tree failure and registry',
     // Inject only the registration IO failure after a real child was started.
     context.mock.method(fs, 'writeFileSync', () => { throw new Error('injected registration failure') })
     syncBuiltinESMExports()
-    await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { capture: true }), error => {
+    await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { capture: true, reportDirectory: directory }), error => {
       assert.match(error.message, /injected registration failure; cleanup:/)
+      assert.equal(error.report.failure, error.message)
       assert.equal(error.report.passed, false)
       assert.equal(error.report.processClosed, true)
       assert.equal(error.report.treeClosed, false)
@@ -233,4 +234,29 @@ test('a timed-out unconfirmed group kill cannot report treeClosed or remove its 
       }
     }
   }
+})
+
+
+test('EPERM cleanup requires positive evidence that the owned group has no live members', { skip: process.platform === 'win32' }, async context => {
+  const completed = await runProcess(process.execPath, ['-e', 'process.exit(0)'], { capture: true })
+  const originalKill = process.kill
+  try {
+    context.mock.method(process, 'kill', (pid, signal) => {
+      if (pid === -completed.report.pid && signal === 'SIGKILL') { const error = new Error('synthetic retired group EPERM'); error.code = 'EPERM'; throw error }
+      return originalKill(pid, signal)
+    })
+    // Real process state must confirm the already retired group before accepting.
+    await terminateTree({ pid: completed.report.pid })
+    const childProcess = await import('node:child_process')
+    const builtin = childProcess.default
+    let inspection = { status: 1, stderr: 'inspection unavailable', stdout: '' }
+    context.mock.method(builtin, 'spawnSync', () => inspection)
+    syncBuiltinESMExports()
+    for (const invalid of [inspection, { status: 0, stderr: '', stdout: '' }, { status: 0, stderr: '', stdout: 'malformed' }, { status: 0, stderr: '', stdout: `${completed.report.pid} S\n` }]) {
+      inspection = invalid
+      await assert.rejects(terminateTree({ pid: completed.report.pid }), /synthetic retired group EPERM/)
+    }
+    inspection = { status: 0, stderr: '', stdout: `${completed.report.pid} Z\n12345 S\n` }
+    await terminateTree({ pid: completed.report.pid })
+  } finally { context.mock.restoreAll(); syncBuiltinESMExports() }
 })

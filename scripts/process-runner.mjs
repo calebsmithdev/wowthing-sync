@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { writeFileSync, renameSync, unlinkSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
@@ -17,7 +17,24 @@ export async function terminateTree(child) {
       killer.once('close', code => { clearTimeout(timer); code === 0 || child.exitCode !== null || child.signalCode !== null ? resolvePromise() : reject(new Error(`taskkill failed (${code})`)) })
     })
   } else {
-    try { process.kill(-child.pid, 'SIGKILL') } catch (error) { if (error.code !== 'ESRCH') throw error }
+    try { process.kill(-child.pid, 'SIGKILL') } catch (error) {
+      if (error.code === 'ESRCH') return
+      if (error.code === 'EPERM') {
+        // macOS may deny signaling a group whose only members are zombies.
+        // Confirm the entire group's state; a live member or failed inspection
+        // keeps the permission failure visible and cleanup unconfirmed.
+        const state = spawnSync('ps', ['-A', '-o', 'pgid=,stat='], { encoding: 'utf8', timeout: 5000, maxBuffer: 2 * 1024 * 1024 })
+        if (!state.error && state.status === 0 && !state.stderr.trim()) {
+          const lines = state.stdout.trim().split('\n').filter(Boolean)
+          const rows = lines.map(line => /^\s*(\d+)\s+(\S+)\s*$/.exec(line))
+          if (rows.length && rows.every(Boolean)) {
+            const owned = rows.filter(row => Number(row[1]) === child.pid)
+            if (owned.every(row => row[2].startsWith('Z'))) return
+          }
+        }
+      }
+      throw error
+    }
   }
 }
 async function cleanupRegistry(directory, owner) {
@@ -45,7 +62,7 @@ export async function runProcess(executable, args = [], options = {}) {
   const { timeout = 20 * 60_000, capture = false, label = basename(executable), reportDirectory = process.env.CI_REPORT_DIR, onStdout, onStderr, waitDescendants = false, ...spawnOptions } = options
   const start = Date.now()
   let stdout = '', stderr = '', failure = null, timedOut = false
-  let exitCode = null, signal = null, pid = null, processClosed = false, treeClosed = false, cleanup
+  let exitCode = null, signal = null, pid = null, processClosed = false, treeClosed = false, cleanup, cleanupFailure = null
   const owner = randomUUID()
   const ancestors = JSON.parse(process.env.WOWTHING_PROCESS_ANCESTORS ?? '[]')
   if (!Array.isArray(ancestors) || ancestors.length > 128 || ancestors.some(value => typeof value !== 'string' || !/^[a-f0-9-]{36}$/.test(value))) throw new Error('invalid process ownership ancestry')
@@ -55,6 +72,15 @@ export async function runProcess(executable, args = [], options = {}) {
   const jobConfig = process.platform === 'win32' ? join(registry, `${randomUUID()}.job.json`) : null
   const append = (previous, bytes) => { const next = previous + bytes.toString(); return next.length > 16 * 1024 * 1024 ? next.slice(-16 * 1024 * 1024) : next }
   let child
+  // Timeout, exit and error paths must join one cleanup, never race or replace
+  // the primary command failure while diagnostic files are being written.
+  const startCleanup = () => {
+    if (!cleanup) cleanup = (async () => { try { if (process.platform !== 'win32' || !processClosed) await terminateTree(child) } finally { await cleanupRegistry(registry, owner) } })().catch(error => {
+      cleanupFailure = error.message
+      child.kill('SIGKILL')
+    })
+    return cleanup
+  }
   try {
     let launched = executable, launchArgs = args
     if (process.platform !== 'win32') {
@@ -75,7 +101,7 @@ export async function runProcess(executable, args = [], options = {}) {
           child.kill('SIGKILL'); child.stdout.destroy(); child.stderr.destroy(); child.unref()
           reject(new Error(`${label} process did not close after forced cleanup`))
         }, 10_000)
-        cleanup = (async () => { try { await terminateTree(child) } finally { await cleanupRegistry(registry, owner) } })().catch(error => { failure = `process cleanup failed: ${error.message}`; child.kill('SIGKILL') })
+        startCleanup()
       }, timeout)
       child.stdout.on('data', bytes => { stdout = append(stdout, bytes); if (!capture) process.stdout.write(bytes); onStdout?.(bytes) })
       child.stderr.on('data', bytes => { stderr = append(stderr, bytes); if (!capture) process.stderr.write(bytes); onStderr?.(bytes) })
@@ -83,7 +109,7 @@ export async function runProcess(executable, args = [], options = {}) {
       child.once('exit', () => {
         // An exited wrapper may leave descendants holding stdout/stderr open.
         // Stop its group now, then allow close to drain the captured streams.
-        if (process.platform !== 'win32' && !cleanup) cleanup = (async () => { try { await terminateTree(child) } finally { await cleanupRegistry(registry, owner) } })().catch(error => { failure = `process cleanup failed: ${error.message}` })
+        if (process.platform !== 'win32') startCleanup()
       })
       child.once('close', (code, childSignal) => { clearTimeout(timer); clearTimeout(closeDeadline); processClosed = true; exitCode = code; signal = childSignal; resolvePromise() })
       if (pid) { writeFileSync(`${entry}.pending`, JSON.stringify({ pid, owner, ancestors })); renameSync(`${entry}.pending`, entry) }
@@ -94,12 +120,8 @@ export async function runProcess(executable, args = [], options = {}) {
         child.stdin.write(`${JSON.stringify({ executable, args })}\n`)
       }
     })
-    await cleanup
-    if (failure) throw new Error(timedOut ? `${label} exceeded ${timeout}ms deadline (${failure})` : failure)
-    // Remove background descendants after normal exits too. The Windows launcher
-    // closes its Job Object only after all owned processes are gone.
-    if (process.platform !== 'win32' && !cleanup) await terminateTree(child)
-    await cleanupRegistry(registry, owner)
+    if (process.platform !== 'win32' || timedOut) await startCleanup()
+    if (cleanupFailure) throw new Error(timedOut ? `${label} exceeded ${timeout}ms deadline (process cleanup failed: ${cleanupFailure})` : `process cleanup failed: ${cleanupFailure}`)
     treeClosed = true
     if (timedOut) throw new Error(`${label} exceeded ${timeout}ms deadline${failure ? ` (${failure})` : ''}`)
     if (exitCode !== 0) throw new Error(`${label} failed with exit ${exitCode}${signal ? ` (${signal})` : ''}`)
@@ -108,15 +130,15 @@ export async function runProcess(executable, args = [], options = {}) {
     // Registration/config/report setup may fail after spawn, before the normal
     // listeners exist. It still owns the child and must terminate and await it.
     if (!child) { processClosed = true; treeClosed = true }
-    else if (!processClosed) {
-      let cleanupSucceeded = true
-      try { try { await terminateTree(child) } finally { await cleanupRegistry(registry, owner) } } catch (cleanupError) { cleanupSucceeded = false; failure += `; cleanup: ${cleanupError.message}`; child.kill('SIGKILL') }
-      await new Promise(resolvePromise => {
+    else {
+      await startCleanup()
+      if (cleanupFailure && !failure.includes(cleanupFailure)) failure += `; cleanup: ${cleanupFailure}`
+      if (!processClosed) await new Promise(resolvePromise => {
         if (processClosed) { resolvePromise(); return }
         const timer = setTimeout(() => { child.stdout.destroy(); child.stderr.destroy(); child.unref(); resolvePromise() }, 10_000)
         child.once('close', () => { clearTimeout(timer); processClosed = true; resolvePromise() })
       })
-      treeClosed = processClosed && cleanupSucceeded
+      treeClosed = processClosed && cleanupFailure === null
     }
   }
   finally {
