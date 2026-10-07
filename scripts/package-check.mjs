@@ -76,7 +76,7 @@ export async function extractPackage(path, temporary) {
   else if (path.endsWith('.AppImage')) await command(path, ['--appimage-extract'], { cwd: temporary })
   else if (path.endsWith('.exe')) {
     if (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') throw new Error('installer requires disposable hosted runner')
-    await command(path, ['/S', `/D=${temporary}`], { waitDescendants: true })
+    await command(path, ['/S', '/NS', `/D=${temporary}`], { timeout: 120_000, waitDescendants: true, windowsArgumentMode: 'nsis' })
   } else throw new Error(`unsupported package ${path}`)
   return temporary
 }
