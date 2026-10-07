@@ -1,7 +1,7 @@
 <template>
   <section id="features" class="container scroll-mt-8 py-20">
     <div class="mx-auto max-w-2xl text-center">
-      <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">Log out. It's already uploaded.</h2>
+      <h2 class="font-display text-3xl font-bold text-white sm:text-4xl">Log out. It's already uploaded.</h2>
       <p class="mt-4 text-slate-400">
         The WoWthing Collector addon saves your progress whenever a character logs out or reloads the UI. Wowthing Sync notices the change and sends it to WoWthing a moment later.
       </p>
@@ -9,7 +9,7 @@
 
     <div class="mt-14 grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-3">
       <div v-for="feature in features" :key="feature.title" class="bg-ink p-7">
-        <div class="flex size-10 items-center justify-center rounded-lg bg-amber-400/10 text-amber-400 ring-1 ring-amber-400/20">
+        <div class="flex size-10 items-center justify-center rounded-lg bg-linear-to-b from-amber-400/15 to-amber-700/10 text-amber-300 ring-1 ring-amber-500/30">
           <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path :d="feature.icon" />
           </svg>

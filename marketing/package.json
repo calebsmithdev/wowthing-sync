@@ -12,6 +12,7 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@fontsource-variable/cinzel": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "nuxt": "^4.6.0",
     "tailwindcss": "^4.3.3",
