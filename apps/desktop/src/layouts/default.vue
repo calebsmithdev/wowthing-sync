@@ -1,7 +1,8 @@
 <template>
-  <div class="pb-14">
+  <div class="flex min-h-screen flex-col">
     <AppHeader />
-    <main class="mx-auto w-full max-w-5xl px-6 py-6">
+    <main class="mx-auto w-full max-w-3xl flex-1 space-y-4 px-5 py-4">
+      <UpdateBanner />
       <SyncStatusBanner />
       <slot />
     </main>

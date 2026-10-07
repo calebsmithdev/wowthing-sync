@@ -1,18 +1,9 @@
 <template>
-  <UpdateBanner />
-  <header class="border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900">
-    <div class="mx-auto flex w-full max-w-5xl items-center gap-6 pl-6 pr-4 pt-2">
-      <p class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
-        WoWthing Sync
-      </p>
-      <div class="ml-auto">
-        <UNavigationMenu
-          :items="navigationItems"
-          highlight
-          variant="pill"
-          class="justify-end"
-        />
-      </div>
+  <header class="border-b border-default">
+    <div class="mx-auto flex w-full max-w-3xl items-center gap-2.5 pl-5 pr-3">
+      <img src="/img/app-icon.png" alt="" width="24" height="24" class="size-6 rounded">
+      <span class="text-sm font-semibold text-highlighted">WoWthing Sync</span>
+      <UNavigationMenu :items="navigationItems" highlight variant="link" class="ml-auto" />
     </div>
   </header>
 </template>
@@ -25,7 +16,7 @@ const isDev = import.meta.dev;
 
 const navigationItems = computed<NavigationMenuItem[]>(() => {
   const items: NavigationMenuItem[] = [
-    { label: 'Dashboard', to: '/' },
+    { label: 'Status', to: '/' },
     { label: 'Settings', to: '/settings' },
   ];
 

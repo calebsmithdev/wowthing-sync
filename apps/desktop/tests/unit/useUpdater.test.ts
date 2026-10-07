@@ -77,6 +77,15 @@ describe('shared updater controller', () => {
     listener?.({ payload: { source: 'tray' } }); await flushPromises()
     expect(updater.visible.value).toBe(true); expect(updater.phase.value).toBe('up-to-date'); updater.stop()
   })
+  it('auto-hides an up-to-date confirmation but keeps available updates until dismissed', async () => {
+    const updater = createUpdater()
+    await updater.checkForUpdates(true); expect(updater.visible.value).toBe(true)
+    vi.advanceTimersByTime(4000); expect(updater.visible.value).toBe(false)
+    const available = createUpdate(); mockCheck.mockResolvedValueOnce(available.update)
+    await updater.checkForUpdates(true); vi.advanceTimersByTime(4000)
+    expect(updater.phase.value).toBe('available'); expect(updater.visible.value).toBe(true)
+    updater.dismiss(); expect(updater.visible.value).toBe(false); updater.stop()
+  })
   it('recovers from background check errors', async () => {
     const resource = createUpdate(); mockCheck.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce(resource.update)
     const updater = createUpdater(); updater.start(); await flushPromises(); expect(updater.error.value).toContain('Offline')

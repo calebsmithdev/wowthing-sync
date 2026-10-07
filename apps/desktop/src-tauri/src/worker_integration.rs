@@ -217,6 +217,7 @@ struct Io {
     store: Arc<crate::preferences::Preferences>,
     endpoint: String,
     timeout: Duration,
+    notifications: Arc<Mutex<Vec<BatchSummary>>>,
 }
 impl WorkerIo for Io {
     fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String> {
@@ -232,6 +233,10 @@ impl WorkerIo for Io {
             self.store
                 .commit("last-success", Some(serde_json::json!(now)))?;
         }
+        Ok(())
+    }
+    fn notify(&self, summary: BatchSummary) -> Result<(), String> {
+        self.notifications.lock().unwrap().push(summary);
         Ok(())
     }
     fn endpoint(&self) -> &str {
@@ -261,6 +266,7 @@ fn io(temp: &tempfile::TempDir, server: &Server) -> Io {
         ),
         endpoint: server.endpoint.clone(),
         timeout: Duration::from_secs(3),
+        notifications: Default::default(),
     }
 }
 fn wait(label: &str, condition: impl Fn() -> bool) {
@@ -341,6 +347,11 @@ fn real_worker_discovers_replaces_coalesces_validates_and_persists_across_restar
     wait("rehydrated timestamp", || {
         service.snapshot().last_success == timestamp.as_u64()
     });
+    let uploads = service.snapshot().uploads;
+    assert!(
+        uploads.keys().any(|file| file.contains("NEW")),
+        "per-account upload times must survive restart: {uploads:?}"
+    );
     service.shutdown();
 }
 #[test]
@@ -489,6 +500,48 @@ fn real_worker_retries_http_failures_and_reports_bounded_timeouts() {
     assert!(server.bodies().len() <= 3, "{}", diagnostics());
     assert_eq!(state.last_success, None);
     assert_eq!(preferences.get("last-success"), None);
+    service.shutdown();
+}
+#[test]
+fn real_worker_notifies_once_per_drained_batch() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("batch");
+    for account in ["A", "B", "C"] {
+        file(&root, account, account);
+    }
+    // The second request of the first batch is rejected without retries.
+    let server = Server::new(vec![(200, Duration::ZERO), (401, Duration::ZERO)]);
+    let io = io(&temp, &server);
+    let notifications = io.notifications.clone();
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io);
+    wait("first batch", || !notifications.lock().unwrap().is_empty());
+    assert_eq!(server.bodies().len(), 3);
+    assert_eq!(
+        *notifications.lock().unwrap(),
+        [BatchSummary {
+            uploaded: 2,
+            failed: 1
+        }]
+    );
+    service.manual().unwrap();
+    wait("manual batch", || notifications.lock().unwrap().len() == 2);
+    assert_eq!(server.bodies().len(), 6);
+    assert_eq!(
+        notifications.lock().unwrap()[1],
+        BatchSummary {
+            uploaded: 3,
+            failed: 0
+        }
+    );
+    thread::sleep(Duration::from_millis(1500));
+    assert_eq!(
+        notifications.lock().unwrap().len(),
+        2,
+        "idle scans must not notify"
+    );
     service.shutdown();
 }
 #[test]

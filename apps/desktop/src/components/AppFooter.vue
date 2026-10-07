@@ -1,29 +1,14 @@
 <template>
-  <footer class="text-slate-800 dark:text-slate-200 bg-gray-100 dark:bg-gray-900">
-    <p>Version {{ appVersion }} | Built by <a href="https://wowthing.org/user/Failcookie" target="_blank">Failcookie</a> | Powered by <a href="https://wowthing.org" target="_blank">WoWthing</a></p>
+  <footer class="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-5 py-3 text-xs text-dimmed">
+    <span class="truncate font-mono" :title="status.folder ?? undefined">{{ status.folder ?? '' }}</span>
+    <span class="shrink-0">Version {{ appVersion }}</span>
   </footer>
 </template>
 
 <script setup lang="ts">
 import { getVersion } from '@tauri-apps/api/app';
+import { useSync } from '../composables/useSync';
 
+const status = useSync();
 const appVersion = await getVersion();
 </script>
-
-<style scoped>
-  footer {
-    position: fixed;
-    bottom: 0;
-    width: 100%;
-    height: 50px;
-    padding: 0 20px;
-    align-items: center;
-    display: flex;
-    justify-content: end;
-    font-size: 70%;
-  }
-
-  a {
-    text-decoration: underline;
-  }
-</style>

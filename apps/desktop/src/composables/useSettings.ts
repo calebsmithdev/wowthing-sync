@@ -19,6 +19,8 @@ export function createSettings() {
   const saving = ref<SettingAction | null>(null)
   const error = ref<string | null>(null)
   const notice = ref<string | null>(null)
+  /** The setting that `error`/`notice` belong to; null for loading the settings themselves. */
+  const scope = ref<SettingAction | null>(null)
   let hydration: Promise<void> | undefined
   const hydrate = (force = false): Promise<void> => {
     if (hydration) return hydration
@@ -30,7 +32,7 @@ export function createSettings() {
   }
   const perform = async (action: SettingAction, operation: () => Promise<SettingsSnapshot>): Promise<boolean> => {
     if (saving.value) return false
-    saving.value = action; error.value = null; notice.value = null
+    saving.value = action; scope.value = action; error.value = null; notice.value = null
     try { state.value = await operation(); notice.value = 'Settings saved.'; return true }
     catch (cause) {
       const failure = String(cause)
@@ -45,7 +47,7 @@ export function createSettings() {
     return { ...state.value, hasApiKey: saved.hasKey }
   })
   return {
-    state, loaded, loading, saving, error, notice, busy: computed(() => loading.value || saving.value !== null), hydrate, saveKey,
+    state, loaded, loading, saving, error, notice, scope, busy: computed(() => loading.value || saving.value !== null), hydrate, saveKey,
     saveFolder: (folder: string) => perform('folder', () => invoke<SettingsSnapshot>('save_sync_folder', { folder })),
     setAutostart: (enabled: boolean) => perform('autostart', () => invoke<SettingsSnapshot>('set_autostart', { enabled })),
     setNotifications: (enabled: boolean) => perform('notifications', () => invoke<SettingsSnapshot>('set_notifications', { enabled })),

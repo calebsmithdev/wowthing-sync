@@ -4,6 +4,7 @@ import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000
+const UP_TO_DATE_VISIBLE_MS = 4000
 export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'up-to-date' | 'error'
 export interface UpdateCheckRequest { source: 'tray' }
 
@@ -19,6 +20,7 @@ export function createUpdater() {
   let started = false
   let operation: Promise<void> | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
+  let hideTimer: ReturnType<typeof setTimeout> | undefined
   let unlisten: UnlistenFn | undefined
   const setPhase = (value: UpdatePhase) => { if (!disposed) phase.value = value }
   const schedule = () => {
@@ -27,6 +29,7 @@ export function createUpdater() {
   }
   const run = (install: boolean, manual: boolean): Promise<void> => {
     if (disposed) return Promise.resolve()
+    clearTimeout(hideTimer)
     if (manual) visible.value = true
     if (operation) return operation
     clearTimeout(timer)
@@ -37,7 +40,12 @@ export function createUpdater() {
     operation = (async () => {
       // Keep explicit try/finally. `await using` breaks older system webviews.
       const update = await check()
-      if (!update) { setPhase('up-to-date'); return }
+      if (!update) {
+        setPhase('up-to-date')
+        // A confirmation only; dismiss it so it does not occupy the window.
+        if (!disposed) hideTimer = setTimeout(() => { if (phase.value === 'up-to-date') visible.value = false }, UP_TO_DATE_VISIBLE_MS)
+        return
+      }
       try {
         if (disposed) return
         version.value = update.version
@@ -80,8 +88,9 @@ export function createUpdater() {
     })
     void checkForUpdates(false)
   }
-  const stop = () => { disposed = true; clearTimeout(timer); unlisten?.() }
-  return { phase, visible, version, error, progress, busy, updateNeeded: computed(() => phase.value === 'available'), checkForUpdates, handleUpdate, start, stop }
+  const dismiss = () => { clearTimeout(hideTimer); visible.value = false }
+  const stop = () => { disposed = true; clearTimeout(timer); clearTimeout(hideTimer); unlisten?.() }
+  return { phase, visible, version, error, progress, busy, updateNeeded: computed(() => phase.value === 'available'), checkForUpdates, handleUpdate, dismiss, start, stop }
 }
 export type UpdaterController = ReturnType<typeof createUpdater>
 export default function useUpdater(): UpdaterController { return useNuxtApp().$updater }

@@ -11,7 +11,8 @@ struct Fixture {
 }
 fn status(synced: bool) -> Value {
     json!({"folder":"/fixture/_retail_", "hasApiKey":true, "files":["/fixture/collector.lua"], "isProcessing":false,
-        "lastSuccess":if synced { Some(1791244800u64) } else { None }, "error":null, "pending":0, "failures":[], "warning":null})
+        "lastSuccess":if synced { Some(1791244800u64) } else { None }, "error":null, "pending":0, "failures":[], "warning":null,
+        "uploads":if synced { json!({"/fixture/collector.lua": 1791244800u64}) } else { json!({}) }})
 }
 #[tauri::command]
 fn get_sync_status(fixture: tauri::State<'_, Fixture>) -> Value {

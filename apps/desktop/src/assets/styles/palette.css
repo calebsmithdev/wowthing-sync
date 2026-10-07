@@ -1,17 +1,17 @@
 /* Static Nuxt UI palette. Keep colors aligned with app.config.ts. No runtime style injection. */
 @layer theme {
   :root, :host {
-    --ui-color-primary-50: var(--color-sky-50);
-    --ui-color-primary-100: var(--color-sky-100);
-    --ui-color-primary-200: var(--color-sky-200);
-    --ui-color-primary-300: var(--color-sky-300);
-    --ui-color-primary-400: var(--color-sky-400);
-    --ui-color-primary-500: var(--color-sky-500);
-    --ui-color-primary-600: var(--color-sky-600);
-    --ui-color-primary-700: var(--color-sky-700);
-    --ui-color-primary-800: var(--color-sky-800);
-    --ui-color-primary-900: var(--color-sky-900);
-    --ui-color-primary-950: var(--color-sky-950);
+    --ui-color-primary-50: var(--color-amber-50);
+    --ui-color-primary-100: var(--color-amber-100);
+    --ui-color-primary-200: var(--color-amber-200);
+    --ui-color-primary-300: var(--color-amber-300);
+    --ui-color-primary-400: var(--color-amber-400);
+    --ui-color-primary-500: var(--color-amber-500);
+    --ui-color-primary-600: var(--color-amber-600);
+    --ui-color-primary-700: var(--color-amber-700);
+    --ui-color-primary-800: var(--color-amber-800);
+    --ui-color-primary-900: var(--color-amber-900);
+    --ui-color-primary-950: var(--color-amber-950);
     --ui-color-secondary-50: var(--color-blue-50);
     --ui-color-secondary-100: var(--color-blue-100);
     --ui-color-secondary-200: var(--color-blue-200);
@@ -80,7 +80,8 @@
     --ui-color-neutral-950: var(--color-slate-950);
   }
   :root, :host, .light {
-    --ui-primary: var(--ui-color-primary-500);
+    /* Amber 500 is too light for white button text and links on a light background. */
+    --ui-primary: var(--ui-color-primary-700);
     --ui-secondary: var(--ui-color-secondary-500);
     --ui-success: var(--ui-color-success-500);
     --ui-info: var(--ui-color-info-500);

@@ -21,11 +21,12 @@ export default defineNuxtConfig({
   icon: {
     mode: 'svg',
     provider: 'none',
-    clientBundle: { scan: true, icons: ['heroicons:eye', 'heroicons:eye-slash', 'lucide:loader-circle', 'lucide:check', 'lucide:chevron-down', 'lucide:external-link', 'lucide:circle-check', 'lucide:circle-alert'] },
+    clientBundle: { scan: true, icons: ['heroicons:eye', 'heroicons:eye-slash', 'lucide:loader-circle', 'lucide:check', 'lucide:chevron-down', 'lucide:external-link', 'lucide:circle-check', 'lucide:circle-alert', 'lucide:x', 'lucide:refresh-cw', 'lucide:folder-open', 'lucide:key-round', 'lucide:user', 'lucide:circle', 'lucide:triangle-alert', 'lucide:settings', 'lucide:info', 'lucide:radar'] },
   },
   telemetry: false,
   colorMode: {
-    preference: 'dark'
+    // Follow the OS appearance; the static palette defines both light and dark tokens.
+    preference: 'system'
   },
   app: {
     head: {
@@ -35,10 +36,6 @@ export default defineNuxtConfig({
       ],
     },
     pageTransition: {
-      name: 'fade',
-      mode: 'out-in',
-    },
-    layoutTransition: {
       name: 'fade',
       mode: 'out-in',
     },
