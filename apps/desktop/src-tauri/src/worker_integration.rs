@@ -78,6 +78,9 @@ fn serve(
     events: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
 ) {
+    // Winsock inherits the nonblocking listener's mode on accepted sockets.
+    // The request handler uses blocking reads with explicit deadlines.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
@@ -150,6 +153,64 @@ fn serve(
             break;
         }
     }
+}
+#[test]
+fn mock_server_reads_delayed_requests_on_nonblocking_accepted_sockets() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    client
+        .set_write_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let accepting = Instant::now();
+    let stream = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(accepting.elapsed() < Duration::from_secs(3));
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("mock accept failed: {error}"),
+        }
+    };
+    // Reproduce Windows inheritance on every platform, exercising serve itself.
+    stream.set_nonblocking(true).unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let output = requests.clone();
+    let trace = events.clone();
+    let handler = thread::spawn(move || {
+        serve(
+            stream,
+            Arc::new(vec![(200, Duration::ZERO)]),
+            output,
+            trace,
+            Arc::new(AtomicBool::new(false)),
+        )
+    });
+    thread::sleep(Duration::from_millis(250));
+    let body = serde_json::json!({
+        "apiKey": "synthetic-worker-key",
+        "luaFile": "delayed request"
+    })
+    .to_string();
+    write!(
+        client,
+        "POST /upload/ HTTP/1.1\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .unwrap();
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    drop(client);
+    handler.join().unwrap();
+    assert!(reply.starts_with("HTTP/1.1 200 "), "{reply:?}");
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    assert_eq!(requests.lock().unwrap()[0]["luaFile"], "delayed request");
+    assert_eq!(*events.lock().unwrap(), ["request 1: HTTP 200"]);
 }
 #[derive(Clone)]
 struct Io {
