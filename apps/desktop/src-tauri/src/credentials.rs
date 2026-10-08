@@ -175,15 +175,14 @@ impl SecretManager {
             .status
             .clone()
     }
-    pub fn key(&self) -> Result<String, String> {
+    /// An unsaved key is expected during setup; a vault failure is still an error.
+    pub fn key(&self) -> Result<Option<String>, String> {
         let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        cache.key.clone().ok_or_else(|| {
-            cache
-                .status
-                .error
-                .clone()
-                .unwrap_or_else(|| "Configure your WoWthing API key in Settings.".into())
-        })
+        match (&cache.key, &cache.status.error) {
+            (Some(key), _) => Ok(Some(key.clone())),
+            (None, Some(error)) => Err(error.clone()),
+            (None, None) => Ok(None),
+        }
     }
     fn save(&self, app: &tauri::AppHandle, key: String) -> Result<ApiKeyStatus, String> {
         let key = validate_key(&key)?;
@@ -279,6 +278,16 @@ pub(crate) fn ci_cleanup(identity: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    #[test]
+    fn missing_cached_key_is_setup_but_vault_errors_remain_actionable() {
+        let secrets = SecretManager::default();
+        assert_eq!(secrets.key(), Ok(None));
+        secrets.cache.lock().unwrap().status.error = Some(LOCKED.into());
+        assert_eq!(secrets.key(), Err(LOCKED.into()));
+        // A committed secure key still works after a legacy cleanup warning.
+        secrets.cache.lock().unwrap().key = Some("synthetic-key".into());
+        assert_eq!(secrets.key(), Ok(Some("synthetic-key".into())));
+    }
     struct FakeVault {
         value: RefCell<Option<String>>,
         fail_write: bool,

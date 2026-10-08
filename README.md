@@ -67,6 +67,11 @@ while syncing continues.
 
 ## Getting started
 
+On first launch, the Status page guides you through connecting your account and
+game folder, marking each step complete as you save it in Settings. Background
+update checks that cannot connect stay quiet; their status is available under
+**Settings → About**. Manual update checks show a retry and optional technical details.
+
 1. **Install the addon.** Add [WoWthing Collector](https://www.curseforge.com/wow/addons/wowthing-collector) to your retail game with your addon manager of choice.
 2. **Copy your API key.** Sign in to [wowthing.org](https://wowthing.org/), open **Settings → Account** and copy your API key.
 3. **Connect the app.** In Wowthing Sync, open **Settings**, paste the key and select **Save API Key**.
@@ -86,6 +91,14 @@ The folder you pick must contain `WTF/Account`. **Use Default Location** checks 
 </details>
 
 ## Screenshots
+
+<details>
+<summary><b>First launch</b>: account and game folder setup</summary>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/setup-dark.png">
+  <img src="assets/readme/setup-light.png" alt="Welcome screen with account and game folder setup steps" width="520">
+</picture>
+</details>
 
 <table>
   <tr>

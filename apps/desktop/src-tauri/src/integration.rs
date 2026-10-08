@@ -33,7 +33,7 @@ impl WorkerIo for Io {
     fn preferences(&self) -> Result<Arc<Preferences>, String> {
         crate::preferences::store(&self.app)
     }
-    fn key(&self) -> Result<String, String> {
+    fn key(&self) -> Result<Option<String>, String> {
         self.app.state::<crate::credentials::SecretManager>().key()
     }
     fn reload(&self) {

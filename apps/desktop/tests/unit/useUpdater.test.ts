@@ -12,7 +12,7 @@ function createUpdate() {
   const update = new Update({ rid: 1, currentVersion: '1.0.7', version: '1.0.8', rawJson: {} })
   return { update, close: vi.spyOn(update, 'close').mockResolvedValue(undefined), downloadAndInstall: vi.spyOn(update, 'downloadAndInstall').mockResolvedValue(undefined) }
 }
-function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
+function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail }); return { promise, resolve, reject } }
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 describe('shared updater controller', () => {
@@ -51,6 +51,7 @@ describe('shared updater controller', () => {
     const resource = createUpdate(); resource.downloadAndInstall.mockRejectedValueOnce(new Error('Download failed'))
     mockCheck.mockResolvedValueOnce(resource.update); const updater = createUpdater(); await updater.handleUpdate()
     expect(updater.phase.value).toBe('error'); expect(updater.error.value).toContain('Download failed')
+    expect(updater.visible.value).toBe(true); expect(updater.errorOperation.value).toBe('install')
     expect(resource.close).toHaveBeenCalledOnce(); expect(mockRelaunch).not.toHaveBeenCalled(); updater.stop()
   })
   it('does not relaunch if resource cleanup fails', async () => {
@@ -91,7 +92,32 @@ describe('shared updater controller', () => {
   it('recovers from background check errors', async () => {
     const resource = createUpdate(); mockCheck.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce(resource.update)
     const updater = createUpdater(); updater.start(); await flushPromises(); expect(updater.error.value).toContain('Offline')
-    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS); expect(updater.phase.value).toBe('available'); expect(updater.error.value).toBeNull(); updater.stop()
+    expect(updater.phase.value).toBe('error'); expect(updater.visible.value).toBe(false)
+    expect(updater.errorOperation.value).toBe('check')
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    expect(updater.phase.value).toBe('available'); expect(updater.error.value).toBeNull()
+    expect(updater.visible.value).toBe(true); updater.stop()
+  })
+  it('shows failed manual checks without letting the next automatic failure reopen the banner', async () => {
+    mockCheck.mockRejectedValue(new Error('Offline'))
+    const updater = createUpdater(); updater.start(); await flushPromises()
+    expect(updater.visible.value).toBe(false)
+    await updater.checkForUpdates(true)
+    expect(updater.visible.value).toBe(true); expect(updater.errorOperation.value).toBe('check')
+    updater.dismiss()
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    expect(updater.phase.value).toBe('error'); expect(updater.visible.value).toBe(false)
+    updater.stop()
+  })
+  it('shows the failure when a tray request joins an automatic check', async () => {
+    const pending = deferred<null>(); mockCheck.mockReturnValueOnce(pending.promise)
+    const updater = createUpdater(); updater.start(); await flushPromises()
+    expect(updater.visible.value).toBe(false)
+    listener?.({ payload: { source: 'tray' } })
+    pending.reject(new Error('Offline')); await flushPromises()
+    expect(mockCheck).toHaveBeenCalledOnce(); expect(updater.visible.value).toBe(true)
+    expect(updater.phase.value).toBe('error'); expect(updater.error.value).toContain('Offline')
+    updater.stop()
   })
   it('closes a late check result without installing or changing disposed state', async () => {
     const pending = deferred<Update>(); const resource = createUpdate(); mockCheck.mockReturnValueOnce(pending.promise)

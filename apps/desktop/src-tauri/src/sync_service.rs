@@ -145,7 +145,7 @@ fn batch_notification(app: &tauri::AppHandle, summary: BatchSummary) -> Result<(
 /// cancellation and persistence remain in the production worker.
 pub(crate) trait WorkerIo: Send + Sync + 'static {
     fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String>;
-    fn key(&self) -> Result<String, String>;
+    fn key(&self) -> Result<Option<String>, String>;
     fn reload(&self);
     fn emit(&self, status: &SyncStatus);
     /// Called once when the queue drains after one or more uploads finished.
@@ -166,7 +166,7 @@ impl WorkerIo for AppIo {
     fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String> {
         crate::preferences::store(&self.0)
     }
-    fn key(&self) -> Result<String, String> {
+    fn key(&self) -> Result<Option<String>, String> {
         self.0.state::<crate::credentials::SecretManager>().key()
     }
     fn reload(&self) {
@@ -441,8 +441,9 @@ fn run(
 ) {
     let mut state = SyncStatus::default();
     io.reload();
-    state.has_api_key = io.key().is_ok();
-    state.error = io.key().err();
+    let key = io.key();
+    state.has_api_key = matches!(&key, Ok(Some(_)));
+    state.error = key.err();
     match io.preferences() {
         Ok(store) => {
             state.folder = store
@@ -531,7 +532,7 @@ fn run(
                     publish(&io, &shared, &state);
                 }
                 Request::Manual => {
-                    if io.key().is_err() {
+                    if !matches!(io.key(), Ok(Some(_))) {
                         io.reload();
                     }
                     manual = true;
@@ -546,18 +547,14 @@ fn run(
             } else {
                 FALLBACK_INTERVAL
             };
-        state.has_api_key = io.key().is_ok();
+        let key = io.key();
+        state.has_api_key = matches!(&key, Ok(Some(_)));
         if let Err(error) = io.preferences() {
             state.error = Some(error);
             publish(&io, &shared, &state);
             continue;
         }
-        let Some(folder) = &state.folder else {
-            state.error = Some("Choose your World of Warcraft _retail_ folder in Settings.".into());
-            publish(&io, &shared, &state);
-            continue;
-        };
-        let api_key = match io.key() {
+        let api_key = match key {
             Ok(key) => key,
             Err(error) => {
                 state.has_api_key = false;
@@ -566,7 +563,13 @@ fn run(
                 continue;
             }
         };
-        state.has_api_key = true;
+        // Missing configuration is setup, not a failed sync. Vault errors above
+        // remain visible even when no folder has been selected yet.
+        let (Some(folder), Some(api_key)) = (&state.folder, api_key) else {
+            state.error = None;
+            publish(&io, &shared, &state);
+            continue;
+        };
         if approved.is_none() {
             approved = crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok();
             watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);

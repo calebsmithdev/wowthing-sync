@@ -93,7 +93,8 @@
         <div class="flex items-center justify-between gap-4 py-3">
           <div class="text-sm">
             <p class="font-medium text-highlighted">Updates</p>
-            <p class="text-muted">Checked automatically while the app is running.</p>
+            <p v-if="updaterPhase === 'error' && updaterErrorOperation === 'check' && !updateVisible" role="status" class="text-muted">Updates could not be checked. You can try again here.</p>
+            <p v-else class="text-muted">Checked automatically while the app is running.</p>
           </div>
           <UButton color="neutral" variant="outline" class="shrink-0" :loading="updaterBusy" @click="checkForUpdates(true)">Check for Updates</UButton>
         </div>
@@ -114,7 +115,7 @@ import { folderFlavor } from '../utils/collector'
 const settings = useSettings()
 const { state, loading, loaded, busy, saving, error, notice, scope, setAutostart, setNotifications } = settings
 const { hasApiKey } = useApiKeys()
-const { busy: updaterBusy, checkForUpdates } = useUpdater()
+const { busy: updaterBusy, phase: updaterPhase, errorOperation: updaterErrorOperation, visible: updateVisible, checkForUpdates } = useUpdater()
 const apiKeyDraft = ref('')
 const showPassword = ref(false)
 const dialogError = ref<string | null>(null)

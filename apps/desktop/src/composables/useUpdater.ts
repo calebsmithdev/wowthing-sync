@@ -6,6 +6,7 @@ import { relaunch } from '@tauri-apps/plugin-process'
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 const UP_TO_DATE_VISIBLE_MS = 4000
 export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'up-to-date' | 'error'
+export type UpdateErrorOperation = 'check' | 'install' | 'open-download'
 export interface UpdateCheckRequest { source: 'tray' }
 
 /** One controller per Nuxt app; checking, tray requests and installation share its lock. */
@@ -14,6 +15,7 @@ export function createUpdater() {
   const visible = ref(false)
   const version = ref<string | null>(null)
   const error = ref<string | null>(null)
+  const errorOperation = ref<UpdateErrorOperation | null>(null)
   const progress = ref<number | null>(null)
   const busy = ref(false)
   let disposed = false
@@ -22,6 +24,7 @@ export function createUpdater() {
   let timer: ReturnType<typeof setTimeout> | undefined
   let hideTimer: ReturnType<typeof setTimeout> | undefined
   let unlisten: UnlistenFn | undefined
+  let feedbackRequested = false
   const setPhase = (value: UpdatePhase) => { if (!disposed) phase.value = value }
   const schedule = () => {
     clearTimeout(timer)
@@ -30,10 +33,14 @@ export function createUpdater() {
   const run = (install: boolean, manual: boolean): Promise<void> => {
     if (disposed) return Promise.resolve()
     clearTimeout(hideTimer)
-    if (manual) visible.value = true
+    // A manual request can join a background check and must still get its result.
+    if (manual) { feedbackRequested = true; visible.value = true }
     if (operation) return operation
+    feedbackRequested = manual
+    visible.value = manual
     clearTimeout(timer)
     error.value = null
+    errorOperation.value = null
     progress.value = null
     setPhase('checking')
     busy.value = true
@@ -68,7 +75,12 @@ export function createUpdater() {
       }
       if (!disposed) await relaunch()
     })().catch(cause => {
-      if (!disposed) { error.value = String(cause); visible.value = true; phase.value = 'error' }
+      if (!disposed) {
+        error.value = String(cause)
+        errorOperation.value = install ? 'install' : 'check'
+        visible.value = feedbackRequested
+        phase.value = 'error'
+      }
     }).finally(() => {
       operation = undefined
       busy.value = false
@@ -84,13 +96,13 @@ export function createUpdater() {
     void listen<UpdateCheckRequest>('check-for-updates', event => {
       if (event.payload.source === 'tray') void checkForUpdates(true)
     }).then(stop => { if (disposed) stop(); else unlisten = stop }).catch(cause => {
-      if (!disposed) { error.value = `Cannot listen for tray update requests: ${String(cause)}`; visible.value = true; phase.value = 'error' }
+      if (!disposed) { error.value = `Cannot listen for tray update requests: ${String(cause)}`; errorOperation.value = 'check'; phase.value = 'error' }
     })
     void checkForUpdates(false)
   }
   const dismiss = () => { clearTimeout(hideTimer); visible.value = false }
   const stop = () => { disposed = true; clearTimeout(timer); clearTimeout(hideTimer); unlisten?.() }
-  return { phase, visible, version, error, progress, busy, updateNeeded: computed(() => phase.value === 'available'), checkForUpdates, handleUpdate, dismiss, start, stop }
+  return { phase, visible, version, error, errorOperation, progress, busy, updateNeeded: computed(() => phase.value === 'available'), checkForUpdates, handleUpdate, dismiss, start, stop }
 }
 export type UpdaterController = ReturnType<typeof createUpdater>
 export default function useUpdater(): UpdaterController { return useNuxtApp().$updater }

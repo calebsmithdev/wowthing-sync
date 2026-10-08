@@ -16,7 +16,7 @@ const mountStatus = (value: Partial<SyncStatus>) => {
     formattedLastUpdated: computed(() => ''), fromNow: (unix: number) => `at ${unix}`, formatted: String,
   }))
   vi.stubGlobal('ref', ref); vi.stubGlobal('computed', computed); vi.stubGlobal('onUnmounted', () => {})
-  return mount(StatusPage, { global: { stubs: { UButton: { template: '<button><slot /></button>' } } } })
+  return mount(StatusPage, { global: { stubs: { UButton: { template: '<button><slot /></button>' }, UIcon: { template: '<i />' } } } })
 }
 
 describe('status page', () => {
@@ -36,9 +36,24 @@ describe('status page', () => {
 
   it('asks for setup before showing sync state', () => {
     const wrapper = mountStatus({ hasApiKey: false, folder: null })
-    expect(wrapper.get('h1').text()).toBe('Finish setup')
-    expect(wrapper.text()).toContain('Add your WoWthing API key in Settings')
-    expect(wrapper.find('li').exists()).toBe(false)
+    expect(wrapper.get('h1').text()).toBe('Welcome to WoWthing Sync')
+    expect(wrapper.text()).toContain('Copy your API key from WoWthing Settings → Account.')
+    expect(wrapper.text()).toContain('Select the _retail_ folder that contains WTF/Account.')
+    expect(wrapper.findAll('li')).toHaveLength(2)
+    expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Open Settings'])
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    wrapper.unmount(); vi.unstubAllGlobals()
+  })
+  it.each([
+    { hasApiKey: true, folder: null, complete: 'API key saved securely.', remaining: 'Select the _retail_ folder' },
+    { hasApiKey: false, folder: '/wow/_retail_', complete: 'World of Warcraft folder selected.', remaining: 'Copy your API key' },
+  ])('marks completed setup steps and keeps the remaining step actionable', value => {
+    const wrapper = mountStatus(value)
+    expect(wrapper.get('h1').text()).toBe('Welcome to WoWthing Sync')
+    expect(wrapper.findAll('[aria-label=Complete]')).toHaveLength(1)
+    expect(wrapper.text()).toContain(value.complete)
+    expect(wrapper.text()).toContain(value.remaining)
+    expect(wrapper.text()).not.toContain('Accounts')
     wrapper.unmount(); vi.unstubAllGlobals()
   })
 })
