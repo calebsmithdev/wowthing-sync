@@ -16,9 +16,27 @@ validate the actual merge commit and release-only signing/package paths.
 PRs run frontend lint/type/unit once, then Rust lint/unit/real-worker HTTP tests,
 launcher/process contracts, browser fixtures, both native webview fixtures and
 unsigned debug package inspection on macOS 15 ARM64/Intel, Windows Server 2022 x64
-and Ubuntu 24.04 x64. The aggregate fails on missing, failed, cancelled or skipped
+and Ubuntu 22.04 x64. The aggregate fails on missing, failed, cancelled or skipped
 required jobs; frontend failure cannot leave it green. Actions and application
 Node/Rust toolchains are pinned; installs use lockfiles.
+
+Linux native checks and shipping packages use Ubuntu 22.04 (glibc 2.35), matching
+the AppImageHub retest host. Its standard repositories provide WebKitGTK 4.1;
+FUSE uses `libfuse2`, not Ubuntu 24.04's `libfuse2t64`. The Rust cache prefix was
+changed to exclude objects linked on the former Ubuntu 24.04 baseline. Frontend,
+audit and orchestration-only jobs can still use Ubuntu 24.04.
+
+`scripts/appimage-check.mjs` extracts the shipping AppImage without launching the
+application. It validates AppRun, .DirIcon, desktop/icon entries and required
+glibc symbol versions in the runtime and every packaged ELF executable/library,
+rejecting requirements above 2.35. Both unsigned production/fixture AppDirs use
+the same check before the isolated fixture launch. Release builds run the audit
+before staging assets and preserve `test-results/appimage-compatibility.json`.
+AppImage assets and updater archives/signatures use
+`wowthing-sync_<version>_x86_64.AppImage[.tar.gz][.sig]`; the updater platform key
+remains `linux-x86_64`. Publish a new version after the checks pass, then request
+`/retest` on [AppImageHub PR 9719](https://github.com/AppImage/appimage.github.io/pull/9719).
+Existing published artifacts are not rebuilt in place.
 
 The desktop `.npmrc` explicitly sets `legacy-peer-deps=false`. Generate its
 lockfile and validate `npm ci` with this setting: a user-level legacy setting can

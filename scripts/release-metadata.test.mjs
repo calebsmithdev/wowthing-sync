@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { sourceVersion, verifyVersions, existingReleaseTarget, semver, stageArtifacts, mergeUpdater, PLATFORM_KEYS } from './release-metadata.mjs'
@@ -28,10 +28,35 @@ test('stages distinct signed platform assets and builds a version-consistent upd
     const updater = mergeUpdater(fragments,'1.0.7','owner/repo')
     assert.equal(updater.version,'1.0.7'); assert.equal(Object.keys(updater.platforms).length,4)
     for (const entry of Object.values(updater.platforms)) assert.match(entry.url,/\/v1\.0\.7\/wowthing-sync_1\.0\.7_/)
+    assert.equal(updater.platforms['linux-x86_64'].url, 'https://github.com/owner/repo/releases/download/v1.0.7/wowthing-sync_1.0.7_x86_64.AppImage.tar.gz')
     assert.throws(() => mergeUpdater(fragments.slice(1),'1.0.7','owner/repo'))
     assert.throws(() => mergeUpdater([{...fragments[0],version:'1.0.8'},...fragments.slice(1)],'1.0.7','owner/repo'))
     assert.throws(() => stageArtifacts({version:'1.0.7',key:'linux-x86_64',paths:[join(root,'outside')],destination,targetRoot:target}))
   } finally { rmSync(root,{recursive:true,force:true}) }
+})
+
+test('AppImage, updater archive and signatures omit linux without changing updater keys or bytes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'wowthing-appimage-names-'))
+  try {
+    const target = join(root, 'target'), destination = join(root, 'assets'); mkdirSync(target)
+    const extensions = ['.AppImage', '.AppImage.sig', '.AppImage.tar.gz', '.AppImage.tar.gz.sig', '.deb', '.rpm']
+    const paths = extensions.map(extension => {
+      const path = join(target, `Wowthing Sync_1.1.1_amd64${extension}`)
+      writeFileSync(path, `original ${extension}`)
+      return path
+    })
+    const fragment = stageArtifacts({ version: '1.1.1', key: 'linux-x86_64', paths, destination, targetRoot: target })
+    assert.equal(fragment.key, 'linux-x86_64')
+    assert.equal(fragment.artifact, 'wowthing-sync_1.1.1_x86_64.AppImage.tar.gz')
+    for (const extension of extensions) {
+      const label = extension.startsWith('.AppImage') ? 'x86_64' : 'linux-x86_64'
+      assert.equal(readFileSync(join(destination, `wowthing-sync_1.1.1_${label}${extension}`), 'utf8'), `original ${extension}`)
+    }
+    assert.equal(readdirSync(destination).filter(name => /linux.*\.AppImage/.test(name)).length, 0)
+    const direct = join(root, 'direct')
+    const raw = stageArtifacts({ version: '1.1.1', key: 'linux-x86_64', paths: paths.slice(0, 2), destination: direct, targetRoot: target })
+    assert.equal(raw.artifact, 'wowthing-sync_1.1.1_x86_64.AppImage')
+  } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
 test('retries only repair the same draft and published releases remain unchanged', () => {

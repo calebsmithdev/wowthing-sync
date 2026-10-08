@@ -50,7 +50,8 @@ jobs:
           - os: macos-15-intel
             target: x86_64-apple-darwin
             key: darwin-x86_64
-          - os: ubuntu-24.04
+          # AppImages must also run on Ubuntu 22.04 (glibc 2.35).
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             key: linux-x86_64
           - os: windows-2022
@@ -97,6 +98,11 @@ jobs:
           includeUpdaterJson: false
       - name: Reject automation in the shipping executable
         run: node scripts/distribution-check.mjs ${{ matrix.target }}
+      - name: Verify AppImage structure and Ubuntu 22.04 glibc compatibility
+        if: runner.os == 'Linux'
+        run: node scripts/ci-run.mjs appimage-compatibility 600 node scripts/appimage-check.mjs
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
       - name: Verify real updater and configured platform signatures
         run: node scripts/ci-run.mjs release-signatures 900 node scripts/distribution-signatures.mjs ${{ matrix.target }}
         env:

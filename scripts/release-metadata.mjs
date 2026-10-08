@@ -32,6 +32,12 @@ export function existingReleaseTarget(release, { version, sha, tagSha }) {
 }
 export const PLATFORM_KEYS = ['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64']
 const EXTENSIONS = ['.app.tar.gz.sig', '.AppImage.tar.gz.sig', '.msi.zip.sig', '.nsis.zip.sig', '.app.tar.gz', '.AppImage.tar.gz', '.msi.zip', '.nsis.zip', '.AppImage.sig', '.AppImage', '.dmg', '.deb', '.rpm', '.msi', '.exe']
+function artifactName(version, key, extension) {
+  // AppImageHub rejects redundant "linux" in AppImage names. Keep the Tauri
+  // updater platform key unchanged; its URL points to the renamed asset.
+  const label = key.startsWith('linux-') && extension.startsWith('.AppImage') ? key.slice('linux-'.length) : key
+  return `wowthing-sync_${version}_${label}${extension}`
+}
 export function stageArtifacts({ version, key, paths, destination, targetRoot }) {
   if (!PLATFORM_KEYS.includes(key)) throw new Error('Unknown release platform')
   semver(version); mkdirSync(destination, { recursive: true })
@@ -43,7 +49,7 @@ export function stageArtifacts({ version, key, paths, destination, targetRoot })
     if (!statSync(path).isFile()) continue
     const extension = EXTENSIONS.find(extension => path.endsWith(extension))
     if (!extension) continue
-    const name = `wowthing-sync_${version}_${key}${extension}`
+    const name = artifactName(version, key, extension)
     if (staged.has(extension)) throw new Error(`Duplicate artifact type for ${key}: ${extension}`)
     copyFileSync(path, join(destination, name)); staged.set(extension, name)
   }
@@ -64,7 +70,8 @@ export function mergeUpdater(fragments, version, repository) {
   for (const fragment of fragments) {
     if (!PLATFORM_KEYS.includes(fragment.key)) throw new Error('Unexpected updater platform')
     verifyVersions(version, { updaterVersion: fragment.version })
-    if (!fragment.signature || basename(fragment.artifact) !== fragment.artifact || !fragment.artifact.startsWith(`wowthing-sync_${version}_${fragment.key}.`)) throw new Error('Invalid updater artifact metadata')
+    const extension = EXTENSIONS.find(extension => fragment.artifact.endsWith(extension))
+    if (!fragment.signature || basename(fragment.artifact) !== fragment.artifact || !extension || fragment.artifact !== artifactName(version, fragment.key, extension)) throw new Error('Invalid updater artifact metadata')
     platforms[fragment.key] = { signature: fragment.signature, url: `https://github.com/${repository}/releases/download/v${version}/${encodeURIComponent(fragment.artifact)}` }
   }
   return { version, notes: `WoWthing Sync ${version}`, pub_date: new Date().toISOString(), platforms }
