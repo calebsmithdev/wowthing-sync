@@ -70,6 +70,16 @@ test('falls back to the MSI and reports missing required installers', () => {
   assert.deepEqual(result.missing, ['mac-intel', 'linux']);
 });
 
+test('selects the portable AppImage filename without a linux suffix', () => {
+  const image = 'wowthing-sync_1.1.1_x86_64.AppImage';
+  const result = selectDownloads({
+    ...legacy,
+    assets: [...legacy.assets.filter(value => !value.name.endsWith('.AppImage')), asset(image)]
+  });
+  assert.equal(result.downloads.linux.name, image);
+  assert.deepEqual(result.missing, []);
+});
+
 test('rejects malformed release responses', () => {
   assert.throws(() => selectDownloads({ message: 'Not Found' }), /missing tag_name/);
 });

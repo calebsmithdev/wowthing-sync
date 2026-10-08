@@ -502,3 +502,38 @@ Chromium smoke, native smoke and native integration including display-timer
 stop/resume on hide/reopen, 25 script tests (platform RPM test skipped), release
 metadata verification and the production debug build. Windows/Linux watcher
 and visibility behavior still require the hosted CI matrix.
+
+### AppImage compatibility baseline (2026-10-08)
+
+Linux native/package checks and release builds now use **Ubuntu 22.04 x64**,
+with **glibc 2.35** and its standard WebKitGTK 4.1 packages. Frontend/audit-only
+jobs can use Ubuntu 24.04. Install `libfuse2` on the baseline runner. The new
+`desktop-ubuntu22-v1` Rust cache prefix prevents restoring Ubuntu 24.04 objects.
+Do not raise the Linux packaging runner without changing and validating the
+documented minimum supported distribution.
+
+Run `node --test scripts/appimage-check.test.mjs` for parser/icon regressions and
+real ELF/library coverage on Linux. `node scripts/appimage-check.mjs <AppImage>`
+extracts without application launch, checks AppDir metadata and rejects runtime
+or bundled-library glibc requirements above 2.35. The shipping release and
+unsigned package gates both inspect AppDir contents; release preserves a JSON
+compatibility report. AppImage and updater archive/signature filenames omit
+`linux`, while the updater platform key remains `linux-x86_64`. A newly published
+version is required before AppImageHub can retest the fix; see
+[docs/ci-validation.md](docs/ci-validation.md).
+
+Local AppImage evidence for v1.1.1: Ubuntu 22.04 x64 builds under Docker/QEMU
+passed structure, exact extracted-binary hash and all **177** packaged ELF audits
+(maximum required glibc **2.35**, static runtime needs none). The published
+v1.1.0 was rejected for `GLIBC_2.38`. The separately identified Linux integration
+AppImage passed real webview/worker/migration/window/updater paths with `errors:[]`
+and three loopback uploads. QEMU wrappers were temporary tooling outside this
+repository because the ARM host's default emulation rejects static PIE runtimes.
+The shipping workflow uses native x64 runners and the original tools.
+
+macOS ARM64 lint/typecheck/37 frontend tests, 40 Rust tests, 37 Node script tests
+(three Linux-only skips), browser smoke, fmt/clippy/check, actionlint and an
+unsigned v1.1.1 app bundle passed. The local macOS native smoke timed out on two
+attempts; hosted macOS/Windows/native x64 Linux evidence remains required before
+release. No normal production app, real credential store or autostart probe was
+launched locally.

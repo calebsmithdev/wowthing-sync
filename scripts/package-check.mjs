@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { tauriInvocation } from './launchers.mjs'
 import { root, marker, command, runFixture } from './native-integration.mjs'
+import { verifyAppDir } from './appimage-check.mjs'
 export async function files(directory) {
   const found = []
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -128,6 +129,7 @@ export async function packageCheck({ release = false } = {}) {
           built = postprocessed[0]
         }
         const identity = await verifyPackageBinary(binary, built, harness, bundleTarget)
+        const compatibility = artifact.endsWith('.AppImage') ? await verifyAppDir(join(extracted, 'squashfs-root')) : null
         if (process.platform === 'darwin') {
           const actual = await command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(extracted, 'Contents/Info.plist')], { capture: true })
           if (actual.stdout.trim() !== version) throw new Error('bundle version mismatch')
@@ -144,7 +146,7 @@ export async function packageCheck({ release = false } = {}) {
         const entrypoint = artifact.endsWith('.AppImage') ? join(extracted, 'squashfs-root/AppRun') : binary
         const native = harness ? await runFixture(entrypoint, resolve(root, `test-results/package-${profile}/${basename(artifact)}`), { auditedBinary: binary }) : null
         if (native && native.version !== version) throw new Error('packaged candidate version mismatch')
-        reports.push({ artifact: artifact.replace(root, ''), harness, version, ...identity, launched: harness })
+        reports.push({ artifact: artifact.replace(root, ''), harness, version, ...identity, compatibility, launched: harness })
       } catch (error) { safeToRemove = error.report?.processClosed !== false && error.report?.treeClosed !== false; throw error }
       finally { if (safeToRemove) await rm(temporary, { recursive: true, force: true }) }
     }
