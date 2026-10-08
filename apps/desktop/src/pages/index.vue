@@ -1,6 +1,25 @@
 <template>
   <div>
-    <section class="flex items-start justify-between gap-4 pt-4 pb-7">
+    <section v-if="!configured" class="py-4" aria-labelledby="setup-title">
+      <h1 id="setup-title">Welcome to WoWthing Sync</h1>
+      <p class="mt-2 text-sm text-muted">Connect your account and game folder to upload collector data automatically.</p>
+      <ol aria-label="Setup steps" class="mt-6 divide-y divide-default border-y border-default">
+        <li v-for="(step, index) in setupSteps" :key="step.title" class="flex items-start gap-3 py-4">
+          <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-elevated text-sm font-medium" :class="step.complete ? 'text-success' : 'text-muted'" :aria-label="step.complete ? 'Complete' : undefined">
+            <UIcon v-if="step.complete" name="i-lucide-check" class="size-4" aria-hidden="true" />
+            <span v-else>{{ index + 1 }}</span>
+          </span>
+          <div>
+            <h2 class="text-sm font-medium text-highlighted">{{ step.title }}</h2>
+            <p class="mt-1 text-sm text-muted">{{ step.description }}</p>
+          </div>
+        </li>
+      </ol>
+      <UButton to="/settings" class="mt-5">Open Settings</UButton>
+      <p class="mt-4 text-xs text-muted">Enable the WoWthing Collector addon, then log out of a character or reload the game UI to create its data file.</p>
+    </section>
+
+    <section v-else class="flex items-start justify-between gap-4 pt-4 pb-7">
       <div class="min-w-0">
         <h1 class="text-3xl" :title="formattedLastUpdated || undefined">{{ headline }}</h1>
         <p class="mt-2 flex items-center gap-2 text-sm text-muted">
@@ -8,11 +27,10 @@
           <span>{{ feedback ?? summary.text }}</span>
         </p>
       </div>
-      <UButton v-if="!configured" to="/settings" variant="outline" class="shrink-0">Open Settings</UButton>
-      <UButton v-else variant="outline" class="shrink-0" :loading="isProcessing" :disabled="isProcessing" @click="requestSync">Sync Now</UButton>
+      <UButton variant="outline" class="shrink-0" :loading="isProcessing" :disabled="isProcessing" @click="requestSync">Sync Now</UButton>
     </section>
 
-    <section v-if="status.folder">
+    <section v-if="configured">
       <h2 class="pb-2 text-xs font-medium uppercase tracking-wider text-dimmed">Accounts</h2>
       <ul v-if="accounts.length" class="divide-y divide-default border-y border-default">
         <li
@@ -45,6 +63,10 @@ const { hasApiKey } = useApiKeys()
 const { handleUpload, lastUpdated, lastUpdatedFromNow, isProcessing, formattedLastUpdated, fromNow, formatted } = useInternalFileUpload()
 
 const configured = computed(() => hasApiKey.value && !!status.value.folder)
+const setupSteps = computed(() => [
+  { title: 'Connect your WoWthing account', complete: hasApiKey.value, description: hasApiKey.value ? 'API key saved securely.' : 'Copy your API key from WoWthing Settings → Account.' },
+  { title: 'Choose your game folder', complete: !!status.value.folder, description: status.value.folder ? 'World of Warcraft folder selected.' : 'Select the _retail_ folder that contains WTF/Account.' },
+])
 /** Listed files plus any failing file the scan could not list, so every failure has a row. */
 const accounts = computed(() => {
   const { files, failures, uploads } = status.value
@@ -54,15 +76,12 @@ const accounts = computed(() => {
   }))
 })
 const headline = computed(() => {
-  if (!configured.value) return 'Finish setup'
   if (isProcessing.value) return 'Syncing…'
   return lastUpdated.value ? `Synced ${lastUpdatedFromNow.value}` : 'Not synced yet'
 })
 const summary = computed(() => {
   const value = status.value
   const failed = accounts.value.filter(account => account.failure).length
-  if (!hasApiKey.value) return { dot: 'bg-warning', text: 'Add your WoWthing API key in Settings to start syncing.' }
-  if (!value.folder) return { dot: 'bg-warning', text: 'Choose your World of Warcraft folder in Settings.' }
   if (value.error) return { dot: 'bg-error', text: 'Sync is paused. See the message above.' }
   if (failed) return { dot: 'bg-error', text: `${failed} ${failed === 1 ? 'account needs' : 'accounts need'} attention` }
   if (value.pending) return { dot: 'bg-primary', text: 'Upload queued' }

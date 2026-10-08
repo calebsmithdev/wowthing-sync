@@ -26,7 +26,9 @@ export default defineNuxtConfig({
   telemetry: false,
   colorMode: {
     // Follow the OS appearance; the static palette defines both light and dark tokens.
-    preference: 'system'
+    preference: 'system',
+    // Nuxt UI's transition suppression injects an inline stylesheet blocked by CSP.
+    disableTransition: false,
   },
   app: {
     head: {

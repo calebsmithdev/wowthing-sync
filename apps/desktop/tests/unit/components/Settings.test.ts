@@ -22,12 +22,25 @@ const mountSettings = () => {
   const settings = createSettings(); settings.loaded.value = true
   settings.state.value = { ...emptySettings(), folder: '/working/_retail_', autoStart: false }
   vi.stubGlobal('useSettings', () => settings); vi.stubGlobal('useApiKeys', () => ({ hasApiKey: ref(false) }))
-  vi.stubGlobal('useUpdater', () => ({ busy: ref(false), checkForUpdates: vi.fn() })); vi.stubGlobal('ref', ref); vi.stubGlobal('computed', computed)
-  return { settings, wrapper: mount(Settings, { global: { stubs } }) }
+  const updater = { busy: ref(false), phase: ref('idle'), errorOperation: ref('check'), visible: ref(false), checkForUpdates: vi.fn() }
+  vi.stubGlobal('useUpdater', () => updater); vi.stubGlobal('ref', ref); vi.stubGlobal('computed', computed)
+  return { settings, updater, wrapper: mount(Settings, { global: { stubs } }) }
 }
 const button = (wrapper: ReturnType<typeof mountSettings>['wrapper'], text: string) => wrapper.findAll('button').find(node => node.text() === text)!
 
 describe('settings', () => {
+  it('keeps background update failures discoverable beside the manual check', async () => {
+    const { updater, wrapper } = mountSettings()
+    updater.phase.value = 'error'; await flushPromises()
+    expect(wrapper.get('[role=status]').text()).toBe('Updates could not be checked. You can try again here.')
+    await button(wrapper, 'Check for Updates').trigger('click')
+    expect(updater.checkForUpdates).toHaveBeenCalledExactlyOnceWith(true)
+    updater.visible.value = true; await flushPromises()
+    expect(wrapper.text()).not.toContain('Updates could not be checked.')
+    updater.visible.value = false; updater.errorOperation.value = 'install'; await flushPromises()
+    expect(wrapper.text()).not.toContain('Updates could not be checked.')
+    wrapper.unmount(); vi.unstubAllGlobals()
+  })
   it('does not persist API keystrokes before Save and clears the draft after saving', async () => {
     const { wrapper } = mountSettings()
     const input = wrapper.find('input[type="password"]')

@@ -503,6 +503,30 @@ stop/resume on hide/reopen, 25 script tests (platform RPM test skipped), release
 metadata verification and the production debug build. Windows/Linux watcher
 and visibility behavior still require the hosted CI matrix.
 
+### First-launch setup and update feedback (2026-10-08)
+
+Unconfigured Status shows a welcome page with account and game-folder steps;
+completed steps reflect saved native state. An absent key/folder is not a sync
+error. `SecretManager::key` and `WorkerIo::key` return `Result<Option<String>, String>`
+so an unsaved key remains distinct from an unavailable credential store. Real
+vault, preferences, folder and upload errors retain their existing feedback.
+No IPC schema or OS permissions change.
+
+Automatic update-check failures do not open the global banner. Settings → About
+keeps a neutral status beside Check for Updates. Manual/tray checks (including a
+request joining an automatic check) and installation failures remain visible,
+with plain-language summaries and collapsed technical details. Available updates
+still notify users, and the six-hour background retry schedule is unchanged.
+Keep `colorMode.disableTransition:false`: Nuxt UI otherwise suppresses theme
+transitions by injecting an inline stylesheet, which violates production CSP.
+The browser smoke switches OS color schemes and checks for console/CSP errors.
+
+Browser onboarding runs at `/?onboarding` only through the smoke server's adapter,
+with no outbound requests. Native smoke begins unconfigured with a synthetic
+offline updater, saves a synthetic key/folder and then checks readiness/sync.
+Worker tests cover missing setup and real error classification against loopback
+fixtures; normal production apps and OS credential stores must not be launched.
+
 ### AppImage compatibility baseline (2026-10-08)
 
 Linux native/package checks and release builds now use **Ubuntu 22.04 x64**,

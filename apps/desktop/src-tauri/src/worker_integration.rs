@@ -218,16 +218,22 @@ struct Io {
     endpoint: String,
     timeout: Duration,
     notifications: Arc<Mutex<Vec<BatchSummary>>>,
+    key: Result<Option<String>, String>,
+    states: Arc<Mutex<Vec<SyncStatus>>>,
+    key_reads: Arc<AtomicU64>,
 }
 impl WorkerIo for Io {
     fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String> {
         Ok(self.store.clone())
     }
-    fn key(&self) -> Result<String, String> {
-        Ok("synthetic-worker-key".into())
+    fn key(&self) -> Result<Option<String>, String> {
+        self.key_reads.fetch_add(1, Ordering::Release);
+        self.key.clone()
     }
     fn reload(&self) {}
-    fn emit(&self, _: &SyncStatus) {}
+    fn emit(&self, status: &SyncStatus) {
+        self.states.lock().unwrap().push(status.clone());
+    }
 
     fn notify(&self, summary: BatchSummary) -> Result<(), String> {
         self.notifications.lock().unwrap().push(summary);
@@ -261,6 +267,9 @@ fn io(temp: &tempfile::TempDir, server: &Server) -> Io {
         endpoint: server.endpoint.clone(),
         timeout: Duration::from_secs(3),
         notifications: Default::default(),
+        key: Ok(Some("synthetic-worker-key".into())),
+        states: Default::default(),
+        key_reads: Default::default(),
     }
 }
 fn wait(label: &str, condition: impl Fn() -> bool) {
@@ -285,6 +294,53 @@ fn configure(service: &SyncService, root: &Path) {
     service
         .configure(Some(crate::collector_fs::ApprovedRoot::open(root).unwrap()))
         .unwrap();
+}
+
+#[test]
+fn real_worker_waits_for_setup_without_errors_and_preserves_vault_failures() {
+    for (folder_selected, key) in [
+        (false, Ok(None)),
+        (false, Ok(Some("synthetic-worker-key".into()))),
+        (true, Ok(None)),
+        (false, Err("Synthetic credential storage is locked".into())),
+        (true, Err("Synthetic credential storage is locked".into())),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("_retail_");
+        file(&root, "SYNTHETIC", "synthetic collector");
+        let server = Server::new(vec![]);
+        let mut io = io(&temp, &server);
+        io.key = key.clone();
+        if folder_selected {
+            io.store
+                .commit("program-folder", Some(serde_json::json!(root)))
+                .unwrap();
+        }
+        let states = io.states.clone();
+        let key_reads = io.key_reads.clone();
+        let service = SyncService::start_with_io(io);
+        // The completely unconfigured snapshot equals Default and is correctly
+        // deduplicated. Observe worker passes rather than requiring new events.
+        wait("initial setup pass", || {
+            key_reads.load(Ordering::Acquire) >= 2
+        });
+        service.manual().unwrap();
+        wait("manual setup pass", || {
+            key_reads.load(Ordering::Acquire) >= 4
+        });
+        let status = service.snapshot();
+        assert_eq!(status.has_api_key, matches!(&key, Ok(Some(_))));
+        assert_eq!(status.folder.is_some(), folder_selected);
+        assert_eq!(status.error, key.clone().err());
+        for state in states.lock().unwrap().iter() {
+            assert_eq!(state.has_api_key, matches!(&key, Ok(Some(_))));
+            assert_eq!(state.error, key.clone().err());
+            assert!(!state.is_processing);
+            assert_eq!(state.pending, 0);
+        }
+        assert!(server.bodies().is_empty());
+        service.shutdown();
+    }
 }
 
 #[test]

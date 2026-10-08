@@ -7,7 +7,7 @@ import SyncStatusBanner from '../../../src/components/SyncStatusBanner.vue'
 
 describe('sync status visible throughout navigation', () => {
   it('shows app-wide errors everywhere and account failures only away from Status', async () => {
-    const status = ref<SyncStatus>({ ...emptySyncStatus(), error: 'Configure your API key in Settings.' })
+    const status = ref<SyncStatus>({ ...emptySyncStatus(), error: 'OS credential storage is locked or unavailable.' })
     const route = { path: '/' }
     vi.stubGlobal('useSync', () => status)
     vi.stubGlobal('useRoute', () => route)
@@ -19,7 +19,7 @@ describe('sync status visible throughout navigation', () => {
     }
     const mountBanner = () => mount(SyncStatusBanner, { global: { stubs } })
     const first = mountBanner()
-    expect(first.get('[role="alert"]').text()).toContain('Configure your API key')
+    expect(first.get('[role="alert"]').text()).toContain('OS credential storage is locked or unavailable.')
     expect(first.get('a').text()).toBe('Open Settings')
     invoke.mockResolvedValueOnce(null)
     await first.get('button').trigger('click'); await flushPromises()
