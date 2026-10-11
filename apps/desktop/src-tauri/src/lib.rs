@@ -49,7 +49,7 @@ pub fn run() {
     tauri::Builder::default()
         .on_permission_request(|_, kind| setup::permissions::webview_permission_response(kind))
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
@@ -60,6 +60,16 @@ pub fn run() {
             setup::desktop::setup_desktop(handle)?;
             setup::system_tray_menu::setup_system_tray_menu(handle)?;
             setup::logs::setup_logs(handle)?;
+
+            // Clicking a sync summary notification opens the window, like the tray's Open Window.
+            let clicked = app.handle().clone();
+            tauri_plugin_notification::NotificationExt::notification(app).on_action(
+                move |action| {
+                    if action.action_id() == "tap" {
+                        setup::system_tray_menu::dispatch_menu(&clicked, "show");
+                    }
+                },
+            )?;
 
             app.manage(preferences::initialize(app.handle()));
             app.manage(credentials::SecretManager::default());

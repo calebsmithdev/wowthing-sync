@@ -24,13 +24,16 @@
 
 <script lang="ts" setup>
 import type { ButtonProps } from '@nuxt/ui'
-import { open } from '@tauri-apps/plugin-shell'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import useUpdater from '../composables/useUpdater'
 
 const { phase, visible, version, error, errorOperation, progress, busy, handleUpdate, checkForUpdates, dismiss } = useUpdater()
+// macOS installs swap bundles atomically; this error means the old app was moved aside, not deleted.
+const previousAppMoved = computed(() => errorOperation.value === 'install' && /restore the previous app/i.test(error.value ?? ''))
 const title = computed(() => {
   if (phase.value === 'error' && errorOperation.value === 'check') return 'Could Not Check for Updates'
   if (phase.value === 'error' && errorOperation.value === 'open-download') return 'Could Not Open Downloads'
+  if (phase.value === 'error' && previousAppMoved.value) return 'Reinstall Needed'
   return ({ idle: 'Updates', checking: 'Checking for Updates', available: 'Update Available', downloading: 'Downloading Update', installing: 'Installing Update', 'up-to-date': 'You Are Up to Date', error: 'Update Failed' })[phase.value]
 })
 const icon = computed(() => phase.value === 'error' ? 'i-lucide-circle-alert' : phase.value === 'up-to-date' ? 'i-lucide-circle-check' : busy.value ? 'i-lucide-loader-circle' : 'i-lucide-info')
@@ -38,6 +41,7 @@ const description = computed(() => {
   if (phase.value === 'error') {
     if (errorOperation.value === 'check') return 'Updates could not be checked right now. Try again later. Syncing can continue.'
     if (errorOperation.value === 'open-download') return 'The downloads page could not be opened. Try checking for updates again.'
+    if (previousAppMoved.value) return 'The update could not be installed, and the current version could not be put back. Your previous copy was kept as "(previous version)" next to the app. Download the latest version to reinstall.'
     return 'The update could not be completed. Try checking for updates again.'
   }
   if (phase.value === 'available') return `Version ${version.value} is ready to install.`
@@ -47,12 +51,14 @@ const description = computed(() => {
   return 'Please wait…'
 })
 const openDownload = async () => {
-  try { await open('https://github.com/calebsmithdev/wowthing-sync/releases/latest') }
+  try { await openUrl('https://github.com/calebsmithdev/wowthing-sync/releases/latest') }
   catch (cause) { error.value = String(cause); errorOperation.value = 'open-download'; phase.value = 'error' }
 }
 const actions = computed<ButtonProps[]>(() => phase.value === 'available' ? [
   { variant: 'solid', color: 'primary', label: 'Update', disabled: busy.value, onClick: () => handleUpdate() },
   { variant: 'outline', color: 'primary', label: 'Download', onClick: openDownload },
+] : phase.value === 'error' && previousAppMoved.value ? [
+  { variant: 'solid', color: 'primary', label: 'Download', onClick: openDownload },
 ] : phase.value === 'error' ? [
   { label: 'Check Again', onClick: () => checkForUpdates(true) },
 ] : [])

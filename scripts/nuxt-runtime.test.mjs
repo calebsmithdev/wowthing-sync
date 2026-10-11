@@ -1,13 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { createJiti } from '../apps/desktop/node_modules/jiti/lib/jiti.mjs'
+import { normalize } from '../apps/desktop/node_modules/pathe/dist/index.mjs'
 import { createNitro } from '../apps/desktop/node_modules/nitropack/dist/core/index.mjs'
 import { getRollupConfig } from '../apps/desktop/node_modules/nitropack/dist/rollup/index.mjs'
 
-const config = await createJiti(import.meta.url).import('../apps/desktop/nuxt.config.ts', { default: true })
+// Nuxt 4.6.1 inlines its dist through a matcher that normalizes Windows separators,
+// replacing our former `nitro.externals.inline` workaround. It is not exported, so
+// read the shipped pattern and apply it exactly as Nuxt does (pathe normalize + test).
+const nitroServer = await readFile(new URL('../apps/desktop/node_modules/@nuxt/nitro-server/dist/index.mjs', import.meta.url), 'utf8')
+const shipped = /const NUXT_DIST_RE = \/(.+)\/;\s*function isNuxtDistId\(id\) \{\s*return NUXT_DIST_RE\.test\(normalize\(id\)\);/.exec(nitroServer)
 
 test('Nuxt renderer stays bundled when Nitro resolves a Windows path', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'wowthing-nuxt-runtime-'))
@@ -30,9 +34,11 @@ test('Nuxt renderer stays bundled when Nitro resolves a Windows path', async () 
     // Nuxt 4.6 defaults only inline the resolved nuxt/dist path; Nitro 2.13.4
     // does not normalize that resolved ID before matching it on Windows.
     assert.equal((await probe(['nuxt/dist'], 'nuxt/internal/renderer')).external, true)
+    assert.ok(shipped, 'Nuxt no longer normalizes resolved dist IDs; restore nitro.externals.inline in nuxt.config.ts')
+    const pattern = new RegExp(shipped[1])
+    const isNuxtDistId = id => pattern.test(normalize(id))
     for (const specifier of ['nuxt/internal/renderer', 'nuxt/internal/renderer-config', 'nuxt/internal/precomputed']) {
-      assert.equal(await probe(config.nitro.externals.inline, specifier), null, specifier)
+      assert.equal(await probe([isNuxtDistId], specifier), null, specifier)
     }
-    assert.equal((await probe(config.nitro.externals.inline, 'unrelated-dependency')).external, true)
   } finally { await rm(temporary, { recursive: true, force: true }) }
 })

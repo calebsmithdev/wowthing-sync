@@ -13,7 +13,10 @@
     "updater:default",
     "os:default",
     "log:default",
-    "shell:allow-open",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://github.com/calebsmithdev/wowthing-sync/releases/latest" }]
+    },
     "notification:allow-is-permission-granted"
   ]
 }

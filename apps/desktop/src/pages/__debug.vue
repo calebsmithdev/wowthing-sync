@@ -236,7 +236,7 @@ try {
       { plugin: 'process', label: 'Process' },
       { plugin: 'updater', label: 'Updater' },
       { plugin: 'os', label: 'OS' },
-      { plugin: 'shell', label: 'Shell' },
+      { plugin: 'opener', label: 'Opener' },
       { plugin: 'autostart', label: 'Autostart' },
       { plugin: 'fs', label: 'File System' },
       { plugin: 'log', label: 'Log' },

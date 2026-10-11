@@ -3,8 +3,8 @@ import { computed, defineComponent, ref, h  } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import UpdateBanner from '../../../src/components/UpdateBanner.vue'
 import type { ButtonProps } from '@nuxt/ui'
-const { open } = vi.hoisted(() => ({ open: vi.fn().mockResolvedValue(undefined) }))
-vi.mock('@tauri-apps/plugin-shell', () => ({ open }))
+const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl }))
 
 // UAlert spreads Nuxt UI ButtonProps onto buttons; its installed contract is onClick.
 const Alert = defineComponent({
@@ -21,7 +21,7 @@ describe('UpdateBanner action buttons', () => {
     const buttons = wrapper.findAll('button')
     await buttons[0]!.trigger('click'); expect(handleUpdate).toHaveBeenCalledOnce()
     await buttons[1]!.trigger('click'); await flushPromises()
-    expect(open).toHaveBeenCalledExactlyOnceWith('https://github.com/calebsmithdev/wowthing-sync/releases/latest')
+    expect(openUrl).toHaveBeenCalledExactlyOnceWith('https://github.com/calebsmithdev/wowthing-sync/releases/latest')
     wrapper.unmount(); vi.unstubAllGlobals()
   })
   it('explains check and install failures with collapsed diagnostic details and a working retry', async () => {
@@ -38,6 +38,18 @@ describe('UpdateBanner action buttons', () => {
     errorOperation.value = 'install'; await flushPromises()
     expect(wrapper.text()).toContain('Update Failed')
     expect(wrapper.text()).toContain('The update could not be completed.')
+    wrapper.unmount(); vi.unstubAllGlobals()
+  })
+  it('asks for a reinstall when macOS could not restore the previous app', async () => {
+    openUrl.mockClear()
+    vi.stubGlobal('computed', computed)
+    vi.stubGlobal('useNuxtApp', () => ({ $updater: { phase: ref('error'), visible: ref(true), version: ref(null), error: ref('failed to install the update and to restore the previous app, which was left at /Applications/Wowthing Sync (previous version).app'), errorOperation: ref('install'), progress: ref(null), busy: ref(false), handleUpdate: vi.fn(), checkForUpdates: vi.fn() } }))
+    const wrapper = mount(UpdateBanner, { global: { stubs: { UAlert: Alert } } })
+    expect(wrapper.text()).toContain('Reinstall Needed')
+    expect(wrapper.text()).toContain('Download the latest version to reinstall.')
+    expect(wrapper.get('details').text()).toContain('(previous version).app')
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(openUrl).toHaveBeenCalledExactlyOnceWith('https://github.com/calebsmithdev/wowthing-sync/releases/latest')
     wrapper.unmount(); vi.unstubAllGlobals()
   })
 })
