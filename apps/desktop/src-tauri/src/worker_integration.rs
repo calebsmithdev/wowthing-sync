@@ -468,7 +468,10 @@ fn real_worker_simplifies_legacy_paths_without_startup_writes() {
             .get("account-uploads")
             .is_some_and(|value| value[&file].as_u64().is_some_and(|time| time > 123))
     });
-    assert_eq!(service.snapshot().files, [file.clone()]);
+    assert_eq!(
+        service.snapshot().files.as_slice(),
+        std::slice::from_ref(&file)
+    );
     assert_eq!(service.snapshot().folder.as_deref(), Some(folder.as_str()));
     assert_eq!(
         service.snapshot().uploads.keys().collect::<Vec<_>>(),
@@ -499,7 +502,10 @@ fn real_worker_simplifies_legacy_paths_without_startup_writes() {
         wait("compatible manual upload", || {
             server.bodies().len() >= index + 2 && !service.snapshot().is_processing
         });
-        assert_eq!(service.snapshot().files, [file.clone()]);
+        assert_eq!(
+            service.snapshot().files.as_slice(),
+            std::slice::from_ref(&file)
+        );
         assert_eq!(
             service.snapshot().uploads.keys().collect::<Vec<_>>(),
             [&file]
