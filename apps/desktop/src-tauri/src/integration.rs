@@ -68,12 +68,18 @@ fn integration_report(app: tauri::AppHandle, errors: Vec<String>) {
     let second_instance_reopened = counts.second_instance_reopened.load(Ordering::Acquire);
     let lifecycle = counts.hidden.load(Ordering::Acquire)
         && counts.reopened.load(Ordering::Acquire)
-        && second_instance_reopened;
+        && second_instance_reopened
+        && (!cfg!(target_os = "macos") || counts.run_event_reopened.load(Ordering::Acquire))
+        && (!minimize_supported() || counts.minimized_restored.load(Ordering::Acquire));
     let lifecycle_details = serde_json::json!({
         "hidden": counts.hidden.load(Ordering::Acquire),
         "reopenRequested": counts.reopen_requested.load(Ordering::Acquire),
         "reopened": counts.reopened.load(Ordering::Acquire),
         "secondInstanceReopened": second_instance_reopened,
+        "runEventReopened": cfg!(target_os = "macos").then(|| counts.run_event_reopened.load(Ordering::Acquire)),
+        "runEventUnsupportedReason": if cfg!(target_os = "macos") { None } else { Some("RunEvent::Reopen is macOS-only") },
+        "minimizedRestored": minimize_supported().then(|| counts.minimized_restored.load(Ordering::Acquire)),
+        "minimizeUnsupportedReason": if minimize_supported() { None } else { Some("Linux harness does not require a window manager; native minimize/restore is not verified") },
     });
     let updater = counts.downloads.load(Ordering::Acquire) == 2
         && counts.relaunched.load(Ordering::Acquire) == 1;
@@ -108,7 +114,53 @@ struct Counts {
     reopened: AtomicBool,
     second_instance_requested: AtomicBool,
     second_instance_reopened: AtomicBool,
+    run_event_requested: AtomicBool,
+    run_event_reopened: AtomicBool,
+    minimized_requested: AtomicBool,
+    minimized_restored: AtomicBool,
 }
+fn minimize_supported() -> bool {
+    cfg!(any(target_os = "macos", windows))
+}
+
+// Exercise the real delegate -> Tao -> Tauri RunEvent path. Reopen is a
+// non-exhaustive Tauri variant, so the fixture cannot construct it directly.
+// This code exists only in the isolated integration-test builder.
+#[cfg(target_os = "macos")]
+fn request_macos_reopen(app: &tauri::AppHandle) -> Result<(), String> {
+    app.run_on_main_thread(|| {
+        use std::ffi::{c_char, c_void};
+        #[link(name = "objc")]
+        extern "C" {
+            fn objc_getClass(name: *const c_char) -> *mut c_void;
+            fn sel_registerName(name: *const c_char) -> *mut c_void;
+            fn objc_msgSend();
+        }
+        // SAFETY: Cocoa's application and delegate live for the app lifetime.
+        // Selectors and typed message signatures below match NSApplication and
+        // NSApplicationDelegate; all messages execute on the main thread.
+        unsafe {
+            let send: unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void =
+                std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            let application = send(
+                objc_getClass(c"NSApplication".as_ptr()),
+                sel_registerName(c"sharedApplication".as_ptr()),
+            );
+            let delegate = send(application, sel_registerName(c"delegate".as_ptr()));
+            assert!(!application.is_null() && !delegate.is_null());
+            let reopen: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, i8) -> i8 =
+                std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            reopen(
+                delegate,
+                sel_registerName(c"applicationShouldHandleReopen:hasVisibleWindows:".as_ptr()),
+                application,
+                0,
+            );
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn save_sync_folder(
     app: tauri::AppHandle,
@@ -169,34 +221,60 @@ fn integration_control(app: tauri::AppHandle, action: String) -> Result<serde_js
             counts.reopen_requested.store(true, Ordering::Release);
         }
         "second-instance" => {
+            if window.is_visible().map_err(|e| e.to_string())? {
+                return Err("second-instance request requires a currently hidden window".into());
+            }
             crate::window_lifecycle::on_second_instance(&app, &[]);
             counts
                 .second_instance_requested
                 .store(true, Ordering::Release);
+        }
+        #[cfg(target_os = "macos")]
+        "run-event-reopen" => {
+            if window.is_visible().map_err(|e| e.to_string())? {
+                return Err("Reopen request requires a currently hidden window".into());
+            }
+            counts.run_event_requested.store(true, Ordering::Release);
+            request_macos_reopen(&app)?;
+        }
+        "minimize" if minimize_supported() => window.minimize().map_err(|e| e.to_string())?,
+        "restore-minimized" if minimize_supported() => {
+            if !window.is_minimized().map_err(|e| e.to_string())? {
+                return Err("restore request requires a currently minimized window".into());
+            }
+            counts.minimized_requested.store(true, Ordering::Release);
+            crate::window_lifecycle::on_second_instance(&app, &[]);
         }
         "tray-update" => tray::dispatch_menu(&app, "check-update"),
         "state" => {}
         _ => return Err("unknown fixture control".into()),
     }
     let visible = window.is_visible().map_err(|e| e.to_string())?;
+    let minimized = window.is_minimized().map_err(|e| e.to_string())?;
     if action == "state" {
         // Show/hide dispatch is asynchronous on GTK. Record the transition from
         // the same native observation the frontend actually waits for.
         if !visible {
             counts.hidden.store(true, Ordering::Release);
-        } else if counts.hidden.load(Ordering::Acquire)
-            && counts.reopen_requested.load(Ordering::Acquire)
-        {
-            counts.reopened.store(true, Ordering::Release);
+        } else if !minimized {
+            if counts.reopen_requested.load(Ordering::Acquire) {
+                counts.reopened.store(true, Ordering::Release);
+            }
             if counts.second_instance_requested.load(Ordering::Acquire) {
                 counts
                     .second_instance_reopened
                     .store(true, Ordering::Release);
             }
+            if counts.run_event_requested.load(Ordering::Acquire) {
+                counts.run_event_reopened.store(true, Ordering::Release);
+            }
+            if counts.minimized_requested.load(Ordering::Acquire) {
+                counts.minimized_restored.store(true, Ordering::Release);
+            }
         }
     }
     Ok(
-        serde_json::json!({"visible": visible, "created":counts.created.load(Ordering::Acquire), "closed":counts.closed.load(Ordering::Acquire), "downloads":counts.downloads.load(Ordering::Acquire), "relaunched":counts.relaunched.load(Ordering::Acquire)}),
+        serde_json::json!({"visible": visible, "minimized": minimized, "runEventSupported": cfg!(target_os = "macos"), "minimizeSupported": minimize_supported(), "created":counts.created.load(Ordering::Acquire), "closed":counts.closed.load(Ordering::Acquire), "downloads":counts.downloads.load(Ordering::Acquire), "relaunched":counts.relaunched.load(Ordering::Acquire)}),
     )
 }
 mod dialog {
@@ -371,6 +449,7 @@ pub fn run() {
         .build(context)
         .expect("isolated native builder failed")
         .run(|app, event| {
+            crate::window_lifecycle::on_run_event(app, &event);
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<SyncService>().shutdown();
             }

@@ -71,12 +71,39 @@
       await control('show')
       await wait(async () => (await control('state')).visible)
       await wait(() => displayTimers.size === 1)
+      // A previous hidden observation must not satisfy a new recovery request.
+      let visibleRequestRejected = false
+      try { await control('second-instance') } catch (error) {
+        if (!String(error).includes('currently hidden')) throw error
+        visibleRequestRejected = true
+      }
+      if (!visibleRequestRejected) throw new Error('Second-instance fixture accepted a visible window')
       await control('close')
       await wait(async () => !(await control('state')).visible)
       await wait(() => displayTimers.size === 0)
       await control('second-instance')
       await wait(async () => (await control('state')).visible)
       await wait(() => displayTimers.size === 1)
+      const capabilities = await control('state')
+      if (capabilities.runEventSupported) {
+        await control('close')
+        await wait(async () => !(await control('state')).visible)
+        await wait(() => displayTimers.size === 0)
+        await control('run-event-reopen')
+        await wait(async () => (await control('state')).visible)
+        await wait(() => displayTimers.size === 1)
+      }
+      if (capabilities.minimizeSupported) {
+        await control('minimize')
+        await wait(async () => (await control('state')).minimized)
+        await wait(() => displayTimers.size === 0)
+        await control('restore-minimized')
+        await wait(async () => {
+          const state = await control('state')
+          return state.visible && !state.minimized
+        })
+        await wait(() => displayTimers.size === 1)
+      }
       await control('update-failure')
       await control('tray-update')
       await wait(() => document.body.innerText.includes('Update Available'))
