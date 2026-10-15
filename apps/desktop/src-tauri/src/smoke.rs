@@ -10,6 +10,7 @@ struct Fixture {
     synced: AtomicBool,
     folder_saved: AtomicBool,
     updater_checks: AtomicUsize,
+    opener_calls: AtomicUsize,
 }
 fn status(fixture: &Fixture) -> Value {
     let synced = fixture.synced.load(Ordering::Acquire);
@@ -65,6 +66,7 @@ fn sync_now(app: tauri::AppHandle, fixture: tauri::State<'_, Fixture>) -> Result
 #[tauri::command]
 fn smoke_report(app: tauri::AppHandle, fixture: tauri::State<'_, Fixture>, errors: Vec<String>) {
     let passed = errors.is_empty()
+        && fixture.opener_calls.load(Ordering::Acquire) == 4
         && fixture.saved.load(Ordering::Acquire) == 1
         && fixture.folder_saved.load(Ordering::Acquire)
         && fixture.updater_checks.load(Ordering::Acquire) >= 2
@@ -73,9 +75,33 @@ fn smoke_report(app: tauri::AppHandle, fixture: tauri::State<'_, Fixture>, error
         "NATIVE_SMOKE {} {}",
         if passed { "PASS" } else { "FAIL" },
         json!({"errors":errors,"saved":fixture.saved.load(Ordering::Acquire),"synced":fixture.synced.load(Ordering::Acquire),
-            "setup":fixture.folder_saved.load(Ordering::Acquire), "updaterChecks":fixture.updater_checks.load(Ordering::Acquire)})
+            "openerCalls":fixture.opener_calls.load(Ordering::Acquire), "setup":fixture.folder_saved.load(Ordering::Acquire), "updaterChecks":fixture.updater_checks.load(Ordering::Acquire)})
     );
     app.exit(if passed { 0 } else { 1 });
+}
+// This plugin substitutes only in the isolated builder: never invokes an OS browser.
+mod opener {
+    #[tauri::command]
+    pub(super) fn open_url(
+        url: String,
+        fixture: tauri::State<'_, super::Fixture>,
+    ) -> Result<(), String> {
+        let attempt = fixture.opener_calls.load(super::Ordering::Acquire);
+        let expected = match attempt {
+            0 | 1 => "https://wowthing.org/user/Failcookie",
+            2 | 3 => "https://wowthing.org",
+            _ => return Err("Unexpected opener attempt".into()),
+        };
+        if url != expected {
+            return Err(format!("Expected {expected}, got {url}"));
+        }
+        fixture.opener_calls.fetch_add(1, super::Ordering::AcqRel);
+        if attempt.is_multiple_of(2) {
+            Err("Synthetic browser unavailable".into())
+        } else {
+            Ok(())
+        }
+    }
 }
 mod updater {
     #[tauri::command]
@@ -99,6 +125,11 @@ pub fn run() {
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, serde_json::Value>::new("updater")
                 .invoke_handler(tauri::generate_handler![updater::check])
+                .build(),
+        )
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry, serde_json::Value>::new("opener")
+                .invoke_handler(tauri::generate_handler![opener::open_url])
                 .build(),
         )
         .setup(move |app| {

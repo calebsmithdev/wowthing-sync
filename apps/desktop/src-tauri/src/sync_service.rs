@@ -155,6 +155,11 @@ pub(crate) trait WorkerIo: Send + Sync + 'static {
     fn client(&self) -> Result<reqwest::Client, String> {
         crate::commands::submit_addon_data::http_client()
     }
+    /// Per-worker setup failure injection; never shared across parallel tests.
+    #[cfg(test)]
+    fn watcher_setup_fails(&self) -> bool {
+        false
+    }
     fn endpoint(&self) -> &str {
         crate::commands::submit_addon_data::WOWTHING_UPLOAD_ENDPOINT
     }
@@ -472,17 +477,12 @@ fn run(
     let mut previous = BTreeMap::new();
     let mut scan_failures = BTreeSet::new();
     let mut cache = FingerprintCache::new();
-    let mut approved = state
-        .folder
-        .as_ref()
-        .and_then(|folder| crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok());
-    if let Some(root) = &approved {
-        state.folder = Some(root.path().to_string_lossy().into_owned());
-    }
+    let mut approved: Option<crate::collector_fs::ApprovedRoot> = None;
     let mut queue = crate::sync_queue::SyncQueue::default();
     let mut batch = BatchSummary::default();
     let mut active_generation = 0;
-    let mut watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+    let mut watcher: Option<CollectorWatcher> = None;
+    let mut watcher_setup_attempted = false;
     let mut next_scan = Instant::now();
     publish(&io, &shared, &state);
     while !stopping.load(Ordering::Acquire) {
@@ -516,7 +516,8 @@ fn run(
                         .as_ref()
                         .map(|root| root.path().to_string_lossy().into_owned());
                     approved = root;
-                    watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, epoch);
+                    watcher = None;
+                    watcher_setup_attempted = false;
                     previous.clear();
                     cache.clear();
                     queue = Default::default();
@@ -570,15 +571,39 @@ fn run(
             publish(&io, &shared, &state);
             continue;
         };
-        if approved.is_none() {
-            approved = crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok();
-            watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+        // A held capability follows a renamed inode. Reopen the configured path
+        // on every pass so moved trees cannot keep supplying uploads.
+        match crate::collector_fs::ApprovedRoot::open(Path::new(folder)).and_then(|fresh| {
+            let same = approved
+                .as_ref()
+                .map_or(Ok(false), |held| held.same_directory(&fresh))?;
+            Ok((fresh, same))
+        }) {
+            Ok((fresh, false)) => {
+                approved = Some(fresh);
+                watcher = None;
+                watcher_setup_attempted = false;
+                // Restored files may preserve old metadata but contain new bytes.
+                cache.clear();
+            }
+            Ok((_, true)) => {}
+            Err(error) => {
+                approved = None;
+                watcher = None;
+                watcher_setup_attempted = false;
+                cache.clear();
+                next_scan = Instant::now() + FALLBACK_INTERVAL;
+                state.error = Some(format!("{error} Sync will retry automatically."));
+                state.files.clear();
+                state.pending = queue.len();
+                publish(&io, &shared, &state);
+                continue;
+            }
         }
-        let Some(root) = &approved else {
-            state.error = Some("WoW folder unavailable. Choose it again in Settings.".into());
-            publish(&io, &shared, &state);
-            continue;
-        };
+        let root = approved.as_ref().expect("successfully reopened WoW folder");
+        // Without an established healthy watcher, use the shorter content
+        // verification interval for this scan, even if setup succeeds afterward.
+        let watching = watcher.as_ref().is_some_and(CollectorWatcher::healthy);
         let result = root.scan().map(|(files, mut failures)| {
             let (prints, read_failures) = fingerprints(
                 root,
@@ -596,13 +621,39 @@ fn run(
         let (prints, failures) = match result {
             Ok(result) => result,
             Err(error) => {
-                state.error = Some(error);
+                approved = None;
+                watcher = None;
+                watcher_setup_attempted = false;
+                cache.clear();
+                next_scan = Instant::now() + FALLBACK_INTERVAL;
+                state.error = Some(format!("{error} Sync will retry automatically."));
                 state.files.clear();
                 state.pending = queue.len();
                 publish(&io, &shared, &state);
                 continue;
             }
         };
+        // Recursive setup can be expensive. Attempt only after a successful
+        // scan, once per held root, including when setup itself fails. Failed or
+        // unhealthy watchers retain polling until this root is discarded/reset.
+        if !watcher_setup_attempted {
+            watcher_setup_attempted = true;
+            #[cfg(test)]
+            let setup_failed = io.watcher_setup_fails();
+            #[cfg(not(test))]
+            let setup_failed = false;
+            if !setup_failed {
+                watcher =
+                    CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+            }
+        }
+        let watching = watcher.as_ref().is_some_and(CollectorWatcher::healthy);
+        next_scan = Instant::now()
+            + if watching {
+                RECONCILE_INTERVAL
+            } else {
+                FALLBACK_INTERVAL
+            };
         // Clear only previous scan errors. Upload failures survive a healthy scan.
         state
             .failures
