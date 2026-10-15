@@ -24,6 +24,13 @@
       click('Settings')
       await wait(() => document.querySelector('input[name="apiKey"]') || document.querySelector('input[type="password"]'))
       await wait(() => document.body.innerText.includes('Updates could not be checked. You can try again here.'))
+      // The compile-time fixture replaces opener with native IPC that cannot launch a browser.
+      for (const name of ['Failcookie', 'WoWthing']) {
+        click(name)
+        await wait(() => document.body.innerText.includes(`Could not open ${name} in your browser`))
+        click(`Retry Opening ${name}`)
+        await wait(() => !document.body.innerText.includes(`Could not open ${name} in your browser`))
+      }
       const input = document.querySelector('input[type="password"]')
       input.value = 'smoke-fixture-key'
       input.dispatchEvent(new Event('input', { bubbles: true }))

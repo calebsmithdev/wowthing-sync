@@ -1,10 +1,12 @@
 import { mount, flushPromises } from '@vue/test-utils'
+import capability from '../../../src-tauri/capabilities/main.json'
 import { computed, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import Settings from '../../../src/pages/settings.vue'
 import { createSettings, emptySettings } from '../../../src/composables/useSettings'
 import { invoke } from '../../mocks/tauri'
-const { open } = vi.hoisted(() => ({ open: vi.fn() }))
+const { open, openUrl } = vi.hoisted(() => ({ open: vi.fn(), openUrl: vi.fn() }))
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open }))
 
 const stubs = {
@@ -29,6 +31,48 @@ const mountSettings = () => {
 const button = (wrapper: ReturnType<typeof mountSettings>['wrapper'], text: string) => wrapper.findAll('button').find(node => node.text() === text)!
 
 describe('settings', () => {
+  it('grants only the two About URLs and the existing release URL', () => {
+    expect(capability.permissions.filter((permission: unknown) => typeof permission === 'object')).toEqual([{
+      identifier: 'opener:allow-open-url',
+      allow: [
+        { url: 'https://github.com/calebsmithdev/wowthing-sync/releases/latest' },
+        { url: 'https://wowthing.org/user/Failcookie' },
+        { url: 'https://wowthing.org' },
+      ],
+    }])
+    expect(capability.permissions).not.toContain('opener:default')
+  })
+  it.each([
+    ['Failcookie', 'https://wowthing.org/user/Failcookie'],
+    ['WoWthing', 'https://wowthing.org'],
+  ])('opens %s through opener and handles failure and retry inline', async (name, url) => {
+    const { wrapper } = mountSettings()
+    const link = wrapper.get(`a[href="${url}"]`)
+    expect(link.text()).toBe(name)
+    expect(link.attributes('target')).toBeUndefined()
+    openUrl.mockRejectedValueOnce('Synthetic browser unavailable').mockResolvedValueOnce(undefined)
+    await link.trigger('click'); await flushPromises()
+    expect(openUrl).toHaveBeenLastCalledWith(url)
+    expect(wrapper.get('[role=alert]').text()).toContain(`Could not open ${name} in your browser`)
+    await button(wrapper, `Retry Opening ${name}`).trigger('click'); await flushPromises()
+    expect(openUrl).toHaveBeenLastCalledWith(url)
+    expect(openUrl).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    wrapper.unmount(); vi.unstubAllGlobals()
+  })
+  it('ignores repeated clicks while an About link is opening', async () => {
+    const { wrapper } = mountSettings()
+    let finish!: () => void
+    openUrl.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    const link = wrapper.get('a[href="https://wowthing.org"]')
+    await link.trigger('click')
+    expect(link.attributes('aria-disabled')).toBe('true')
+    await link.trigger('click')
+    expect(openUrl).toHaveBeenCalledTimes(1)
+    finish(); await flushPromises()
+    expect(link.attributes('aria-disabled')).toBe('false')
+    wrapper.unmount(); vi.unstubAllGlobals()
+  })
   it('keeps background update failures discoverable beside the manual check', async () => {
     const { updater, wrapper } = mountSettings()
     updater.phase.value = 'error'; await flushPromises()

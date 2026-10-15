@@ -98,10 +98,14 @@
           </div>
           <UButton color="neutral" variant="outline" class="shrink-0" :loading="updaterBusy" @click="checkForUpdates(true)">Check for Updates</UButton>
         </div>
-        <p class="py-3 text-sm text-muted">
-          Built by <a href="https://wowthing.org/user/Failcookie" target="_blank" class="underline hover:text-primary">Failcookie</a>.
-          Powered by <a href="https://wowthing.org" target="_blank" class="underline hover:text-primary">WoWthing</a>.
-        </p>
+        <div class="space-y-2 py-3 text-sm text-muted">
+          <p>Built by <a :href="aboutLinks.Failcookie" :aria-disabled="openingAboutLink !== null" class="underline hover:text-primary" @click.prevent="openAboutLink('Failcookie')">Failcookie</a>.
+          Powered by <a :href="aboutLinks.WoWthing" :aria-disabled="openingAboutLink !== null" class="underline hover:text-primary" @click.prevent="openAboutLink('WoWthing')">WoWthing</a>.</p>
+          <div v-if="failedAboutLink" role="alert" class="text-error">
+            <p>Could not open {{ failedAboutLink }} in your browser. Try again or copy the link address.</p>
+            <UButton color="neutral" variant="link" :disabled="openingAboutLink !== null" @click="openAboutLink(failedAboutLink!)">Retry Opening {{ failedAboutLink }}</UButton>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -109,6 +113,7 @@
 
 <script setup lang="ts">
 import { open } from '@tauri-apps/plugin-dialog'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import type { SettingAction } from '../composables/useSettings'
 import { folderFlavor } from '../utils/collector'
 
@@ -119,6 +124,19 @@ const { busy: updaterBusy, phase: updaterPhase, errorOperation: updaterErrorOper
 const apiKeyDraft = ref('')
 const showPassword = ref(false)
 const dialogError = ref<string | null>(null)
+// Opener scopes match raw strings; keep the root URL without a trailing slash.
+const aboutLinks = { Failcookie: 'https://wowthing.org/user/Failcookie', WoWthing: 'https://wowthing.org' } as const
+type AboutLink = keyof typeof aboutLinks
+const openingAboutLink = ref<AboutLink | null>(null)
+const failedAboutLink = ref<AboutLink | null>(null)
+const openAboutLink = async (link: AboutLink) => {
+  if (openingAboutLink.value) return
+  openingAboutLink.value = link
+  failedAboutLink.value = null
+  try { await openUrl(aboutLinks[link]) }
+  catch { failedAboutLink.value = link }
+  finally { openingAboutLink.value = null }
+}
 
 const loadFailed = computed(() => !loading.value && (!loaded.value || (scope.value === null && !!error.value)))
 const canSaveKey = computed(() => loaded.value && !busy.value && !!apiKeyDraft.value.trim())
