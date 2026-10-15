@@ -411,36 +411,55 @@ fn real_worker_simplifies_legacy_paths_without_startup_writes() {
     let root = temp.path().join("WoW Unicode 雪 with spaces");
     file(&root, "SYNTHETIC", "initial");
     let canonical = root.canonicalize().unwrap();
-    // Match the persisted scan spelling, including Windows' accepted mixed separators.
+    // Older verbatim joins rebuilt separators; newer ordinary joins retained '/'.
     let collector = canonical
-        .join("WTF/Account")
+        .join("WTF")
+        .join("Account")
         .join("SYNTHETIC")
         .join("SavedVariables")
         .join("WoWthing_Collector.lua");
     let folder = dunce::simplified(&canonical).to_string_lossy().into_owned();
-    let file = dunce::simplified(&collector).to_string_lossy().into_owned();
+    // Assert strings, since Windows Path equality ignores separator differences.
+    let file = format!(r"{folder}\WTF\Account\SYNTHETIC\SavedVariables\WoWthing_Collector.lua");
+    assert_eq!(dunce::simplified(&collector).to_str().unwrap(), file);
+    let mixed = file.replace(r"\WTF\Account", r"\WTF/Account");
+    let forward = file.replace('\\', "/");
     assert!(canonical.to_string_lossy().starts_with(r"\\?\"));
     let server = Server::new(vec![]);
     let mut io = io(&temp, &server);
-    let legacy_uploads = serde_json::json!({collector.to_string_lossy().into_owned(): 123});
+    let legacy_uploads = serde_json::json!({
+        collector.to_string_lossy().into_owned(): 100,
+        file.clone(): 110,
+        mixed.clone(): 123,
+        forward.clone(): 120,
+    });
     io.store
         .commit_many([
             ("program-folder", Some(serde_json::json!(canonical))),
             ("account-uploads", Some(legacy_uploads.clone())),
         ])
         .unwrap();
+    let original_preferences = std::fs::read(temp.path().join("settings.json")).unwrap();
     io.key = Ok(None); // Observe read migration before a successful upload can persist it.
     let service = SyncService::start_with_io(io.clone());
     wait("legacy path hydration", || {
         service.snapshot().uploads.get(&file) == Some(&123)
     });
     assert_eq!(service.snapshot().folder.as_deref(), Some(folder.as_str()));
+    assert_eq!(
+        service.snapshot().uploads,
+        BTreeMap::from([(file.clone(), 123)])
+    );
     assert_eq!(io.store.get("account-uploads"), Some(legacy_uploads));
     assert_eq!(
         io.store.get("program-folder"),
         Some(serde_json::json!(canonical))
     );
     service.shutdown();
+    assert_eq!(
+        std::fs::read(temp.path().join("settings.json")).unwrap(),
+        original_preferences
+    );
 
     io.key = Ok(Some("synthetic-worker-key".into()));
     let service = SyncService::start_with_io(io.clone());
@@ -455,13 +474,37 @@ fn real_worker_simplifies_legacy_paths_without_startup_writes() {
         service.snapshot().uploads.keys().collect::<Vec<_>>(),
         [&file]
     );
-    // Legacy submit_addon_data callers remain accepted and cannot recreate old keys.
-    service
-        .enqueue_file(collector.to_string_lossy().into_owned())
-        .unwrap();
-    wait("legacy manual upload", || {
-        server.bodies().len() >= 2 && !service.snapshot().is_processing
-    });
+    // Validate original submissions before any spelling change. Construct strings
+    // directly: joining onto a verbatim PathBuf would remove these components.
+    for base in [folder.as_str(), canonical.to_str().unwrap()] {
+        for suffix in [
+            r"\WTF\Account\SYNTHETIC\SavedVariables\..\SavedVariables\WoWthing_Collector.lua",
+            r"\WTF\Account\SYNTHETIC\..\SYNTHETIC\SavedVariables\WoWthing_Collector.lua",
+            r"\WTF\Account\SYNTHETIC\SavedVariables\Other.lua",
+        ] {
+            assert!(service.enqueue_file(format!("{base}{suffix}")).is_err());
+        }
+    }
+    // Legacy and mixed submit_addon_data callers cannot recreate duplicate keys.
+    for (index, spelling) in [
+        collector.to_string_lossy().into_owned(),
+        mixed,
+        forward,
+        file.clone(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        service.enqueue_file(spelling).unwrap();
+        wait("compatible manual upload", || {
+            server.bodies().len() >= index + 2 && !service.snapshot().is_processing
+        });
+        assert_eq!(service.snapshot().files, [file.clone()]);
+        assert_eq!(
+            service.snapshot().uploads.keys().collect::<Vec<_>>(),
+            [&file]
+        );
+    }
     service.shutdown();
     assert_eq!(
         service.snapshot().uploads.keys().collect::<Vec<_>>(),

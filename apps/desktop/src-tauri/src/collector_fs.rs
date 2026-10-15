@@ -10,6 +10,34 @@ pub const MAX_COLLECTOR_BYTES: u64 = 32 * 1024 * 1024;
 const COLLECTOR: &str = "WoWthing_Collector.lua";
 pub type ScanFailures = Vec<(PathBuf, String)>;
 pub type ScanResult = (Vec<PathBuf>, ScanFailures);
+
+/// One spelling for display, persisted history and validated queue entries.
+/// This does not authorize a path: validate the original input before calling it.
+pub fn display_path(path: &Path) -> PathBuf {
+    let path = dunce::simplified(path);
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        // A verbatim path that dunce cannot simplify may treat '/' literally.
+        if !matches!(path.components().next(), Some(Component::Prefix(prefix)) if prefix.kind().is_verbatim())
+        {
+            let spelling: Vec<_> = path
+                .as_os_str()
+                .encode_wide()
+                .map(|unit| {
+                    if unit == b'/' as u16 {
+                        b'\\' as u16
+                    } else {
+                        unit
+                    }
+                })
+                .collect();
+            return std::ffi::OsString::from_wide(&spelling).into();
+        }
+    }
+    path.to_path_buf()
+}
+
 pub struct ApprovedRoot {
     path: PathBuf,
     canonical: PathBuf,
@@ -25,13 +53,16 @@ impl ApprovedRoot {
         dir.open_dir("WTF/Account")
             .map_err(|_| "Choose the _retail_ folder containing WTF/Account.".to_string())?;
         Ok(Self {
-            path: dunce::simplified(&canonical).to_path_buf(),
+            path: display_path(&canonical),
             canonical,
             dir,
         })
     }
     pub fn path(&self) -> &Path {
         &self.path
+    }
+    pub fn accounts_path(&self) -> PathBuf {
+        display_path(&self.canonical.join("WTF").join("Account"))
     }
     fn relative(&self, path: &Path) -> Result<PathBuf, String> {
         let relative = path
@@ -83,11 +114,12 @@ impl ApprovedRoot {
             {
                 continue;
             }
-            let relative = Path::new("WTF/Account")
+            let relative = Path::new("WTF")
+                .join("Account")
                 .join(account.file_name())
                 .join("SavedVariables")
                 .join(COLLECTOR);
-            let file = self.path.join(&relative);
+            let file = display_path(&self.canonical.join(&relative));
             match self.dir.metadata(&relative) {
                 Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_COLLECTOR_BYTES => files.push(file),
                 Ok(_) => failures.push((file, "Collector must be a regular file of at most 32 MiB".into())),
@@ -135,6 +167,53 @@ impl ApprovedRoot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn windows_display_paths_unify_separators_without_resolving_components() {
+        let root = Path::new(r"C:\WoW");
+        // Pin the string distinction that Path equality hides on Windows.
+        assert_eq!(
+            root.join("WTF/Account").to_str().unwrap(),
+            r"C:\WoW\WTF/Account"
+        );
+        assert_eq!(
+            Path::new(r"\\?\C:\WoW")
+                .join("WTF/Account")
+                .to_str()
+                .unwrap(),
+            r"\\?\C:\WoW\WTF\Account"
+        );
+        for (input, expected) in [
+            (r"C:\WoW\WTF/Account", r"C:\WoW\WTF\Account"),
+            (r"C:/WoW/WTF/Account", r"C:\WoW\WTF\Account"),
+            (r"\\?\C:\WoW\WTF\Account", r"C:\WoW\WTF\Account"),
+            (
+                r"\\server\share\WoW/WTF/Account",
+                r"\\server\share\WoW\WTF\Account",
+            ),
+            (
+                r"C:\WoW\WTF/Account/../Account",
+                r"C:\WoW\WTF\Account\..\Account",
+            ),
+        ] {
+            assert_eq!(display_path(Path::new(input)).as_os_str(), expected);
+        }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn unsafe_verbatim_display_paths_remain_byte_for_byte_unchanged() {
+        let long = format!(r"\\?\C:\{}", "long".repeat(70));
+        for input in [
+            r"\\?\C:\WoW\NUL\collector.lua",
+            r"\\?\C:\WoW\trailing.\collector.lua",
+            r"\\?\C:\WoW\WTF/Account\collector.lua",
+            r"\\?\C:\WoW\..\collector.lua",
+            r"\\?\UNC\server\share\WoW\collector.lua",
+            long.as_str(),
+        ] {
+            assert_eq!(display_path(Path::new(input)).as_os_str(), input);
+        }
+    }
     fn fixture(name: &str) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("wowthing-fs-{name}-{}", std::process::id()));
         let file = root.join("WTF/Account/TEST/SavedVariables/WoWthing_Collector.lua");
@@ -210,11 +289,17 @@ mod tests {
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, "synthetic").unwrap();
         let approved = ApprovedRoot::open(&root).unwrap();
-        let file = approved
-            .path()
-            .join("WTF/Account/SYNTHETIC/SavedVariables/WoWthing_Collector.lua");
+        let expected = format!(
+            r"{}\WTF\Account\SYNTHETIC\SavedVariables\WoWthing_Collector.lua",
+            approved.path().display()
+        );
+        let file = PathBuf::from(&expected);
         assert!(!approved.path().to_string_lossy().starts_with(r"\\?\"));
-        assert_eq!(approved.discover().unwrap(), [file.clone()]);
+        assert_eq!(
+            approved.accounts_path().to_str().unwrap(),
+            format!(r"{}\WTF\Account", approved.path().display())
+        );
+        assert_eq!(approved.discover().unwrap()[0].to_str().unwrap(), expected);
         assert_eq!(approved.read(&file).unwrap(), b"synthetic");
         assert_eq!(
             approved.read(&file.canonicalize().unwrap()).unwrap(),

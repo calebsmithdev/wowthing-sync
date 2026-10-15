@@ -199,7 +199,7 @@ impl CollectorWatcher {
         epoch: u64,
     ) -> Option<Self> {
         use notify::Watcher;
-        let accounts = root?.path().join("WTF/Account");
+        let accounts = root?.accounts_path();
         let watched = accounts.clone();
         let pending = Arc::new(AtomicBool::new(false));
         let healthy = Arc::new(AtomicBool::new(true));
@@ -324,9 +324,9 @@ impl SyncService {
         ))?;
         root.metadata(Path::new(&file))?;
         self.sender
-            .send(Request::File(
-                dunce::simplified(Path::new(&file)).to_path_buf(),
-            ))
+            .send(Request::File(crate::collector_fs::display_path(Path::new(
+                &file,
+            ))))
             .map_err(|_| "Sync service stopped".into())
     }
     pub fn manual(&self) -> Result<(), String> {
@@ -450,7 +450,7 @@ fn run(
         Ok(store) => {
             state.folder = store.get("program-folder").and_then(|v| {
                 v.as_str().map(|folder| {
-                    dunce::simplified(Path::new(folder))
+                    crate::collector_fs::display_path(Path::new(folder))
                         .to_string_lossy()
                         .into_owned()
                 })
@@ -706,7 +706,7 @@ fn run(
 fn simplify_upload_keys(uploads: BTreeMap<String, u64>) -> BTreeMap<String, u64> {
     let mut simplified = BTreeMap::<String, u64>::new();
     for (path, time) in uploads {
-        let path = dunce::simplified(Path::new(&path))
+        let path = crate::collector_fs::display_path(Path::new(&path))
             .to_string_lossy()
             .into_owned();
         // A mixed old/new store can contain both spellings. Keep the latest upload.
@@ -738,11 +738,13 @@ mod tests {
         let uploads = simplify_upload_keys(BTreeMap::from([
             (file.into(), 200),
             (verbatim, 100),
+            (file.replace(r"\WTF\Account", r"\WTF/Account"), 400),
+            (file.replace('\\', "/"), 250),
             (unsafe_path.into(), 300),
         ]));
         assert_eq!(
             uploads,
-            BTreeMap::from([(file.into(), 200), (unsafe_path.into(), 300)])
+            BTreeMap::from([(file.into(), 400), (unsafe_path.into(), 300)])
         );
     }
     #[cfg(not(windows))]

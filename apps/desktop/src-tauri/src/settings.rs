@@ -25,7 +25,7 @@ fn snapshot(app: &tauri::AppHandle) -> Result<SettingsSnapshot, String> {
     Ok(SettingsSnapshot {
         folder: store.get("program-folder").and_then(|v| {
             v.as_str().map(|folder| {
-                dunce::simplified(std::path::Path::new(folder))
+                crate::collector_fs::display_path(std::path::Path::new(folder))
                     .to_string_lossy()
                     .into_owned()
             })
