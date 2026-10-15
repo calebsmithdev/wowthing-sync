@@ -403,7 +403,7 @@ On macOS ARM64 with Node22.22.3/Rust1.97.1: clean `npm ci`, lint, strict typeche
 
 ### Security and permissions
 
-Native plugins: opener, process, dialog, OS, notification, log, desktop autostart/updater/single-instance. Frontend capabilities are core defaults, dialog open, process restart, updater defaults, OS defaults, log defaults, an exact-URL opener grant and notification permission query. There are **no frontend FS/store/autostart/notification mutation grants** and no shell plugin. `opener:allow-open-url` accepts only the fixed GitHub releases/latest URL; the Settings → About `target="_blank"` anchors are not opened by the webview (issue #58). A native notification click (`tap`) reuses the tray's Open Window dispatch. The direct `minisign-verify` version must match `tauri-plugin-updater`'s, because `updater_fixture.rs` matches its error type.
+Native plugins: opener, process, dialog, OS, notification, log, desktop autostart/updater/single-instance. Frontend capabilities are core defaults, dialog open, process restart, updater defaults, OS defaults, log defaults, an exact-URL opener grant and notification permission query. There are **no frontend FS/store/autostart/notification mutation grants** and no shell plugin. `opener:allow-open-url` accepts only the fixed GitHub releases/latest URL, `https://wowthing.org/user/Failcookie` and `https://wowthing.org`. Settings → About uses `openUrl` with inline failure/retry feedback. Scopes match raw URL strings (the root URL has no trailing slash); fixtures intercept opener calls and never launch an OS browser. A native notification click (`tap`) reuses the tray's Open Window dispatch. The direct `minisign-verify` version must match `tauri-plugin-updater`'s, because `updater_fixture.rs` matches its error type.
 
 All collector operations use a canonical held `cap-std` directory capability under the selected WoW root, only `WTF/Account/<account>/SavedVariables/WoWthing_Collector.lua`, regular nonempty files <=32MiB and <=1000 account entries. Relative capability opens confine symlink races; Unix nonblocking opens reject FIFOs without hanging. Scan errors for individual accounts stay visible and do not prevent healthy account uploads. Native filesystem events wake capability-based scans, with 30-second metadata reconciliation and five-minute content reverification. Watcher setup/runtime failures fall back to one-second polling and 30-second content reverification. Event bursts coalesce into one pending wake; access events and unrelated addon files are ignored. A sequential debounced queue retains writes observed after an upload and drains ready files without a fixed inter-upload delay. HTTP client has explicit 10s connect/30s request timeout, <=3 temporary-failure attempts; long Retry-After stops retries. Config generations cancel stale uploads and suppress stale results; shutdown cancellation is bounded.
 
@@ -412,6 +412,26 @@ API keys use explicit `keyring` native Apple/Windows/Linux secret-service backen
 Production CSP has self/hashed bundled scripts, external CSS, local SVG icons, IPC-only connections and no unsafe-eval/unsafe-inline. Tauri injects hashes/nonces for generated static scripts. Nuxt UI's runtime palette plugin is replaced by static `palette.css` (keep aligned with `app.config.ts`); icons bundle locally in SVG mode. Development uses a fresh nonce via the dev wrapper and Nitro render hook. Future UI changes must rerun native smoke to catch runtime CSS/script injection.
 
 Autostart reflects actual OS state, verifies changes before saving, and attempts OS rollback on persistence failure. Desktop notification APIs do not expose actual delivery consent truthfully: UI reports unknown and points to OS settings; background failures never prompt. Update controller is shared for background/manual/tray events, serializes checks/installs, closes resources before relaunch and suppresses late teardown callbacks. `__debug` remains a development diagnostic page; there is no general-purpose FS/secret diagnostic endpoint.
+
+### WoW folder recovery (#59)
+
+Each worker scan reopens the configured folder and compares directory handles
+with `same-file`, so a renamed tree cannot keep supplying uploads after a new
+tree replaces it. Open, identity, or scan errors discard the held capability,
+watcher and metadata cache, then retry at the one-second fallback interval.
+The status explains automatic recovery and choosing a moved folder again.
+Replacement watchers start only after a successful scan; failed scans retain
+one-second polling without repeatedly setting up recursive watchers. Setup is
+attempted once per held root even when watcher setup fails; configuring or
+discarding/replacing that root permits a fresh attempt after a successful scan.
+Content hashes and queued work survive recovery; accounts with unchanged content that
+remain present across successful scans are not uploaded again. A successful
+scan that temporarily omits an account can cause a later upload when it returns.
+Unix real-worker fixtures publish complete staged trees by rename for
+whole-tree deletion/recreation and rename replacement against loopback HTTP.
+Windows held-handle rename/delete behavior
+still requires platform evidence. This adds no frontend capability or new
+symlink policy; reopening has the same trust as restarting the app.
 
 ### CI improvement 1: production worker integration
 
@@ -493,7 +513,8 @@ disabled where the backend supports it. Discovery, file limits and uploads still
 use the held `ApprovedRoot` capability. Periodic reconciliation covers missed
 events/new directories; same-metadata changes missed by events are detected by
 the five-minute content verification. Failed watchers keep the polling fallback
-until the folder is configured again. No new frontend filesystem permissions.
+until the folder is configured again or its root is discarded/replaced. No new
+frontend filesystem permissions.
 
 Successful uploads persist `last-success` and `account-uploads` in one synced
 atomic transaction, including in the isolated integration builder. The Status

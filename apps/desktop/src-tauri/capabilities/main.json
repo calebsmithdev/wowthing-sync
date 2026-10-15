@@ -15,7 +15,11 @@
     "log:default",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://github.com/calebsmithdev/wowthing-sync/releases/latest" }]
+      "allow": [
+        { "url": "https://github.com/calebsmithdev/wowthing-sync/releases/latest" },
+        { "url": "https://wowthing.org/user/Failcookie" },
+        { "url": "https://wowthing.org" }
+      ]
     },
     "notification:allow-is-permission-granted"
   ]
