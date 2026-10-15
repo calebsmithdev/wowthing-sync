@@ -604,7 +604,11 @@ shutdown remain separate from the Reopen handler.
 
 Autostart uses LaunchAgent on macOS and passes `--autostart` on all desktop OSes.
 Only an exact argument after argv[0] suppresses initial show/focus and the
-single-instance focus callback. Startup refresh holds `SettingsManager.gate`,
+single-instance focus callback. Debug builds (including `tauri:dev`) skip automatic
+startup migration before any refresh preference or OS access, leaving the marker
+untouched: development shares the installed identity and must not retarget its
+login item to `target/debug`. The core stays compiled for unit tests and direct
+hosted debug/release probes. Release startup refresh holds `SettingsManager.gate`,
 rewrites eligible enabled registrations once, verifies plugin enabled state, then commits
 `autostart-args-version: 1`. Disabled registrations are only marked; refresh never
 calls disable. macOS refresh defers from canonical `/Volumes` or `AppTranslocation`
@@ -617,6 +621,12 @@ done or rewriting. This conservative preflight is not a general XDG parser.
 Failed reads/writes/verification/persistence retry next launch
 without attempting to restore old arguments. Settings toggle verify/rollback is
 unchanged. Runtime verification checks plugin state, not argument contents.
+Windows Task Manager-disabled registrations may be marked done without rewriting;
+external reenablement can retain a legacy command without `--autostart`. Accepted
+workaround: disable and reenable Launch at Login in app Settings. macOS plist
+existence does not prove Allow in Background consent. Release validation must
+turn that System Settings choice off before upgrade in a disposable profile and
+verify it stays off and prevents login startup; this OS check was not run locally.
 Hosted-only probes seed an old unmarked registration, run the production refresh
 algorithm and inspect the marker in their unique registration artifacts;
 actual login argument delivery remains a disposable-profile release check in

@@ -131,6 +131,11 @@ pub(crate) fn refresh_registration(
 
 #[cfg(not(feature = "integration-test"))]
 pub fn refresh_login_registration(app: &tauri::AppHandle) {
+    // Development shares the installed app's identity/preferences. Never retarget
+    // its login item to a debug executable or consume the one-time marker.
+    if cfg!(debug_assertions) {
+        return;
+    }
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = app.state::<SettingsManager>();
