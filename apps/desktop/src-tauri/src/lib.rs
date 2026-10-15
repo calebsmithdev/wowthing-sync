@@ -74,6 +74,7 @@ pub fn run() {
             app.manage(preferences::initialize(app.handle()));
             app.manage(credentials::SecretManager::default());
             app.manage(settings::SettingsManager::default());
+            settings::refresh_login_registration(app.handle());
             app.manage(sync_service::SyncService::start(app.handle().clone()));
             Ok(())
         })
