@@ -58,7 +58,11 @@ impl WorkerIo for Io {
     }
 }
 #[tauri::command]
-fn integration_report(app: tauri::AppHandle, errors: Vec<String>) {
+fn integration_report(
+    app: tauri::AppHandle,
+    errors: Vec<String>,
+    diagnostics: Option<serde_json::Value>,
+) {
     let status = app.state::<SyncService>().snapshot();
     let store = crate::preferences::store(&app).unwrap();
     let migrated = store.get("api-key").is_none() && root().join("synthetic-vault").exists();
@@ -94,7 +98,7 @@ fn integration_report(app: tauri::AppHandle, errors: Vec<String>) {
         && updater;
     println!(
         "INTEGRATION_REPORT {}",
-        serde_json::json!({"marker": HARNESS_MARKER, "passed":passed,"errors":errors,"version":env!("CARGO_PKG_VERSION"),"migrated":migrated,"resourcesClosed":resources_closed,"windowLifecycle":lifecycle,"windowLifecycleDetails":lifecycle_details,"updater":updater,"status":status})
+        serde_json::json!({"marker": HARNESS_MARKER, "passed":passed,"errors":errors,"diagnostics":diagnostics,"version":env!("CARGO_PKG_VERSION"),"migrated":migrated,"resourcesClosed":resources_closed,"windowLifecycle":lifecycle,"windowLifecycleDetails":lifecycle_details,"updater":updater,"status":status})
     );
     app.exit(if passed { 0 } else { 1 });
 }
