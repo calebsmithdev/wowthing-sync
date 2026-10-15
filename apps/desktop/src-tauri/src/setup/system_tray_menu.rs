@@ -77,10 +77,7 @@ pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
                 let is_macos = platform() == "macos";
                 if !is_macos {
                     let app = tray.app_handle();
-                    if let Some(window) = app.get_webview_window("main") {
-                        window.show().unwrap();
-                        window.set_focus().unwrap();
-                    }
+                    crate::window_lifecycle::reveal_main(app);
                 }
             }
         });
@@ -132,10 +129,7 @@ pub(crate) fn dispatch_menu(app: &AppHandle, id: &str) {
             app.exit(0);
         }
         "show" => {
-            if let Some(window) = app.get_webview_window("main") {
-                window.show().unwrap();
-                window.set_focus().unwrap();
-            }
+            crate::window_lifecycle::reveal_main(app);
         }
         "sync-now" => {
             if let Some(service) = app.try_state::<crate::sync_service::SyncService>() {
@@ -143,9 +137,8 @@ pub(crate) fn dispatch_menu(app: &AppHandle, id: &str) {
             }
         }
         "check-update" => {
+            crate::window_lifecycle::reveal_main(app);
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
                 let _ = window.emit("check-for-updates", serde_json::json!({ "source": "tray" }));
             }
         }

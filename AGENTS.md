@@ -561,3 +561,13 @@ unsigned v1.1.1 app bundle passed. The local macOS native smoke timed out on two
 attempts; hosted macOS/Windows/native x64 Linux evidence remains required before
 release. No normal production app, real credential store or autostart probe was
 launched locally.
+
+### Second-launch window recovery (#56)
+
+Second-instance callbacks, tray Open Window/Check for Updates, non-macOS tray
+left-click and notification tap share `window_lifecycle::reveal_main`. It
+unminimizes, shows and focuses the main window, then emits `window-visibility`
+true after a successful show. Missing windows and OS errors are logged without
+panicking. Native integration invokes the shared second-instance handler without
+registering the single-instance plugin, and requires `secondInstanceReopened`
+plus display-clock stop/resume after a second hide/reopen cycle.

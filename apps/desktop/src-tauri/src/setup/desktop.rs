@@ -9,11 +9,8 @@ pub fn setup_desktop(app: &AppHandle) -> tauri::Result<()> {
             None,
         ))?;
         app.plugin(tauri_plugin_updater::Builder::new().build())?;
-        let _ = app.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = app
-                .get_webview_window("main")
-                .expect("no main window")
-                .set_focus();
+        let _ = app.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            crate::window_lifecycle::on_second_instance(app, &args);
         }));
 
         // Show the main window when the app loads

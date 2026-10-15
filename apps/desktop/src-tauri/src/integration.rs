@@ -65,12 +65,15 @@ fn integration_report(app: tauri::AppHandle, errors: Vec<String>) {
     let counts = app.state::<Arc<Counts>>();
     let resources_closed = counts.created.load(Ordering::Acquire) >= 3
         && counts.created.load(Ordering::Acquire) == counts.closed.load(Ordering::Acquire);
-    let lifecycle =
-        counts.hidden.load(Ordering::Acquire) && counts.reopened.load(Ordering::Acquire);
+    let second_instance_reopened = counts.second_instance_reopened.load(Ordering::Acquire);
+    let lifecycle = counts.hidden.load(Ordering::Acquire)
+        && counts.reopened.load(Ordering::Acquire)
+        && second_instance_reopened;
     let lifecycle_details = serde_json::json!({
         "hidden": counts.hidden.load(Ordering::Acquire),
         "reopenRequested": counts.reopen_requested.load(Ordering::Acquire),
         "reopened": counts.reopened.load(Ordering::Acquire),
+        "secondInstanceReopened": second_instance_reopened,
     });
     let updater = counts.downloads.load(Ordering::Acquire) == 2
         && counts.relaunched.load(Ordering::Acquire) == 1;
@@ -103,6 +106,8 @@ struct Counts {
     hidden: AtomicBool,
     reopen_requested: AtomicBool,
     reopened: AtomicBool,
+    second_instance_requested: AtomicBool,
+    second_instance_reopened: AtomicBool,
 }
 #[tauri::command]
 async fn save_sync_folder(
@@ -163,6 +168,12 @@ fn integration_control(app: tauri::AppHandle, action: String) -> Result<serde_js
             tray::dispatch_menu(&app, "show");
             counts.reopen_requested.store(true, Ordering::Release);
         }
+        "second-instance" => {
+            crate::window_lifecycle::on_second_instance(&app, &[]);
+            counts
+                .second_instance_requested
+                .store(true, Ordering::Release);
+        }
         "tray-update" => tray::dispatch_menu(&app, "check-update"),
         "state" => {}
         _ => return Err("unknown fixture control".into()),
@@ -177,6 +188,11 @@ fn integration_control(app: tauri::AppHandle, action: String) -> Result<serde_js
             && counts.reopen_requested.load(Ordering::Acquire)
         {
             counts.reopened.store(true, Ordering::Release);
+            if counts.second_instance_requested.load(Ordering::Acquire) {
+                counts
+                    .second_instance_reopened
+                    .store(true, Ordering::Release);
+            }
         }
     }
     Ok(
