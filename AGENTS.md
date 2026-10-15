@@ -599,3 +599,16 @@ macOS/Windows additionally require bounded native minimize/restore and display
 clock checks (`minimizedRestored`). Linux reports that check as unverified because
 the harness does not require a window manager. Ready/startup visibility and worker
 shutdown remain separate from the Reopen handler.
+
+### Login launch marker (#57)
+
+Autostart uses LaunchAgent on macOS and passes `--autostart` on all desktop OSes.
+Only an exact argument after argv[0] suppresses initial show/focus and the
+single-instance focus callback. Startup refresh holds `SettingsManager.gate`,
+rewrites only enabled registrations once, verifies enabled state, then commits
+`autostart-args-version: 1`. Disabled registrations are only marked; refresh never
+calls disable. Failed reads/writes/verification/persistence retry next launch
+without attempting to restore old arguments. Settings toggle verify/rollback is
+unchanged. Hosted-only probes inspect their unique registration artifacts;
+actual login argument delivery remains a disposable-profile release check in
+[docs/ci-validation.md](docs/ci-validation.md).
