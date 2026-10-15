@@ -73,6 +73,8 @@ fn integration_report(
     let lifecycle = counts.hidden.load(Ordering::Acquire)
         && counts.reopened.load(Ordering::Acquire)
         && second_instance_reopened
+        && counts.login_started_hidden.load(Ordering::Acquire)
+        && counts.marked_second_instance_hidden.load(Ordering::Acquire)
         && (!cfg!(target_os = "macos") || counts.run_event_reopened.load(Ordering::Acquire))
         && (!minimize_supported() || counts.minimized_restored.load(Ordering::Acquire));
     let lifecycle_details = serde_json::json!({
@@ -80,6 +82,8 @@ fn integration_report(
         "reopenRequested": counts.reopen_requested.load(Ordering::Acquire),
         "reopened": counts.reopened.load(Ordering::Acquire),
         "secondInstanceReopened": second_instance_reopened,
+        "loginStartedHidden": counts.login_started_hidden.load(Ordering::Acquire),
+        "markedSecondInstanceHidden": counts.marked_second_instance_hidden.load(Ordering::Acquire),
         "runEventReopened": cfg!(target_os = "macos").then(|| counts.run_event_reopened.load(Ordering::Acquire)),
         "runEventUnsupportedReason": if cfg!(target_os = "macos") { None } else { Some("RunEvent::Reopen is macOS-only") },
         "minimizedRestored": minimize_supported().then(|| counts.minimized_restored.load(Ordering::Acquire)),
@@ -114,6 +118,9 @@ struct Counts {
     hydrate_failed: AtomicBool,
     invalid_folder: AtomicBool,
     hidden: AtomicBool,
+    login_started_hidden: AtomicBool,
+    marked_second_instance_requested: AtomicBool,
+    marked_second_instance_hidden: AtomicBool,
     reopen_requested: AtomicBool,
     reopened: AtomicBool,
     second_instance_requested: AtomicBool,
@@ -196,6 +203,40 @@ fn integration_control(app: tauri::AppHandle, action: String) -> Result<serde_js
         .get_webview_window("main")
         .ok_or("missing fixture window")?;
     match action.as_str() {
+        "login-startup" => {
+            if window.is_visible().map_err(|e| e.to_string())? {
+                return Err("marked login startup unexpectedly visible".into());
+            }
+            counts.login_started_hidden.store(true, Ordering::Release);
+            crate::window_lifecycle::on_second_instance(&app, &["fixture".into()]);
+        }
+        "autostart-second-instance" => {
+            if window.is_visible().map_err(|e| e.to_string())? {
+                return Err("marked second-instance requires a currently hidden window".into());
+            }
+            crate::window_lifecycle::on_second_instance(
+                &app,
+                &[
+                    "fixture".into(),
+                    crate::window_lifecycle::AUTOSTART_ARG.into(),
+                ],
+            );
+            counts
+                .marked_second_instance_requested
+                .store(true, Ordering::Release);
+        }
+        "confirm-autostart-hidden" => {
+            if !counts
+                .marked_second_instance_requested
+                .load(Ordering::Acquire)
+                || window.is_visible().map_err(|e| e.to_string())?
+            {
+                return Err("marked second-instance unexpectedly revealed the window".into());
+            }
+            counts
+                .marked_second_instance_hidden
+                .store(true, Ordering::Release);
+        }
         "invalid-folder" => counts.invalid_folder.store(true, Ordering::Release),
         "valid-folder" => counts.invalid_folder.store(false, Ordering::Release),
         "update-failure" => counts.mode.store(1, Ordering::Release),
@@ -386,7 +427,7 @@ pub fn run() {
         .starts_with(&root));
     let mut context = tauri::generate_context!();
     let mut window = context.config_mut().app.windows.remove(0);
-    window.visible = true;
+    window.visible = crate::window_lifecycle::initially_visible(std::env::args_os());
     let builder = tauri::Builder::default()
         .manage(Arc::new(Counts::default()))
         .manage(PreferencesState(Ok(store)))

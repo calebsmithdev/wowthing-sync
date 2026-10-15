@@ -21,8 +21,23 @@ pub(crate) fn reveal_main(app: &AppHandle) {
     }
 }
 
-pub(crate) fn on_second_instance(app: &AppHandle, _args: &[String]) {
-    reveal_main(app);
+pub(crate) const AUTOSTART_ARG: &str = "--autostart";
+
+/// Compare native arguments without lossy decoding or panicking on non-Unicode.
+/// argv[0] is the executable, never the login marker.
+pub(crate) fn initially_visible(
+    args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> bool {
+    !args
+        .into_iter()
+        .skip(1)
+        .any(|arg| arg.as_ref() == AUTOSTART_ARG)
+}
+
+pub(crate) fn on_second_instance(app: &AppHandle, args: &[String]) {
+    if initially_visible(args) {
+        reveal_main(app);
+    }
 }
 
 /// macOS relaunches an existing application through its delegate, without
@@ -53,5 +68,44 @@ pub(crate) fn on_event(window: &tauri::Window, event: &tauri::WindowEvent) {
         if let (Ok(visible), Ok(minimized)) = (window.is_visible(), window.is_minimized()) {
             let _ = window.emit("window-visibility", visible && !minimized);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn login_marker_requires_an_exact_argument_after_the_executable() {
+        for args in [
+            vec!["app", AUTOSTART_ARG],
+            vec!["app", "other", AUTOSTART_ARG],
+        ] {
+            assert!(!initially_visible(args));
+        }
+        for args in [
+            vec![],
+            vec!["app"],
+            vec![AUTOSTART_ARG],
+            vec![AUTOSTART_ARG, "other"],
+            vec!["app", "--autostart=1"],
+            vec!["app", "prefix--autostart"],
+            vec!["app", "--autostart "],
+        ] {
+            assert!(initially_visible(args));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_unicode_arguments_do_not_hide_or_panic() {
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+        let invalid = OsString::from_vec(vec![0xff]);
+        assert!(initially_visible([invalid.clone(), invalid.clone()]));
+        assert!(!initially_visible([
+            invalid.clone(),
+            invalid,
+            AUTOSTART_ARG.into()
+        ]));
     }
 }
