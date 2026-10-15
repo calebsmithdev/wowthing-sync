@@ -413,6 +413,19 @@ Production CSP has self/hashed bundled scripts, external CSS, local SVG icons, I
 
 Autostart reflects actual OS state, verifies changes before saving, and attempts OS rollback on persistence failure. Desktop notification APIs do not expose actual delivery consent truthfully: UI reports unknown and points to OS settings; background failures never prompt. Update controller is shared for background/manual/tray events, serializes checks/installs, closes resources before relaunch and suppresses late teardown callbacks. `__debug` remains a development diagnostic page; there is no general-purpose FS/secret diagnostic endpoint.
 
+### WoW folder recovery (#59)
+
+Each worker scan reopens the configured folder and compares directory handles
+with `same-file`, so a renamed tree cannot keep supplying uploads after a new
+tree replaces it. Open, identity, or scan errors discard the held capability,
+watcher and metadata cache, then retry at the one-second fallback interval.
+The status explains automatic recovery and choosing a moved folder again.
+Content hashes and queued work survive recovery; unchanged accounts are not
+uploaded again. Unix real-worker fixtures cover deletion/recreation and rename
+replacement against loopback HTTP. Windows held-handle rename/delete behavior
+still requires platform evidence. This adds no frontend capability or new
+symlink policy; reopening has the same trust as restarting the app.
+
 ### CI improvement 1: production worker integration
 
 `cargo test --locked real_worker` starts the actual SyncService thread with a WorkerIo OS boundary, temp collector capabilities, production HTTP request/retry code against a loopback server and atomic Preferences. It covers new/replaced files, rapid writes, writes during upload, mixed-invalid accounts, configuration/shutdown cancellation, HTTP retries/timeouts and persistence after restart. `cargo test --locked real_worker_long_run -- --ignored` runs 30 sequential changes for the nightly tier. These tests require localhost bind permission but never access a real credential store or external upload endpoint.
