@@ -324,9 +324,7 @@ impl SyncService {
         ))?;
         root.metadata(Path::new(&file))?;
         self.sender
-            .send(Request::File(crate::collector_fs::display_path(Path::new(
-                &file,
-            ))))
+            .send(Request::File(root.queue_path(Path::new(&file))?))
             .map_err(|_| "Sync service stopped".into())
     }
     pub fn manual(&self) -> Result<(), String> {

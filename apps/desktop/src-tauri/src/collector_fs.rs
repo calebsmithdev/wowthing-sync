@@ -85,6 +85,10 @@ impl ApprovedRoot {
         }
         Ok(relative.to_owned())
     }
+    /// Validate the original spelling before rebuilding the same key used by scans.
+    pub fn queue_path(&self, path: &Path) -> Result<PathBuf, String> {
+        Ok(display_path(&self.canonical.join(self.relative(path)?)))
+    }
     pub fn discover(&self) -> Result<Vec<PathBuf>, String> {
         let (files, failures) = self.scan()?;
         if files.is_empty() {
@@ -213,6 +217,44 @@ mod tests {
         ] {
             assert_eq!(display_path(Path::new(input)).as_os_str(), input);
         }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn long_collector_queue_paths_match_scan_with_short_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("WoW");
+        std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        let approved = ApprovedRoot::open(&root).unwrap();
+        assert!(!approved.path().to_string_lossy().starts_with(r"\\?\"));
+        let relative = Path::new("WTF")
+            .join("Account")
+            .join("A".repeat(220))
+            .join("SavedVariables")
+            .join(COLLECTOR);
+        let canonical = approved.canonical.join(&relative);
+        let plain = approved.path().join(&relative);
+        assert!(plain.as_os_str().len() > 260);
+        std::fs::create_dir_all(canonical.parent().unwrap()).unwrap();
+        std::fs::write(&canonical, "synthetic long collector").unwrap();
+        let scanned = approved.scan().unwrap().0;
+        assert_eq!(scanned.len(), 1);
+        assert!(scanned[0].to_string_lossy().starts_with(r"\\?\"));
+        for input in [plain, canonical] {
+            approved.metadata(&input).unwrap();
+            assert_eq!(
+                approved.queue_path(&input).unwrap().as_os_str(),
+                scanned[0].as_os_str()
+            );
+        }
+        // Build the string directly so a verbatim join cannot erase traversal.
+        let traversal = format!(
+            r"{}\WTF\Account\{}\SavedVariables\..\SavedVariables\{}",
+            approved.canonical.display(),
+            "A".repeat(220),
+            COLLECTOR
+        );
+        assert!(approved.queue_path(Path::new(&traversal)).is_err());
+        drop(approved);
     }
     fn fixture(name: &str) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("wowthing-fs-{name}-{}", std::process::id()));
