@@ -103,3 +103,29 @@ test('built UI saves explicit drafts, keeps sync across navigation and reveals u
   expect(errors).toEqual([])
   await page.screenshot({ path: process.env.SMOKE_SCREENSHOT ?? test.info().outputPath('dashboard.png') })
 })
+
+
+test('About links use opener with exact URLs and recover from browser failures', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  await page.route('https://**', route => route.abort())
+  await page.goto('/settings')
+  for (const [name, url] of [['Failcookie', 'https://wowthing.org/user/Failcookie'], ['WoWthing', 'https://wowthing.org']]) {
+    await page.evaluate(() => { (window as unknown as { __SMOKE__: { openerError: string | null } }).__SMOKE__.openerError = 'Synthetic browser unavailable' })
+    const link = page.getByRole('link', { name, exact: true })
+    await expect(link).toHaveAttribute('href', url!)
+    await link.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('alert')).toContainText(`Could not open ${name} in your browser`)
+    await page.screenshot({ path: test.info().outputPath(`about-${name}-failure.png`), fullPage: true })
+    await page.evaluate(() => { (window as unknown as { __SMOKE__: { openerError: string | null } }).__SMOKE__.openerError = null })
+    await page.getByRole('button', { name: `Retry Opening ${name}`, exact: true }).click()
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    expect(await page.evaluate(() => (window as unknown as { __SMOKE__: { calls: { command: string; args: { url?: string } }[] } }).__SMOKE__.calls.filter(call => call.command === 'plugin:opener|open_url').map(call => call.args.url))).toEqual(
+      name === 'Failcookie' ? [url, url] : ['https://wowthing.org/user/Failcookie', 'https://wowthing.org/user/Failcookie', url, url],
+    )
+    await expect(page).toHaveURL(/\/settings$/)
+  }
+  expect(errors).toEqual([])
+})

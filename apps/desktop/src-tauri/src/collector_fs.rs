@@ -17,16 +17,26 @@ pub struct ApprovedRoot {
 impl ApprovedRoot {
     pub fn open(path: &Path) -> Result<Self, String> {
         let path = path.canonicalize().map_err(|_| {
-            "The selected WoW folder is unavailable. Choose it again in Settings.".to_string()
+            "The selected WoW folder is unavailable. If it moved, choose it again in Settings."
+                .to_string()
         })?;
         let dir = Dir::open_ambient_dir(&path, cap_std::ambient_authority())
-            .map_err(|_| "Cannot open selected WoW folder".to_string())?;
+            .map_err(|_| "Cannot open selected WoW folder.".to_string())?;
         dir.open_dir("WTF/Account")
             .map_err(|_| "Choose the _retail_ folder containing WTF/Account.".to_string())?;
         Ok(Self { path, dir })
     }
     pub fn path(&self) -> &Path {
         &self.path
+    }
+    /// Compare held handles, since a renamed directory keeps its original path here.
+    pub fn same_directory(&self, other: &Self) -> Result<bool, String> {
+        let handle = |dir: &Dir| {
+            dir.try_clone()
+                .and_then(|dir| same_file::Handle::from_file(dir.into_std_file()))
+                .map_err(|error| format!("Cannot compare selected WoW folder: {error}."))
+        };
+        Ok(handle(&self.dir)? == handle(&other.dir)?)
     }
     fn relative(&self, path: &Path) -> Result<PathBuf, String> {
         let relative = path
@@ -60,17 +70,17 @@ impl ApprovedRoot {
         let accounts = self
             .dir
             .read_dir("WTF/Account")
-            .map_err(|_| "Cannot read WoW account directory".to_string())?;
+            .map_err(|_| "Cannot read WoW account directory.".to_string())?;
         let mut files = Vec::new();
         let mut failures = Vec::new();
         for (count, account) in accounts.enumerate() {
             if count >= 1000 {
-                return Err("WoW account directory contains too many entries".into());
+                return Err("WoW account directory contains too many entries.".into());
             }
-            let account = account.map_err(|_| "Cannot read WoW account entry".to_string())?;
+            let account = account.map_err(|_| "Cannot read WoW account entry.".to_string())?;
             if !account
                 .file_type()
-                .map_err(|_| "Cannot inspect WoW account entry".to_string())?
+                .map_err(|_| "Cannot inspect WoW account entry.".to_string())?
                 .is_dir()
             {
                 continue;
@@ -127,6 +137,36 @@ impl ApprovedRoot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compares_directory_handles() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        for root in [&first, &second] {
+            std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        }
+        let first = ApprovedRoot::open(&first).unwrap();
+        let reopened = ApprovedRoot::open(first.path()).unwrap();
+        let second = ApprovedRoot::open(&second).unwrap();
+        assert!(first.same_directory(&reopened).unwrap());
+        assert!(!first.same_directory(&second).unwrap());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn detects_replacement_at_the_same_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("_retail_");
+        let backup = temp.path().join("_retail_.bak");
+        std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        let held = ApprovedRoot::open(&root).unwrap();
+        std::fs::rename(&root, &backup).unwrap();
+        std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        let replacement = ApprovedRoot::open(&root).unwrap();
+        let moved = ApprovedRoot::open(&backup).unwrap();
+        assert_eq!(held.path(), replacement.path());
+        assert!(!held.same_directory(&replacement).unwrap());
+        assert!(held.same_directory(&moved).unwrap());
+    }
     fn fixture(name: &str) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("wowthing-fs-{name}-{}", std::process::id()));
         let file = root.join("WTF/Account/TEST/SavedVariables/WoWthing_Collector.lua");

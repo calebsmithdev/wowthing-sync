@@ -221,6 +221,8 @@ struct Io {
     key: Result<Option<String>, String>,
     states: Arc<Mutex<Vec<SyncStatus>>>,
     key_reads: Arc<AtomicU64>,
+    watcher_setup_attempts: Arc<AtomicU64>,
+    watcher_setup_fails: bool,
 }
 impl WorkerIo for Io {
     fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String> {
@@ -238,6 +240,10 @@ impl WorkerIo for Io {
     fn notify(&self, summary: BatchSummary) -> Result<(), String> {
         self.notifications.lock().unwrap().push(summary);
         Ok(())
+    }
+    fn watcher_setup_fails(&self) -> bool {
+        self.watcher_setup_attempts.fetch_add(1, Ordering::Release);
+        self.watcher_setup_fails
     }
     fn endpoint(&self) -> &str {
         &self.endpoint
@@ -270,6 +276,8 @@ fn io(temp: &tempfile::TempDir, server: &Server) -> Io {
         key: Ok(Some("synthetic-worker-key".into())),
         states: Default::default(),
         key_reads: Default::default(),
+        watcher_setup_attempts: Default::default(),
+        watcher_setup_fails: false,
     }
 }
 fn wait(label: &str, condition: impl Fn() -> bool) {
@@ -280,10 +288,18 @@ fn wait_with_diagnostics(
     condition: impl Fn() -> bool,
     diagnostics: impl Fn() -> String,
 ) {
+    wait_with_timeout(label, Duration::from_secs(15), condition, diagnostics);
+}
+fn wait_with_timeout(
+    label: &str,
+    timeout: Duration,
+    condition: impl Fn() -> bool,
+    diagnostics: impl Fn() -> String,
+) {
     let start = Instant::now();
     while !condition() {
         assert!(
-            start.elapsed() < Duration::from_secs(15),
+            start.elapsed() < timeout,
             "timed out: {label}; {}",
             diagnostics()
         );
@@ -294,6 +310,291 @@ fn configure(service: &SyncService, root: &Path) {
     service
         .configure(Some(crate::collector_fs::ApprovedRoot::open(root).unwrap()))
         .unwrap();
+}
+
+// Key reads precede scanning. Three further passes guarantee at least two
+// completed scans, even if the last observed pass is still in progress.
+fn wait_for_worker_passes(io: &Io, passes: u64) {
+    let initial = io.key_reads.load(Ordering::Acquire);
+    wait("repeated worker passes", || {
+        io.key_reads.load(Ordering::Acquire) >= initial + passes
+    });
+}
+
+#[test]
+fn real_worker_attempts_failed_watcher_setup_once_until_reconfigured_or_scan_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    file(&root, "GOOD", "initial");
+    let server = Server::new(vec![]);
+    let mut io = io(&temp, &server);
+    io.watcher_setup_fails = true;
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io.clone());
+    wait("initial upload with failed watcher setup", || {
+        service.snapshot().last_success.is_some()
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 1);
+
+    // Even reconfiguring the same directory explicitly permits a new attempt.
+    configure(&service, &root);
+    wait("configured watcher setup", || {
+        io.watcher_setup_attempts.load(Ordering::Acquire) == 2
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
+
+    // The scan limit counts all entries. Regular files trigger the same error
+    // without Windows directory capabilities blocking concurrent removal.
+    for index in 0..1000 {
+        std::fs::write(root.join(format!("WTF/Account/EXCESS-{index}")), "").unwrap();
+    }
+    wait("root discarded after scan error", || {
+        service
+            .snapshot()
+            .error
+            .is_some_and(|e| e.contains("too many entries"))
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
+    for index in 0..1000 {
+        std::fs::remove_file(root.join(format!("WTF/Account/EXCESS-{index}"))).unwrap();
+    }
+    wait("watcher setup after scan recovery", || {
+        io.watcher_setup_attempts.load(Ordering::Acquire) == 3
+    });
+    wait_for_worker_passes(&io, 3);
+    service.shutdown();
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 3);
+}
+
+#[cfg(unix)]
+#[test]
+fn real_worker_retries_failed_watcher_setup_for_replaced_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    file(&root, "GOOD", "initial");
+    let server = Server::new(vec![]);
+    let mut io = io(&temp, &server);
+    io.watcher_setup_fails = true;
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io.clone());
+    wait("initial upload with failed watcher setup", || {
+        service.snapshot().last_success.is_some()
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 1);
+
+    let staged = temp.path().join("staged");
+    file(&staged, "GOOD", "replacement");
+    std::fs::rename(&root, temp.path().join("backup")).unwrap();
+    std::fs::rename(&staged, &root).unwrap();
+    wait("replacement upload", || {
+        server.bodies().contains(&"replacement".into())
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
+
+    // An unavailable path discards the root and permits one setup on return,
+    // without reuploading the unchanged collector.
+    let missing = temp.path().join("missing");
+    std::fs::rename(&root, &missing).unwrap();
+    wait("configured root unavailable", || {
+        service.snapshot().error.is_some()
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
+    std::fs::rename(&missing, &root).unwrap();
+    wait("watcher setup after root returns", || {
+        io.watcher_setup_attempts.load(Ordering::Acquire) == 3
+    });
+    wait_for_worker_passes(&io, 3);
+    service.shutdown();
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 3);
+    assert_eq!(server.bodies(), ["initial", "replacement"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn real_worker_recovers_deleted_and_replaced_roots_without_reconfiguration() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    let backup = temp.path().join("_retail_.bak");
+    let staged = temp.path().join("_retail_.staged");
+    file(&root, "GOOD", "initial");
+    file(&root, "UNCHANGED", "unchanged");
+    let server = Server::new(vec![]);
+    let io = io(&temp, &server);
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io);
+    wait("initial uploads drained", || {
+        server.bodies().len() == 2
+            && !service.snapshot().is_processing
+            && service.snapshot().pending == 0
+    });
+
+    // Detach the whole tree before deleting it so a scan cannot observe
+    // individual accounts disappearing and legitimately forget their uploads.
+    std::fs::rename(&root, &backup).unwrap();
+    // Native events are hints; allow the 30-second reconciliation if deletion
+    // or rename does not wake a platform watcher. No manual sync/configure calls.
+    wait_with_timeout(
+        "deleted root unavailable",
+        RECONCILE_INTERVAL + Duration::from_secs(10),
+        // Wait for the missing-root state, rather than any intermediate error.
+        || {
+            service
+                .snapshot()
+                .error
+                .is_some_and(|error| error.contains("selected WoW folder is unavailable"))
+        },
+        || serde_json::to_string(&service.snapshot()).unwrap(),
+    );
+    let missing = service.snapshot();
+    let error = missing.error.unwrap();
+    assert!(
+        error.contains("selected WoW folder is unavailable"),
+        "{error}"
+    );
+    assert!(error.contains("Sync will retry automatically."), "{error}");
+    assert_eq!(error.matches("choose it again").count(), 1, "{error}");
+    assert!(missing.files.is_empty());
+    assert_eq!(server.bodies(), ["initial", "unchanged"]);
+    std::fs::remove_dir_all(&backup).unwrap();
+
+    // Publish a complete tree at once: a scan during staged writes could
+    // legitimately forget temporarily absent accounts and upload them again.
+    file(&staged, "UNCHANGED", "unchanged");
+    file(&staged, "GOOD", "restored");
+    std::fs::rename(&staged, &root).unwrap();
+    wait("restored root uploaded automatically", || {
+        server.bodies().contains(&"restored".into())
+            && service.snapshot().error.is_none()
+            && !service.snapshot().is_processing
+            && service.snapshot().pending == 0
+    });
+    assert_eq!(server.bodies(), ["initial", "unchanged", "restored"]);
+
+    // The held Dir still reads the renamed tree; only handle identity reveals
+    // that a valid new directory now occupies the configured path.
+    file(&staged, "UNCHANGED", "unchanged");
+    file(&staged, "GOOD", "replaced");
+    std::fs::rename(&root, &backup).unwrap();
+    std::fs::rename(&staged, &root).unwrap();
+    file(&backup, "GOOD", "must never upload from backup");
+    wait_with_timeout(
+        "replacement root uploaded automatically",
+        RECONCILE_INTERVAL + Duration::from_secs(10),
+        || {
+            server.bodies().contains(&"replaced".into())
+                && !service.snapshot().is_processing
+                && service.snapshot().pending == 0
+        },
+        || serde_json::to_string(&service.snapshot()).unwrap(),
+    );
+    file(&backup, "GOOD", "another ignored backup write");
+    file(&root, "GOOD", "current tree write");
+    wait("replacement watcher tracks current tree", || {
+        server.bodies().contains(&"current tree write".into())
+            && !service.snapshot().is_processing
+            && service.snapshot().pending == 0
+    });
+    service.shutdown();
+    assert_eq!(
+        server.bodies(),
+        [
+            "initial",
+            "unchanged",
+            "restored",
+            "replaced",
+            "current tree write"
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn real_worker_stops_reading_moved_roots_while_the_configured_path_is_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    let backup = temp.path().join("_retail_.bak");
+    file(&root, "GOOD", "initial");
+    let server = Server::new(vec![]);
+    let io = io(&temp, &server);
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io);
+    wait("initial upload", || {
+        service.snapshot().last_success.is_some()
+    });
+    std::fs::rename(&root, &backup).unwrap();
+    file(&backup, "GOOD", "must never upload moved data");
+    wait_with_timeout(
+        "moved root unavailable",
+        RECONCILE_INTERVAL + Duration::from_secs(10),
+        || service.snapshot().error.is_some(),
+        || serde_json::to_string(&service.snapshot()).unwrap(),
+    );
+    assert_eq!(server.bodies(), ["initial"]);
+    assert!(service.snapshot().files.is_empty());
+    file(&root, "GOOD", "returned");
+    wait("configured path returns", || {
+        server.bodies().contains(&"returned".into())
+    });
+    service.shutdown();
+    assert_eq!(server.bodies(), ["initial", "returned"]);
+}
+
+#[test]
+fn real_worker_retries_failed_scans_without_reconfiguration() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    file(&root, "GOOD", "initial");
+    // The scan limit counts all entries. Regular files trigger the same error
+    // without Windows directory capabilities blocking concurrent removal.
+    for index in 0..1000 {
+        std::fs::write(root.join(format!("WTF/Account/EXCESS-{index}")), "").unwrap();
+    }
+    let server = Server::new(vec![]);
+    let mut io = io(&temp, &server);
+    io.watcher_setup_fails = true;
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io.clone());
+    wait("scan error", || {
+        service
+            .snapshot()
+            .error
+            .is_some_and(|error| error.contains("too many entries"))
+    });
+    assert_eq!(
+        service.snapshot().error.as_deref(),
+        Some("WoW account directory contains too many entries. Sync will retry automatically.")
+    );
+    assert!(server.bodies().is_empty());
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 0);
+    // Remove the problem without changing the configured folder or asking for
+    // sync. A discarded watcher must not leave a 30-second retry deadline.
+    for index in 0..1000 {
+        std::fs::remove_file(root.join(format!("WTF/Account/EXCESS-{index}"))).unwrap();
+    }
+    wait("scan recovered automatically", || {
+        service.snapshot().last_success.is_some()
+    });
+    wait_for_worker_passes(&io, 3);
+    service.shutdown();
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 1);
+    assert_eq!(server.bodies(), ["initial"]);
 }
 
 #[test]
