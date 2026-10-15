@@ -25,6 +25,18 @@ pub(crate) fn on_second_instance(app: &AppHandle, _args: &[String]) {
     reveal_main(app);
 }
 
+/// macOS relaunches an existing application through its delegate, without
+/// starting a second process. Ready is deliberately ignored: startup visibility
+/// is owned by setup, including any hidden login launch policy.
+pub(crate) fn on_run_event(app: &AppHandle, event: &tauri::RunEvent) {
+    #[cfg(target_os = "macos")]
+    if matches!(event, tauri::RunEvent::Reopen { .. }) {
+        reveal_main(app);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, event);
+}
+
 /// Close keeps the app-lifetime worker alive. Real and isolated builders use this.
 pub(crate) fn on_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {

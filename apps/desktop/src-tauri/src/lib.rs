@@ -93,6 +93,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Error while building the Wowthing Sync application")
         .run(|app, event| {
+            crate::window_lifecycle::on_run_event(app, &event);
             if matches!(event, tauri::RunEvent::Exit) {
                 use tauri::Manager;
                 app.state::<sync_service::SyncService>().shutdown();

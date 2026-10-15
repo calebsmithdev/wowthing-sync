@@ -564,10 +564,17 @@ launched locally.
 
 ### Second-launch window recovery (#56)
 
-Second-instance callbacks, tray Open Window/Check for Updates, non-macOS tray
-left-click and notification tap share `window_lifecycle::reveal_main`. It
+macOS `RunEvent::Reopen`, second-instance callbacks, tray Open Window/Check for
+Updates, non-macOS tray left-click and notification tap share `window_lifecycle::reveal_main`. It
 unminimizes, shows and focuses the main window, then emits `window-visibility`
 true after a successful show. Missing windows and OS errors are logged without
 panicking. Native integration invokes the shared second-instance handler without
 registering the single-instance plugin, and requires `secondInstanceReopened`
-plus display-clock stop/resume after a second hide/reopen cycle.
+plus display-clock stop/resume after a second hide/reopen cycle. Fixture recovery
+requests require the window to be hidden immediately before dispatch. On macOS,
+the fixture calls the native application delegate to exercise Tao/Tauri Reopen
+and requires `runEventReopened`; other platforms report that event as unsupported.
+macOS/Windows additionally require bounded native minimize/restore and display
+clock checks (`minimizedRestored`). Linux reports that check as unverified because
+the harness does not require a window manager. Ready/startup visibility and worker
+shutdown remain separate from the Reopen handler.
