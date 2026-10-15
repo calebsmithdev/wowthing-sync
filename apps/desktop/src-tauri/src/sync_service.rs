@@ -155,6 +155,11 @@ pub(crate) trait WorkerIo: Send + Sync + 'static {
     fn client(&self) -> Result<reqwest::Client, String> {
         crate::commands::submit_addon_data::http_client()
     }
+    /// Per-worker setup failure injection; never shared across parallel tests.
+    #[cfg(test)]
+    fn watcher_setup_fails(&self) -> bool {
+        false
+    }
     fn endpoint(&self) -> &str {
         crate::commands::submit_addon_data::WOWTHING_UPLOAD_ENDPOINT
     }
@@ -477,6 +482,7 @@ fn run(
     let mut batch = BatchSummary::default();
     let mut active_generation = 0;
     let mut watcher: Option<CollectorWatcher> = None;
+    let mut watcher_setup_attempted = false;
     let mut next_scan = Instant::now();
     publish(&io, &shared, &state);
     while !stopping.load(Ordering::Acquire) {
@@ -511,6 +517,7 @@ fn run(
                         .map(|root| root.path().to_string_lossy().into_owned());
                     approved = root;
                     watcher = None;
+                    watcher_setup_attempted = false;
                     previous.clear();
                     cache.clear();
                     queue = Default::default();
@@ -575,6 +582,7 @@ fn run(
             Ok((fresh, false)) => {
                 approved = Some(fresh);
                 watcher = None;
+                watcher_setup_attempted = false;
                 // Restored files may preserve old metadata but contain new bytes.
                 cache.clear();
             }
@@ -582,6 +590,7 @@ fn run(
             Err(error) => {
                 approved = None;
                 watcher = None;
+                watcher_setup_attempted = false;
                 cache.clear();
                 next_scan = Instant::now() + FALLBACK_INTERVAL;
                 state.error = Some(format!("{error} Sync will retry automatically."));
@@ -614,6 +623,7 @@ fn run(
             Err(error) => {
                 approved = None;
                 watcher = None;
+                watcher_setup_attempted = false;
                 cache.clear();
                 next_scan = Instant::now() + FALLBACK_INTERVAL;
                 state.error = Some(format!("{error} Sync will retry automatically."));
@@ -623,10 +633,19 @@ fn run(
                 continue;
             }
         };
-        // Recursive setup can be expensive. A persistent scan failure must not
-        // recreate a watcher on every one-second retry.
-        if watcher.is_none() {
-            watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+        // Recursive setup can be expensive. Attempt only after a successful
+        // scan, once per held root, including when setup itself fails. Failed or
+        // unhealthy watchers retain polling until this root is discarded/reset.
+        if !watcher_setup_attempted {
+            watcher_setup_attempted = true;
+            #[cfg(test)]
+            let setup_failed = io.watcher_setup_fails();
+            #[cfg(not(test))]
+            let setup_failed = false;
+            if !setup_failed {
+                watcher =
+                    CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+            }
         }
         let watching = watcher.as_ref().is_some_and(CollectorWatcher::healthy);
         next_scan = Instant::now()
