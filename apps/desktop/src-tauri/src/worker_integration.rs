@@ -310,6 +310,7 @@ fn real_worker_recovers_deleted_and_replaced_roots_without_reconfiguration() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("_retail_");
     let backup = temp.path().join("_retail_.bak");
+    let staged = temp.path().join("_retail_.staged");
     file(&root, "GOOD", "initial");
     file(&root, "UNCHANGED", "unchanged");
     let server = Server::new(vec![]);
@@ -339,16 +340,16 @@ fn real_worker_recovers_deleted_and_replaced_roots_without_reconfiguration() {
         error.contains("selected WoW folder is unavailable"),
         "{error}"
     );
-    assert!(
-        error.contains("Sync will resume when the folder returns"),
-        "{error}"
-    );
-    assert!(error.contains("If it moved, choose it again"), "{error}");
+    assert!(error.contains("Sync will retry automatically."), "{error}");
+    assert_eq!(error.matches("choose it again").count(), 1, "{error}");
     assert!(missing.files.is_empty());
     assert_eq!(server.bodies(), ["initial", "unchanged"]);
 
-    file(&root, "UNCHANGED", "unchanged");
-    file(&root, "GOOD", "restored");
+    // Publish a complete tree at once: a scan during staged writes could
+    // legitimately forget temporarily absent accounts and upload them again.
+    file(&staged, "UNCHANGED", "unchanged");
+    file(&staged, "GOOD", "restored");
+    std::fs::rename(&staged, &root).unwrap();
     wait("restored root uploaded automatically", || {
         server.bodies().contains(&"restored".into())
             && service.snapshot().error.is_none()
@@ -359,9 +360,10 @@ fn real_worker_recovers_deleted_and_replaced_roots_without_reconfiguration() {
 
     // The held Dir still reads the renamed tree; only handle identity reveals
     // that a valid new directory now occupies the configured path.
+    file(&staged, "UNCHANGED", "unchanged");
+    file(&staged, "GOOD", "replaced");
     std::fs::rename(&root, &backup).unwrap();
-    file(&root, "UNCHANGED", "unchanged");
-    file(&root, "GOOD", "replaced");
+    std::fs::rename(&staged, &root).unwrap();
     file(&backup, "GOOD", "must never upload from backup");
     wait_with_timeout(
         "replacement root uploaded automatically",
@@ -447,6 +449,10 @@ fn real_worker_retries_failed_scans_without_reconfiguration() {
             .error
             .is_some_and(|error| error.contains("too many entries"))
     });
+    assert_eq!(
+        service.snapshot().error.as_deref(),
+        Some("WoW account directory contains too many entries. Sync will retry automatically.")
+    );
     assert!(server.bodies().is_empty());
     // Remove the problem without changing the configured folder or asking for
     // sync. A discarded watcher must not leave a 30-second retry deadline.

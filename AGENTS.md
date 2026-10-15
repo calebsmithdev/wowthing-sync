@@ -420,9 +420,14 @@ with `same-file`, so a renamed tree cannot keep supplying uploads after a new
 tree replaces it. Open, identity, or scan errors discard the held capability,
 watcher and metadata cache, then retry at the one-second fallback interval.
 The status explains automatic recovery and choosing a moved folder again.
-Content hashes and queued work survive recovery; unchanged accounts are not
-uploaded again. Unix real-worker fixtures cover deletion/recreation and rename
-replacement against loopback HTTP. Windows held-handle rename/delete behavior
+Replacement watchers start only after a successful scan; failed scans retain
+one-second polling without repeatedly setting up recursive watchers. Content
+hashes and queued work survive recovery; accounts with unchanged content that
+remain present across successful scans are not uploaded again. A successful
+scan that temporarily omits an account can cause a later upload when it returns.
+Unix real-worker fixtures publish complete staged trees by rename for
+whole-tree deletion/recreation and rename replacement against loopback HTTP.
+Windows held-handle rename/delete behavior
 still requires platform evidence. This adds no frontend capability or new
 symlink policy; reopening has the same trust as restarting the app.
 
