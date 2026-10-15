@@ -347,8 +347,10 @@ fn real_worker_attempts_failed_watcher_setup_once_until_reconfigured_or_scan_err
     wait_for_worker_passes(&io, 3);
     assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
 
+    // The scan limit counts all entries. Regular files trigger the same error
+    // without Windows directory capabilities blocking concurrent removal.
     for index in 0..1000 {
-        std::fs::create_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
+        std::fs::write(root.join(format!("WTF/Account/EXCESS-{index}")), "").unwrap();
     }
     wait("root discarded after scan error", || {
         service
@@ -359,7 +361,7 @@ fn real_worker_attempts_failed_watcher_setup_once_until_reconfigured_or_scan_err
     wait_for_worker_passes(&io, 3);
     assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
     for index in 0..1000 {
-        std::fs::remove_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
+        std::fs::remove_file(root.join(format!("WTF/Account/EXCESS-{index}"))).unwrap();
     }
     wait("watcher setup after scan recovery", || {
         io.watcher_setup_attempts.load(Ordering::Acquire) == 3
@@ -438,13 +440,21 @@ fn real_worker_recovers_deleted_and_replaced_roots_without_reconfiguration() {
             && service.snapshot().pending == 0
     });
 
-    std::fs::remove_dir_all(&root).unwrap();
+    // Detach the whole tree before deleting it so a scan cannot observe
+    // individual accounts disappearing and legitimately forget their uploads.
+    std::fs::rename(&root, &backup).unwrap();
     // Native events are hints; allow the 30-second reconciliation if deletion
     // or rename does not wake a platform watcher. No manual sync/configure calls.
     wait_with_timeout(
         "deleted root unavailable",
         RECONCILE_INTERVAL + Duration::from_secs(10),
-        || service.snapshot().error.is_some(),
+        // Wait for the missing-root state, rather than any intermediate error.
+        || {
+            service
+                .snapshot()
+                .error
+                .is_some_and(|error| error.contains("selected WoW folder is unavailable"))
+        },
         || serde_json::to_string(&service.snapshot()).unwrap(),
     );
     let missing = service.snapshot();
@@ -457,6 +467,7 @@ fn real_worker_recovers_deleted_and_replaced_roots_without_reconfiguration() {
     assert_eq!(error.matches("choose it again").count(), 1, "{error}");
     assert!(missing.files.is_empty());
     assert_eq!(server.bodies(), ["initial", "unchanged"]);
+    std::fs::remove_dir_all(&backup).unwrap();
 
     // Publish a complete tree at once: a scan during staged writes could
     // legitimately forget temporarily absent accounts and upload them again.
@@ -547,8 +558,10 @@ fn real_worker_retries_failed_scans_without_reconfiguration() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("_retail_");
     file(&root, "GOOD", "initial");
+    // The scan limit counts all entries. Regular files trigger the same error
+    // without Windows directory capabilities blocking concurrent removal.
     for index in 0..1000 {
-        std::fs::create_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
+        std::fs::write(root.join(format!("WTF/Account/EXCESS-{index}")), "").unwrap();
     }
     let server = Server::new(vec![]);
     let mut io = io(&temp, &server);
@@ -573,7 +586,7 @@ fn real_worker_retries_failed_scans_without_reconfiguration() {
     // Remove the problem without changing the configured folder or asking for
     // sync. A discarded watcher must not leave a 30-second retry deadline.
     for index in 0..1000 {
-        std::fs::remove_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
+        std::fs::remove_file(root.join(format!("WTF/Account/EXCESS-{index}"))).unwrap();
     }
     wait("scan recovered automatically", || {
         service.snapshot().last_success.is_some()
