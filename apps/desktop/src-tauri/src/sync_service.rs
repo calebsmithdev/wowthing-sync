@@ -324,7 +324,9 @@ impl SyncService {
         ))?;
         root.metadata(Path::new(&file))?;
         self.sender
-            .send(Request::File(PathBuf::from(file)))
+            .send(Request::File(
+                dunce::simplified(Path::new(&file)).to_path_buf(),
+            ))
             .map_err(|_| "Sync service stopped".into())
     }
     pub fn manual(&self) -> Result<(), String> {
@@ -446,9 +448,13 @@ fn run(
     state.error = key.err();
     match io.preferences() {
         Ok(store) => {
-            state.folder = store
-                .get("program-folder")
-                .and_then(|v| v.as_str().map(String::from));
+            state.folder = store.get("program-folder").and_then(|v| {
+                v.as_str().map(|folder| {
+                    dunce::simplified(Path::new(folder))
+                        .to_string_lossy()
+                        .into_owned()
+                })
+            });
             state.last_success = stored_last_success(
                 store
                     .get("last-success")
@@ -457,6 +463,7 @@ fn run(
             state.uploads = store
                 .get("account-uploads")
                 .and_then(|value| serde_json::from_value(value).ok())
+                .map(simplify_upload_keys)
                 .unwrap_or_default();
         }
         Err(e) => state.error = Some(e.to_string()),
@@ -696,6 +703,20 @@ fn run(
         next_scan = Instant::now();
     }
 }
+fn simplify_upload_keys(uploads: BTreeMap<String, u64>) -> BTreeMap<String, u64> {
+    let mut simplified = BTreeMap::<String, u64>::new();
+    for (path, time) in uploads {
+        let path = dunce::simplified(Path::new(&path))
+            .to_string_lossy()
+            .into_owned();
+        // A mixed old/new store can contain both spellings. Keep the latest upload.
+        simplified
+            .entry(path)
+            .and_modify(|latest| *latest = (*latest).max(time))
+            .or_insert(time);
+    }
+    simplified
+}
 #[tauri::command]
 pub fn get_sync_status(service: tauri::State<'_, SyncService>) -> SyncStatus {
     service.snapshot()
@@ -708,6 +729,37 @@ pub fn sync_now(service: tauri::State<'_, SyncService>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn upload_keys_simplify_safely_and_keep_latest_time() {
+        let file = r"C:\WoW\WTF\Account\MAIN\SavedVariables\WoWthing_Collector.lua";
+        let verbatim = format!(r"\\?\{file}");
+        let unsafe_path = r"\\?\C:\WoW\NUL\WoWthing_Collector.lua";
+        let uploads = simplify_upload_keys(BTreeMap::from([
+            (file.into(), 200),
+            (verbatim, 100),
+            (unsafe_path.into(), 300),
+        ]));
+        assert_eq!(
+            uploads,
+            BTreeMap::from([(file.into(), 200), (unsafe_path.into(), 300)])
+        );
+    }
+    #[cfg(not(windows))]
+    #[test]
+    fn upload_keys_are_unchanged_outside_windows() {
+        let uploads = BTreeMap::from([
+            (
+                "/tmp/WoW/WTF/Account/MAIN/SavedVariables/WoWthing_Collector.lua".into(),
+                100,
+            ),
+            (
+                r"\\?\C:\WoW\WTF\Account\MAIN\SavedVariables\WoWthing_Collector.lua".into(),
+                200,
+            ),
+        ]);
+        assert_eq!(simplify_upload_keys(uploads.clone()), uploads);
+    }
     #[test]
     fn watcher_filters_reads_and_unrelated_addons_but_tracks_replacements() {
         use notify::{

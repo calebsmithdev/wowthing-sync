@@ -404,6 +404,105 @@ fn real_worker_discovers_replaces_coalesces_validates_and_persists_across_restar
     );
     service.shutdown();
 }
+#[cfg(windows)]
+#[test]
+fn real_worker_simplifies_legacy_paths_without_startup_writes() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("WoW Unicode 雪 with spaces");
+    file(&root, "SYNTHETIC", "initial");
+    let canonical = root.canonicalize().unwrap();
+    // Match the persisted scan spelling, including Windows' accepted mixed separators.
+    let collector = canonical
+        .join("WTF/Account")
+        .join("SYNTHETIC")
+        .join("SavedVariables")
+        .join("WoWthing_Collector.lua");
+    let folder = dunce::simplified(&canonical).to_string_lossy().into_owned();
+    let file = dunce::simplified(&collector).to_string_lossy().into_owned();
+    assert!(canonical.to_string_lossy().starts_with(r"\\?\"));
+    let server = Server::new(vec![]);
+    let mut io = io(&temp, &server);
+    let legacy_uploads = serde_json::json!({collector.to_string_lossy().into_owned(): 123});
+    io.store
+        .commit_many([
+            ("program-folder", Some(serde_json::json!(canonical))),
+            ("account-uploads", Some(legacy_uploads.clone())),
+        ])
+        .unwrap();
+    io.key = Ok(None); // Observe read migration before a successful upload can persist it.
+    let service = SyncService::start_with_io(io.clone());
+    wait("legacy path hydration", || {
+        service.snapshot().uploads.get(&file) == Some(&123)
+    });
+    assert_eq!(service.snapshot().folder.as_deref(), Some(folder.as_str()));
+    assert_eq!(io.store.get("account-uploads"), Some(legacy_uploads));
+    assert_eq!(
+        io.store.get("program-folder"),
+        Some(serde_json::json!(canonical))
+    );
+    service.shutdown();
+
+    io.key = Ok(Some("synthetic-worker-key".into()));
+    let service = SyncService::start_with_io(io.clone());
+    wait("normalized upload persistence", || {
+        io.store
+            .get("account-uploads")
+            .is_some_and(|value| value[&file].as_u64().is_some_and(|time| time > 123))
+    });
+    assert_eq!(service.snapshot().files, [file.clone()]);
+    assert_eq!(service.snapshot().folder.as_deref(), Some(folder.as_str()));
+    assert_eq!(
+        service.snapshot().uploads.keys().collect::<Vec<_>>(),
+        [&file]
+    );
+    // Legacy submit_addon_data callers remain accepted and cannot recreate old keys.
+    service
+        .enqueue_file(collector.to_string_lossy().into_owned())
+        .unwrap();
+    wait("legacy manual upload", || {
+        server.bodies().len() >= 2 && !service.snapshot().is_processing
+    });
+    service.shutdown();
+    assert_eq!(
+        service.snapshot().uploads.keys().collect::<Vec<_>>(),
+        [&file]
+    );
+    let persisted = io.store.get("account-uploads").unwrap();
+    assert_eq!(
+        persisted.as_object().unwrap().keys().collect::<Vec<_>>(),
+        [&file]
+    );
+    assert!(io.states.lock().unwrap().iter().all(|status| {
+        status
+            .folder
+            .iter()
+            .chain(status.files.iter())
+            .chain(status.uploads.keys())
+            .all(|path| !path.starts_with(r"\\?\"))
+    }));
+}
+
+#[cfg(windows)]
+#[test]
+fn real_worker_simplifies_unavailable_legacy_folder_without_writing_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let missing = temp.path().canonicalize().unwrap().join("missing");
+    let server = Server::new(vec![]);
+    let io = io(&temp, &server);
+    io.store
+        .commit("program-folder", Some(serde_json::json!(missing)))
+        .unwrap();
+    let service = SyncService::start_with_io(io.clone());
+    let expected = dunce::simplified(&missing).to_string_lossy().into_owned();
+    wait("unavailable folder display", || {
+        service.snapshot().folder.as_deref() == Some(expected.as_str())
+    });
+    service.shutdown();
+    assert_eq!(
+        io.store.get("program-folder"),
+        Some(serde_json::json!(missing))
+    );
+}
 #[test]
 fn real_worker_keeps_writes_during_upload_and_cancels_folder_changes_and_shutdown() {
     let temp = tempfile::tempdir().unwrap();

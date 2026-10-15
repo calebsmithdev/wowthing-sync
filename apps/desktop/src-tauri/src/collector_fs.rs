@@ -12,18 +12,23 @@ pub type ScanFailures = Vec<(PathBuf, String)>;
 pub type ScanResult = (Vec<PathBuf>, ScanFailures);
 pub struct ApprovedRoot {
     path: PathBuf,
+    canonical: PathBuf,
     dir: Dir,
 }
 impl ApprovedRoot {
     pub fn open(path: &Path) -> Result<Self, String> {
-        let path = path.canonicalize().map_err(|_| {
+        let canonical = path.canonicalize().map_err(|_| {
             "The selected WoW folder is unavailable. Choose it again in Settings.".to_string()
         })?;
-        let dir = Dir::open_ambient_dir(&path, cap_std::ambient_authority())
+        let dir = Dir::open_ambient_dir(&canonical, cap_std::ambient_authority())
             .map_err(|_| "Cannot open selected WoW folder".to_string())?;
         dir.open_dir("WTF/Account")
             .map_err(|_| "Choose the _retail_ folder containing WTF/Account.".to_string())?;
-        Ok(Self { path, dir })
+        Ok(Self {
+            path: dunce::simplified(&canonical).to_path_buf(),
+            canonical,
+            dir,
+        })
     }
     pub fn path(&self) -> &Path {
         &self.path
@@ -31,6 +36,9 @@ impl ApprovedRoot {
     fn relative(&self, path: &Path) -> Result<PathBuf, String> {
         let relative = path
             .strip_prefix(&self.path)
+            // Older clients may still submit the canonical Windows verbatim path.
+            // Both spellings resolve only through the held directory capability.
+            .or_else(|_| path.strip_prefix(&self.canonical))
             .map_err(|_| "Collector must be inside the selected WoW folder".to_string())?;
         let parts: Vec<_> = relative.components().collect();
         if parts.len() != 5
@@ -205,6 +213,20 @@ mod tests {
         let file = approved
             .path()
             .join("WTF/Account/SYNTHETIC/SavedVariables/WoWthing_Collector.lua");
+        assert!(!approved.path().to_string_lossy().starts_with(r"\\?\"));
+        assert_eq!(approved.discover().unwrap(), [file.clone()]);
+        assert_eq!(approved.read(&file).unwrap(), b"synthetic");
+        assert_eq!(
+            approved.read(&file.canonicalize().unwrap()).unwrap(),
+            b"synthetic"
+        );
+        assert!(approved
+            .read(
+                &approved
+                    .canonical
+                    .join("WTF/Account/SYNTHETIC/SavedVariables/../WoWthing_Collector.lua")
+            )
+            .is_err());
         let outside = temp.path().join("outside.lua");
         std::fs::write(&outside, "must not escape").unwrap();
         std::fs::remove_file(&file).unwrap();

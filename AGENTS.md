@@ -480,6 +480,13 @@ probes and real distribution signing still require hosted/manual evidence.
 
 ### Background performance (2026-10-07)
 
+Windows collector roots expose `dunce::simplified` paths in settings, sync status
+and newly saved preferences; unsafe verbatim paths remain unchanged. The held
+directory capability opens from the canonical path and accepts both spellings
+for legacy collector submissions. Legacy folder/upload paths normalize on read
+without startup writes; the next successful upload persists normalized upload
+keys. Windows-only regression tests run through the existing native CI matrix.
+
 The native `notify` watcher observes the selected `WTF/Account` tree only as a
 change hint; event paths never authorize reads. Recursive symlink following is
 disabled where the backend supports it. Discovery, file limits and uploads still

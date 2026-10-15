@@ -23,9 +23,13 @@ fn snapshot(app: &tauri::AppHandle) -> Result<SettingsSnapshot, String> {
         crate::preferences::store(app).map_err(|_| "Could not read settings".to_string())?;
     let auto_start = NativeAutoStart(app).actual();
     Ok(SettingsSnapshot {
-        folder: store
-            .get("program-folder")
-            .and_then(|v| v.as_str().map(String::from)),
+        folder: store.get("program-folder").and_then(|v| {
+            v.as_str().map(|folder| {
+                dunce::simplified(std::path::Path::new(folder))
+                    .to_string_lossy()
+                    .into_owned()
+            })
+        }),
         has_api_key: app
             .state::<crate::credentials::SecretManager>()
             .status()
@@ -226,6 +230,26 @@ pub fn default_wow_folder(app: tauri::AppHandle) -> Result<String, String> {
 mod tests {
     use super::*;
     use std::cell::Cell;
+    #[cfg(windows)]
+    #[test]
+    fn folder_commit_persists_simplified_path() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("WTF/Account")).unwrap();
+        let canonical = temp.path().canonicalize().unwrap();
+        assert!(canonical.to_string_lossy().starts_with(r"\\?\"));
+        let expected = dunce::simplified(&canonical).to_string_lossy();
+        commit_folder(
+            crate::collector_fs::ApprovedRoot::open(&canonical).unwrap(),
+            |folder| {
+                assert_eq!(folder, expected);
+                assert!(!folder.starts_with(r"\\?\"));
+                Ok(())
+            },
+            |_| Ok(()),
+            || panic!("successful activation must not roll back"),
+        )
+        .unwrap();
+    }
     struct FakeStart {
         enabled: Cell<bool>,
         fail: bool,
