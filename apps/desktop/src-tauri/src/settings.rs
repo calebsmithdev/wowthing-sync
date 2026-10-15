@@ -105,6 +105,47 @@ impl AutoStart for NativeAutoStart<'_> {
             .commit("fixture-autostart", Some(serde_json::json!(enabled)))
     }
 }
+// Refresh only existing enabled registrations. A failed rewrite can leave changed
+// arguments behind; the plugin cannot restore them, so never attempt a rollback.
+#[cfg(any(test, not(feature = "integration-test")))]
+fn refresh_registration(
+    os: &impl AutoStart,
+    done: bool,
+    mark: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if done {
+        return Ok(());
+    }
+    if os.actual()? {
+        os.set(true)?;
+        if !os.actual()? {
+            return Err("OS did not accept launch-at-login registration refresh".into());
+        }
+    }
+    mark()
+}
+
+#[cfg(not(feature = "integration-test"))]
+pub fn refresh_login_registration(app: &tauri::AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let manager = app.state::<SettingsManager>();
+        let _guard = manager.gate.lock().unwrap_or_else(|e| e.into_inner());
+        let result = (|| {
+            let store = crate::preferences::store(&app)?;
+            let done = store.get("autostart-args-version").and_then(|v| v.as_u64()) == Some(1);
+            refresh_registration(&NativeAutoStart(&app), done, || {
+                store.commit("autostart-args-version", Some(serde_json::json!(1)))
+            })
+        })();
+        if let Err(error) = result {
+            log::warn!(
+                "Could not refresh launch-at-login registration; will retry next launch: {error}"
+            );
+        }
+    });
+}
+
 fn commit_autostart(
     os: &impl AutoStart,
     enabled: bool,
@@ -301,6 +342,115 @@ mod tests {
         };
         commit_autostart(&os, true, |_| Ok(())).unwrap();
         assert!(os.enabled.get());
+    }
+    struct RefreshStart {
+        os: FakeStart,
+        reads: std::cell::RefCell<std::collections::VecDeque<Result<bool, String>>>,
+        calls: std::cell::RefCell<Vec<String>>,
+    }
+    impl AutoStart for RefreshStart {
+        fn actual(&self) -> Result<bool, String> {
+            self.calls.borrow_mut().push("actual".into());
+            self.reads
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_else(|| self.os.actual())
+        }
+        fn set(&self, enabled: bool) -> Result<(), String> {
+            self.calls.borrow_mut().push(format!("set({enabled})"));
+            self.os.set(enabled)
+        }
+    }
+    fn refresh_start(enabled: bool, fail: bool, reads: Vec<Result<bool, String>>) -> RefreshStart {
+        RefreshStart {
+            os: FakeStart {
+                enabled: Cell::new(enabled),
+                fail,
+                reject: false,
+            },
+            reads: std::cell::RefCell::new(reads.into()),
+            calls: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+    #[test]
+    fn refresh_rewrites_and_verifies_enabled_registration_before_marking_once() {
+        let os = refresh_start(true, false, vec![]);
+        let done = Cell::new(false);
+        refresh_registration(&os, done.get(), || {
+            assert_eq!(*os.calls.borrow(), ["actual", "set(true)", "actual"]);
+            done.set(true);
+            Ok(())
+        })
+        .unwrap();
+        refresh_registration(&os, done.get(), || panic!("must not mark twice")).unwrap();
+        assert_eq!(*os.calls.borrow(), ["actual", "set(true)", "actual"]);
+        assert!(os.os.enabled.get());
+    }
+    #[test]
+    fn refresh_marks_disabled_without_changing_registration() {
+        let os = refresh_start(false, false, vec![]);
+        let marked = Cell::new(false);
+        refresh_registration(&os, false, || {
+            marked.set(true);
+            Ok(())
+        })
+        .unwrap();
+        assert!(marked.get());
+        assert!(!os.os.enabled.get());
+        assert_eq!(*os.calls.borrow(), ["actual"]);
+    }
+    #[test]
+    fn completed_refresh_never_reads_or_changes_os_state() {
+        let os = refresh_start(true, true, vec![Err("unavailable".into())]);
+        refresh_registration(&os, true, || panic!("already done")).unwrap();
+        assert!(os.calls.borrow().is_empty());
+    }
+    #[test]
+    fn refresh_failures_never_mark_or_disable_and_can_retry() {
+        for (fail, reads, expected_calls) in [
+            (false, vec![Err("unavailable".into())], vec!["actual"]),
+            (true, vec![], vec!["actual", "set(true)"]),
+            (
+                false,
+                vec![Ok(true), Err("verification failed".into())],
+                vec!["actual", "set(true)", "actual"],
+            ),
+            (
+                false,
+                vec![Ok(true), Ok(false)],
+                vec!["actual", "set(true)", "actual"],
+            ),
+        ] {
+            let os = refresh_start(true, fail, reads);
+            assert!(refresh_registration(&os, false, || panic!("must not mark failure")).is_err());
+            assert_eq!(*os.calls.borrow(), expected_calls);
+            assert!(os.os.enabled.get());
+        }
+        let os = refresh_start(true, false, vec![Err("temporarily unavailable".into())]);
+        assert!(refresh_registration(&os, false, || panic!("must not mark failure")).is_err());
+        refresh_registration(&os, false, || Ok(())).unwrap();
+        assert_eq!(
+            *os.calls.borrow(),
+            ["actual", "actual", "set(true)", "actual"]
+        );
+    }
+    #[test]
+    fn refresh_persistence_failure_retries_without_rollback() {
+        let os = refresh_start(true, false, vec![]);
+        assert!(refresh_registration(&os, false, || Err("disk failed".into())).is_err());
+        assert_eq!(*os.calls.borrow(), ["actual", "set(true)", "actual"]);
+        refresh_registration(&os, false, || Ok(())).unwrap();
+        assert_eq!(
+            *os.calls.borrow(),
+            [
+                "actual",
+                "set(true)",
+                "actual",
+                "actual",
+                "set(true)",
+                "actual"
+            ]
+        );
     }
     #[test]
     fn failed_folder_activation_rolls_back_and_disk_failure_does_not_activate() {

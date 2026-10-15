@@ -28,7 +28,9 @@ pub fn run() {
     let mut context = tauri::generate_context!();
     context.config_mut().app.windows.clear();
     context.config_mut().identifier = format!("com.calebsmithdev.{unique}");
-    let autostart = tauri_plugin_autostart::Builder::new().app_name(&unique);
+    let autostart = tauri_plugin_autostart::Builder::new()
+        .app_name(&unique)
+        .arg(crate::setup::desktop::AUTOSTART_ARG);
     #[cfg(target_os = "macos")]
     let autostart = autostart.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
     tauri::Builder::default()
@@ -42,7 +44,7 @@ pub fn run() {
                 if manager.is_enabled().map_err(|e| e.to_string())? { return Err("unique autostart identity unexpectedly exists".into()); }
                 manager.enable().map_err(|e| e.to_string())?;
                 if !manager.is_enabled().map_err(|e| e.to_string())? { return Err("autostart registration not observable".into()); }
-                Ok(())
+                verify_autostart_marker(app.handle(), &unique)
             })();
             // Always remove our unique identity, even when verification failed.
             let cleanup = manager.disable().map_err(|e| e.to_string()).and_then(|()| {
@@ -54,4 +56,57 @@ pub fn run() {
             Ok(())
         })
         .run(context).expect("isolated OS probe failed");
+}
+
+// Inspect only this probe's unique artifact. This proves registration contents,
+// not argument delivery by the OS during a real login.
+fn verify_autostart_marker(app: &tauri::AppHandle, unique: &str) -> Result<(), String> {
+    const ARG: &str = crate::setup::desktop::AUTOSTART_ARG;
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    let contents = {
+        use tauri::Manager;
+        let home = app.path().home_dir().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        let path = home
+            .join("Library/LaunchAgents")
+            .join(format!("{unique}.plist"));
+        #[cfg(target_os = "linux")]
+        let path = home
+            .join(".config/autostart")
+            .join(format!("{unique}.desktop"));
+        std::fs::read_to_string(path).map_err(|e| e.to_string())?
+    };
+    #[cfg(target_os = "macos")]
+    let present = contents
+        .split_once("<key>ProgramArguments</key>")
+        .and_then(|(_, tail)| tail.split_once("</array>"))
+        .is_some_and(|(args, _)| args.contains(&format!("<string>{ARG}</string>")));
+    #[cfg(target_os = "linux")]
+    let present = contents
+        .lines()
+        .find_map(|line| line.strip_prefix("Exec="))
+        .is_some_and(|command| command.split_whitespace().last() == Some(ARG));
+    #[cfg(windows)]
+    let present = {
+        let _ = app;
+        // auto-launch's Dynamic mode tries HKLM first, then HKCU on access denial.
+        let mut present = false;
+        for hive in ["HKLM", "HKCU"] {
+            let key = format!(r"{hive}\Software\Microsoft\Windows\CurrentVersion\Run");
+            let output = std::process::Command::new("reg.exe")
+                .args(["query", &key, "/v", unique])
+                .output()
+                .map_err(|e| e.to_string())?;
+            if output.status.success() {
+                present |= String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+                    line.contains("REG_SZ") && line.split_whitespace().last() == Some(ARG)
+                });
+            }
+        }
+        present
+    };
+    if !present {
+        return Err("Autostart registration is missing the login marker".into());
+    }
+    Ok(())
 }

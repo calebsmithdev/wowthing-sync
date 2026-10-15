@@ -78,7 +78,11 @@ launch. Mac runs a writable temporary `.app`, so it never asks for an admin prom
 OS probes require `WOWTHING_OS_TESTS=1`, `GITHUB_ACTIONS=true` and
 `RUNNER_ENVIRONMENT=github-hosted` before any daemon/store/autostart operation.
 Every credential service/account and autostart app is unique and cleanup is
-verified, including recovery cleanup. Linux starts a private Secret Service in
+verified, including recovery cleanup. The autostart probe also requires the exact
+`--autostart` argument in its scoped LaunchAgent plist, Windows Run value (HKLM
+or HKCU), or Linux desktop entry. This checks registration contents; actual
+argument delivery at login remains a manual release check.
+Linux starts a private Secret Service in
 an owned DBus session and temporary XDG paths; a separate invalid socket tests
 unavailable-backend errors. A missing backend fails, rather than passing as a
 skip. Do not run these on developer machines or self-hosted runners.
@@ -122,6 +126,12 @@ consumer VMs before replacing this checklist with automated jobs.
   approve expected credential prompts and verify a real signed production update.
 - Approve/deny notification consent and confirm delivery, disabled behavior and
   OS settings links; hosted probes do not claim actual consent/delivery coverage.
+- In a disposable profile, confirm an enabled pre-marker registration is refreshed
+  once, a disabled registration stays disabled, login starts with no window, and
+  a manual launch opens the window. Confirm a marked second instance keeps the
+  running window hidden. Windows paths with spaces need an actual login check:
+  the plugin writes an unquoted executable path. Registration refresh errors
+  retry next launch; prior registration arguments cannot be restored by the plugin.
 - Confirm startup registration/removal and restart/login behavior, real tray
   close/reopen and update actions, minimum OS webview support, Unicode/spaces paths
   and restricted-folder errors. Do not use real upload credentials for testing.
