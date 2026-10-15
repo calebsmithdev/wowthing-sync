@@ -962,14 +962,15 @@ mod tests {
             fingerprints(&approved, &files, &mut Default::default(), VERIFY_INTERVAL);
         assert_eq!(scan_errors.len(), 1);
         assert_eq!(read_errors.len(), 1);
+        let healthy_path = crate::collector_fs::display_path(&candidates[0]);
         assert_eq!(
             prints.keys().cloned().collect::<Vec<_>>(),
-            vec![candidates[0].clone()]
+            vec![healthy_path.clone()]
         );
         let mut queue = crate::sync_queue::SyncQueue::default();
         let now = Instant::now();
         queue.manual(prints.into_keys(), now);
-        assert_eq!(queue.take_ready(now), Some(candidates[0].clone()));
+        assert_eq!(queue.take_ready(now), Some(healthy_path));
         std::fs::write(&candidates[1], "fixed collector").unwrap();
         assert_eq!(
             fingerprints(
@@ -993,7 +994,10 @@ mod tests {
         assert!(discover(&root).unwrap().is_empty());
         let collector = account.join("WoWthing_Collector.lua");
         std::fs::write(&collector, "first").unwrap();
-        assert_eq!(discover(&root).unwrap(), vec![collector.clone()]);
+        assert_eq!(
+            discover(&root).unwrap(),
+            vec![crate::collector_fs::display_path(&collector)]
+        );
         let replacement = account.join("replacement");
         std::fs::write(&replacement, "replacement contents").unwrap();
         std::fs::rename(&replacement, &collector).unwrap();
