@@ -472,13 +472,7 @@ fn run(
     let mut previous = BTreeMap::new();
     let mut scan_failures = BTreeSet::new();
     let mut cache = FingerprintCache::new();
-    let mut approved = state
-        .folder
-        .as_ref()
-        .and_then(|folder| crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok());
-    if let Some(root) = &approved {
-        state.folder = Some(root.path().to_string_lossy().into_owned());
-    }
+    let mut approved: Option<crate::collector_fs::ApprovedRoot> = None;
     let mut queue = crate::sync_queue::SyncQueue::default();
     let mut batch = BatchSummary::default();
     let mut active_generation = 0;
@@ -570,15 +564,42 @@ fn run(
             publish(&io, &shared, &state);
             continue;
         };
-        if approved.is_none() {
-            approved = crate::collector_fs::ApprovedRoot::open(Path::new(folder)).ok();
-            watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+        // A held capability follows a renamed inode. Reopen the configured path
+        // on every pass so moved trees cannot keep supplying uploads.
+        match crate::collector_fs::ApprovedRoot::open(Path::new(folder)).and_then(|fresh| {
+            let same = approved
+                .as_ref()
+                .map_or(Ok(false), |held| held.same_directory(&fresh))?;
+            Ok((fresh, same))
+        }) {
+            Ok((fresh, false)) => {
+                approved = Some(fresh);
+                watcher =
+                    CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+                // Restored files may preserve old metadata but contain new bytes.
+                cache.clear();
+            }
+            Ok((_, true)) => {}
+            Err(error) => {
+                approved = None;
+                watcher = None;
+                cache.clear();
+                next_scan = Instant::now() + FALLBACK_INTERVAL;
+                state.error = Some(format!("{error} Sync will resume when the folder returns. If it moved, choose it again in Settings."));
+                state.files.clear();
+                state.pending = queue.len();
+                publish(&io, &shared, &state);
+                continue;
+            }
         }
-        let Some(root) = &approved else {
-            state.error = Some("WoW folder unavailable. Choose it again in Settings.".into());
-            publish(&io, &shared, &state);
-            continue;
-        };
+        let root = approved.as_ref().expect("successfully reopened WoW folder");
+        let watching = watcher.as_ref().is_some_and(CollectorWatcher::healthy);
+        next_scan = Instant::now()
+            + if watching {
+                RECONCILE_INTERVAL
+            } else {
+                FALLBACK_INTERVAL
+            };
         let result = root.scan().map(|(files, mut failures)| {
             let (prints, read_failures) = fingerprints(
                 root,
@@ -596,7 +617,11 @@ fn run(
         let (prints, failures) = match result {
             Ok(result) => result,
             Err(error) => {
-                state.error = Some(error);
+                approved = None;
+                watcher = None;
+                cache.clear();
+                next_scan = Instant::now() + FALLBACK_INTERVAL;
+                state.error = Some(format!("{error} Sync will resume when the folder returns. If it moved, choose it again in Settings."));
                 state.files.clear();
                 state.pending = queue.len();
                 publish(&io, &shared, &state);

@@ -6162,6 +6162,7 @@ dependencies = [
  "minisign-verify",
  "notify",
  "reqwest",
+ "same-file",
  "serde",
  "serde_json",
  "tauri",

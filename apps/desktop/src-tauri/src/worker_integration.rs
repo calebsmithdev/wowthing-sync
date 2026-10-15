@@ -280,10 +280,18 @@ fn wait_with_diagnostics(
     condition: impl Fn() -> bool,
     diagnostics: impl Fn() -> String,
 ) {
+    wait_with_timeout(label, Duration::from_secs(15), condition, diagnostics);
+}
+fn wait_with_timeout(
+    label: &str,
+    timeout: Duration,
+    condition: impl Fn() -> bool,
+    diagnostics: impl Fn() -> String,
+) {
     let start = Instant::now();
     while !condition() {
         assert!(
-            start.elapsed() < Duration::from_secs(15),
+            start.elapsed() < timeout,
             "timed out: {label}; {}",
             diagnostics()
         );
@@ -294,6 +302,162 @@ fn configure(service: &SyncService, root: &Path) {
     service
         .configure(Some(crate::collector_fs::ApprovedRoot::open(root).unwrap()))
         .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn real_worker_recovers_deleted_and_replaced_roots_without_reconfiguration() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    let backup = temp.path().join("_retail_.bak");
+    file(&root, "GOOD", "initial");
+    file(&root, "UNCHANGED", "unchanged");
+    let server = Server::new(vec![]);
+    let io = io(&temp, &server);
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io);
+    wait("initial uploads drained", || {
+        server.bodies().len() == 2
+            && !service.snapshot().is_processing
+            && service.snapshot().pending == 0
+    });
+
+    std::fs::remove_dir_all(&root).unwrap();
+    // Native events are hints; allow the 30-second reconciliation if deletion
+    // or rename does not wake a platform watcher. No manual sync/configure calls.
+    wait_with_timeout(
+        "deleted root unavailable",
+        RECONCILE_INTERVAL + Duration::from_secs(10),
+        || service.snapshot().error.is_some(),
+        || serde_json::to_string(&service.snapshot()).unwrap(),
+    );
+    let missing = service.snapshot();
+    let error = missing.error.unwrap();
+    assert!(
+        error.contains("selected WoW folder is unavailable"),
+        "{error}"
+    );
+    assert!(
+        error.contains("Sync will resume when the folder returns"),
+        "{error}"
+    );
+    assert!(error.contains("If it moved, choose it again"), "{error}");
+    assert!(missing.files.is_empty());
+    assert_eq!(server.bodies(), ["initial", "unchanged"]);
+
+    file(&root, "UNCHANGED", "unchanged");
+    file(&root, "GOOD", "restored");
+    wait("restored root uploaded automatically", || {
+        server.bodies().contains(&"restored".into())
+            && service.snapshot().error.is_none()
+            && !service.snapshot().is_processing
+            && service.snapshot().pending == 0
+    });
+    assert_eq!(server.bodies(), ["initial", "unchanged", "restored"]);
+
+    // The held Dir still reads the renamed tree; only handle identity reveals
+    // that a valid new directory now occupies the configured path.
+    std::fs::rename(&root, &backup).unwrap();
+    file(&root, "UNCHANGED", "unchanged");
+    file(&root, "GOOD", "replaced");
+    file(&backup, "GOOD", "must never upload from backup");
+    wait_with_timeout(
+        "replacement root uploaded automatically",
+        RECONCILE_INTERVAL + Duration::from_secs(10),
+        || {
+            server.bodies().contains(&"replaced".into())
+                && !service.snapshot().is_processing
+                && service.snapshot().pending == 0
+        },
+        || serde_json::to_string(&service.snapshot()).unwrap(),
+    );
+    file(&backup, "GOOD", "another ignored backup write");
+    file(&root, "GOOD", "current tree write");
+    wait("replacement watcher tracks current tree", || {
+        server.bodies().contains(&"current tree write".into())
+            && !service.snapshot().is_processing
+            && service.snapshot().pending == 0
+    });
+    service.shutdown();
+    assert_eq!(
+        server.bodies(),
+        [
+            "initial",
+            "unchanged",
+            "restored",
+            "replaced",
+            "current tree write"
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn real_worker_stops_reading_moved_roots_while_the_configured_path_is_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    let backup = temp.path().join("_retail_.bak");
+    file(&root, "GOOD", "initial");
+    let server = Server::new(vec![]);
+    let io = io(&temp, &server);
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io);
+    wait("initial upload", || {
+        service.snapshot().last_success.is_some()
+    });
+    std::fs::rename(&root, &backup).unwrap();
+    file(&backup, "GOOD", "must never upload moved data");
+    wait_with_timeout(
+        "moved root unavailable",
+        RECONCILE_INTERVAL + Duration::from_secs(10),
+        || service.snapshot().error.is_some(),
+        || serde_json::to_string(&service.snapshot()).unwrap(),
+    );
+    assert_eq!(server.bodies(), ["initial"]);
+    assert!(service.snapshot().files.is_empty());
+    file(&root, "GOOD", "returned");
+    wait("configured path returns", || {
+        server.bodies().contains(&"returned".into())
+    });
+    service.shutdown();
+    assert_eq!(server.bodies(), ["initial", "returned"]);
+}
+
+#[test]
+fn real_worker_retries_failed_scans_without_reconfiguration() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    file(&root, "GOOD", "initial");
+    for index in 0..1000 {
+        std::fs::create_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
+    }
+    let server = Server::new(vec![]);
+    let io = io(&temp, &server);
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io);
+    wait("scan error", || {
+        service
+            .snapshot()
+            .error
+            .is_some_and(|error| error.contains("too many entries"))
+    });
+    assert!(server.bodies().is_empty());
+    // Remove the problem without changing the configured folder or asking for
+    // sync. A discarded watcher must not leave a 30-second retry deadline.
+    for index in 0..1000 {
+        std::fs::remove_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
+    }
+    wait("scan recovered automatically", || {
+        service.snapshot().last_success.is_some()
+    });
+    service.shutdown();
+    assert_eq!(server.bodies(), ["initial"]);
 }
 
 #[test]

@@ -28,6 +28,15 @@ impl ApprovedRoot {
     pub fn path(&self) -> &Path {
         &self.path
     }
+    /// Compare held handles, since a renamed directory keeps its original path here.
+    pub fn same_directory(&self, other: &Self) -> Result<bool, String> {
+        let handle = |dir: &Dir| {
+            dir.try_clone()
+                .and_then(|dir| same_file::Handle::from_file(dir.into_std_file()))
+                .map_err(|error| format!("Cannot compare selected WoW folder: {error}"))
+        };
+        Ok(handle(&self.dir)? == handle(&other.dir)?)
+    }
     fn relative(&self, path: &Path) -> Result<PathBuf, String> {
         let relative = path
             .strip_prefix(&self.path)
@@ -127,6 +136,36 @@ impl ApprovedRoot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compares_directory_handles() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        for root in [&first, &second] {
+            std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        }
+        let first = ApprovedRoot::open(&first).unwrap();
+        let reopened = ApprovedRoot::open(first.path()).unwrap();
+        let second = ApprovedRoot::open(&second).unwrap();
+        assert!(first.same_directory(&reopened).unwrap());
+        assert!(!first.same_directory(&second).unwrap());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn detects_replacement_at_the_same_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("_retail_");
+        let backup = temp.path().join("_retail_.bak");
+        std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        let held = ApprovedRoot::open(&root).unwrap();
+        std::fs::rename(&root, &backup).unwrap();
+        std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        let replacement = ApprovedRoot::open(&root).unwrap();
+        let moved = ApprovedRoot::open(&backup).unwrap();
+        assert_eq!(held.path(), replacement.path());
+        assert!(!held.same_directory(&replacement).unwrap());
+        assert!(held.same_directory(&moved).unwrap());
+    }
     fn fixture(name: &str) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("wowthing-fs-{name}-{}", std::process::id()));
         let file = root.join("WTF/Account/TEST/SavedVariables/WoWthing_Collector.lua");
