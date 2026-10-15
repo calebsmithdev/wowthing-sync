@@ -204,7 +204,7 @@ impl CollectorWatcher {
         epoch: u64,
     ) -> Option<Self> {
         use notify::Watcher;
-        let accounts = root?.path().join("WTF/Account");
+        let accounts = root?.accounts_path();
         let watched = accounts.clone();
         let pending = Arc::new(AtomicBool::new(false));
         let healthy = Arc::new(AtomicBool::new(true));
@@ -329,7 +329,7 @@ impl SyncService {
         ))?;
         root.metadata(Path::new(&file))?;
         self.sender
-            .send(Request::File(PathBuf::from(file)))
+            .send(Request::File(root.queue_path(Path::new(&file))?))
             .map_err(|_| "Sync service stopped".into())
     }
     pub fn manual(&self) -> Result<(), String> {
@@ -451,9 +451,13 @@ fn run(
     state.error = key.err();
     match io.preferences() {
         Ok(store) => {
-            state.folder = store
-                .get("program-folder")
-                .and_then(|v| v.as_str().map(String::from));
+            state.folder = store.get("program-folder").and_then(|v| {
+                v.as_str().map(|folder| {
+                    crate::collector_fs::display_path(Path::new(folder))
+                        .to_string_lossy()
+                        .into_owned()
+                })
+            });
             state.last_success = stored_last_success(
                 store
                     .get("last-success")
@@ -462,6 +466,7 @@ fn run(
             state.uploads = store
                 .get("account-uploads")
                 .and_then(|value| serde_json::from_value(value).ok())
+                .map(simplify_upload_keys)
                 .unwrap_or_default();
         }
         Err(e) => state.error = Some(e.to_string()),
@@ -747,6 +752,20 @@ fn run(
         next_scan = Instant::now();
     }
 }
+fn simplify_upload_keys(uploads: BTreeMap<String, u64>) -> BTreeMap<String, u64> {
+    let mut simplified = BTreeMap::<String, u64>::new();
+    for (path, time) in uploads {
+        let path = crate::collector_fs::display_path(Path::new(&path))
+            .to_string_lossy()
+            .into_owned();
+        // A mixed old/new store can contain both spellings. Keep the latest upload.
+        simplified
+            .entry(path)
+            .and_modify(|latest| *latest = (*latest).max(time))
+            .or_insert(time);
+    }
+    simplified
+}
 #[tauri::command]
 pub fn get_sync_status(service: tauri::State<'_, SyncService>) -> SyncStatus {
     service.snapshot()
@@ -759,6 +778,39 @@ pub fn sync_now(service: tauri::State<'_, SyncService>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn upload_keys_simplify_safely_and_keep_latest_time() {
+        let file = r"C:\WoW\WTF\Account\MAIN\SavedVariables\WoWthing_Collector.lua";
+        let verbatim = format!(r"\\?\{file}");
+        let unsafe_path = r"\\?\C:\WoW\NUL\WoWthing_Collector.lua";
+        let uploads = simplify_upload_keys(BTreeMap::from([
+            (file.into(), 200),
+            (verbatim, 100),
+            (file.replace(r"\WTF\Account", r"\WTF/Account"), 400),
+            (file.replace('\\', "/"), 250),
+            (unsafe_path.into(), 300),
+        ]));
+        assert_eq!(
+            uploads,
+            BTreeMap::from([(file.into(), 400), (unsafe_path.into(), 300)])
+        );
+    }
+    #[cfg(not(windows))]
+    #[test]
+    fn upload_keys_are_unchanged_outside_windows() {
+        let uploads = BTreeMap::from([
+            (
+                "/tmp/WoW/WTF/Account/MAIN/SavedVariables/WoWthing_Collector.lua".into(),
+                100,
+            ),
+            (
+                r"\\?\C:\WoW\WTF\Account\MAIN\SavedVariables\WoWthing_Collector.lua".into(),
+                200,
+            ),
+        ]);
+        assert_eq!(simplify_upload_keys(uploads.clone()), uploads);
+    }
     #[test]
     fn watcher_filters_reads_and_unrelated_addons_but_tracks_replacements() {
         use notify::{
@@ -961,14 +1013,15 @@ mod tests {
             fingerprints(&approved, &files, &mut Default::default(), VERIFY_INTERVAL);
         assert_eq!(scan_errors.len(), 1);
         assert_eq!(read_errors.len(), 1);
+        let healthy_path = crate::collector_fs::display_path(&candidates[0]);
         assert_eq!(
             prints.keys().cloned().collect::<Vec<_>>(),
-            vec![candidates[0].clone()]
+            vec![healthy_path.clone()]
         );
         let mut queue = crate::sync_queue::SyncQueue::default();
         let now = Instant::now();
         queue.manual(prints.into_keys(), now);
-        assert_eq!(queue.take_ready(now), Some(candidates[0].clone()));
+        assert_eq!(queue.take_ready(now), Some(healthy_path));
         std::fs::write(&candidates[1], "fixed collector").unwrap();
         assert_eq!(
             fingerprints(
@@ -992,7 +1045,10 @@ mod tests {
         assert!(discover(&root).unwrap().is_empty());
         let collector = account.join("WoWthing_Collector.lua");
         std::fs::write(&collector, "first").unwrap();
-        assert_eq!(discover(&root).unwrap(), vec![collector.clone()]);
+        assert_eq!(
+            discover(&root).unwrap(),
+            vec![crate::collector_fs::display_path(&collector)]
+        );
         let replacement = account.join("replacement");
         std::fs::write(&replacement, "replacement contents").unwrap();
         std::fs::rename(&replacement, &collector).unwrap();

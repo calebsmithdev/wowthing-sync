@@ -705,6 +705,154 @@ fn real_worker_discovers_replaces_coalesces_validates_and_persists_across_restar
     );
     service.shutdown();
 }
+#[cfg(windows)]
+#[test]
+fn real_worker_simplifies_legacy_paths_without_startup_writes() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("WoW Unicode 雪 with spaces");
+    file(&root, "SYNTHETIC", "initial");
+    let canonical = root.canonicalize().unwrap();
+    // Older verbatim joins rebuilt separators; newer ordinary joins retained '/'.
+    let collector = canonical
+        .join("WTF")
+        .join("Account")
+        .join("SYNTHETIC")
+        .join("SavedVariables")
+        .join("WoWthing_Collector.lua");
+    let folder = dunce::simplified(&canonical).to_string_lossy().into_owned();
+    // Assert strings, since Windows Path equality ignores separator differences.
+    let file = format!(r"{folder}\WTF\Account\SYNTHETIC\SavedVariables\WoWthing_Collector.lua");
+    assert_eq!(dunce::simplified(&collector).to_str().unwrap(), file);
+    let mixed = file.replace(r"\WTF\Account", r"\WTF/Account");
+    let forward = file.replace('\\', "/");
+    assert!(canonical.to_string_lossy().starts_with(r"\\?\"));
+    let server = Server::new(vec![]);
+    let mut io = io(&temp, &server);
+    let legacy_uploads = serde_json::json!({
+        collector.to_string_lossy().into_owned(): 100,
+        file.clone(): 110,
+        mixed.clone(): 123,
+        forward.clone(): 120,
+    });
+    io.store
+        .commit_many([
+            ("program-folder", Some(serde_json::json!(canonical))),
+            ("account-uploads", Some(legacy_uploads.clone())),
+        ])
+        .unwrap();
+    let original_preferences = std::fs::read(temp.path().join("settings.json")).unwrap();
+    io.key = Ok(None); // Observe read migration before a successful upload can persist it.
+    let service = SyncService::start_with_io(io.clone());
+    wait("legacy path hydration", || {
+        service.snapshot().uploads.get(&file) == Some(&123)
+    });
+    assert_eq!(service.snapshot().folder.as_deref(), Some(folder.as_str()));
+    assert_eq!(
+        service.snapshot().uploads,
+        BTreeMap::from([(file.clone(), 123)])
+    );
+    assert_eq!(io.store.get("account-uploads"), Some(legacy_uploads));
+    assert_eq!(
+        io.store.get("program-folder"),
+        Some(serde_json::json!(canonical))
+    );
+    service.shutdown();
+    assert_eq!(
+        std::fs::read(temp.path().join("settings.json")).unwrap(),
+        original_preferences
+    );
+
+    io.key = Ok(Some("synthetic-worker-key".into()));
+    let service = SyncService::start_with_io(io.clone());
+    wait("normalized upload persistence", || {
+        io.store
+            .get("account-uploads")
+            .is_some_and(|value| value[&file].as_u64().is_some_and(|time| time > 123))
+    });
+    assert_eq!(
+        service.snapshot().files.as_slice(),
+        std::slice::from_ref(&file)
+    );
+    assert_eq!(service.snapshot().folder.as_deref(), Some(folder.as_str()));
+    assert_eq!(
+        service.snapshot().uploads.keys().collect::<Vec<_>>(),
+        [&file]
+    );
+    // Validate original submissions before any spelling change. Construct strings
+    // directly: joining onto a verbatim PathBuf would remove these components.
+    for base in [folder.as_str(), canonical.to_str().unwrap()] {
+        for suffix in [
+            r"\WTF\Account\SYNTHETIC\SavedVariables\..\SavedVariables\WoWthing_Collector.lua",
+            r"\WTF\Account\SYNTHETIC\..\SYNTHETIC\SavedVariables\WoWthing_Collector.lua",
+            r"\WTF\Account\SYNTHETIC\SavedVariables\Other.lua",
+        ] {
+            assert!(service.enqueue_file(format!("{base}{suffix}")).is_err());
+        }
+    }
+    // Legacy and mixed submit_addon_data callers cannot recreate duplicate keys.
+    for (index, spelling) in [
+        collector.to_string_lossy().into_owned(),
+        mixed,
+        forward,
+        file.clone(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        service.enqueue_file(spelling).unwrap();
+        wait("compatible manual upload", || {
+            server.bodies().len() >= index + 2 && !service.snapshot().is_processing
+        });
+        assert_eq!(
+            service.snapshot().files.as_slice(),
+            std::slice::from_ref(&file)
+        );
+        assert_eq!(
+            service.snapshot().uploads.keys().collect::<Vec<_>>(),
+            [&file]
+        );
+    }
+    service.shutdown();
+    assert_eq!(
+        service.snapshot().uploads.keys().collect::<Vec<_>>(),
+        [&file]
+    );
+    let persisted = io.store.get("account-uploads").unwrap();
+    assert_eq!(
+        persisted.as_object().unwrap().keys().collect::<Vec<_>>(),
+        [&file]
+    );
+    assert!(io.states.lock().unwrap().iter().all(|status| {
+        status
+            .folder
+            .iter()
+            .chain(status.files.iter())
+            .chain(status.uploads.keys())
+            .all(|path| !path.starts_with(r"\\?\"))
+    }));
+}
+
+#[cfg(windows)]
+#[test]
+fn real_worker_simplifies_unavailable_legacy_folder_without_writing_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let missing = temp.path().canonicalize().unwrap().join("missing");
+    let server = Server::new(vec![]);
+    let io = io(&temp, &server);
+    io.store
+        .commit("program-folder", Some(serde_json::json!(missing)))
+        .unwrap();
+    let service = SyncService::start_with_io(io.clone());
+    let expected = dunce::simplified(&missing).to_string_lossy().into_owned();
+    wait("unavailable folder display", || {
+        service.snapshot().folder.as_deref() == Some(expected.as_str())
+    });
+    service.shutdown();
+    assert_eq!(
+        io.store.get("program-folder"),
+        Some(serde_json::json!(missing))
+    );
+}
 #[test]
 fn real_worker_keeps_writes_during_upload_and_cancels_folder_changes_and_shutdown() {
     let temp = tempfile::tempdir().unwrap();
