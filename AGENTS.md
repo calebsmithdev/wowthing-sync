@@ -584,10 +584,27 @@ shutdown remain separate from the Reopen handler.
 Autostart uses LaunchAgent on macOS and passes `--autostart` on all desktop OSes.
 Only an exact argument after argv[0] suppresses initial show/focus and the
 single-instance focus callback. Startup refresh holds `SettingsManager.gate`,
-rewrites only enabled registrations once, verifies enabled state, then commits
+rewrites eligible enabled registrations once, verifies plugin enabled state, then commits
 `autostart-args-version: 1`. Disabled registrations are only marked; refresh never
-calls disable. Failed reads/writes/verification/persistence retry next launch
+calls disable. macOS refresh defers from canonical `/Volumes` or `AppTranslocation`
+paths. Linux reads only the plugin's own `~/.config/autostart/<app-name>.desktop`
+(auto-launch 0.6.0 does not use `XDG_CONFIG_HOME`); only its plain generated entry
+or explicit enabled flags qualify. `Hidden=true`,
+`X-GNOME-Autostart-enabled=false`, desktop restrictions (`OnlyShowIn`, `NotShowIn`,
+`TryExec`), unfamiliar/ambiguous contents and read errors defer without marking
+done or rewriting. This conservative preflight is not a general XDG parser.
+Failed reads/writes/verification/persistence retry next launch
 without attempting to restore old arguments. Settings toggle verify/rollback is
-unchanged. Hosted-only probes inspect their unique registration artifacts;
+unchanged. Runtime verification checks plugin state, not argument contents.
+Hosted-only probes seed an old unmarked registration, run the production refresh
+algorithm and inspect the marker in their unique registration artifacts;
 actual login argument delivery remains a disposable-profile release check in
 [docs/ci-validation.md](docs/ci-validation.md).
+
+Initial visibility and the second-instance guard share `window_lifecycle` native
+argument handling (`args_os`, exact `OsStr` comparison). The isolated fixture
+launches marked, checks initial hidden state, a marked second instance staying
+hidden, manual recovery, and macOS Reopen. User Reopen is never suppressed by the
+original login marker. Update relaunch deliberately retains the invocation mode:
+an app started with `--autostart` returns hidden after update; tray Open Window
+reveals it. No updater state or IPC is added for this bounded fix.

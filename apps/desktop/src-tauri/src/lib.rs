@@ -22,6 +22,8 @@ mod commands;
 mod credentials;
 #[cfg(feature = "integration-test")]
 mod integration;
+#[cfg(not(any(feature = "smoke-test", feature = "integration-test")))]
+mod login_registration;
 #[cfg(not(feature = "smoke-test"))]
 mod preferences;
 #[cfg(not(feature = "smoke-test"))]

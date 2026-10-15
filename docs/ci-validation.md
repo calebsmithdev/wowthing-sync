@@ -78,10 +78,13 @@ launch. Mac runs a writable temporary `.app`, so it never asks for an admin prom
 OS probes require `WOWTHING_OS_TESTS=1`, `GITHUB_ACTIONS=true` and
 `RUNNER_ENVIRONMENT=github-hosted` before any daemon/store/autostart operation.
 Every credential service/account and autostart app is unique and cleanup is
-verified, including recovery cleanup. The autostart probe also requires the exact
+verified, including recovery cleanup. The autostart probe first seeds an enabled
+old registration without the marker in a separate process, then runs the shared
+production refresh algorithm with an in-memory completion marker and requires the exact
 `--autostart` argument in its scoped LaunchAgent plist, Windows Run value (HKLM
 or HKCU), or Linux desktop entry. This checks registration contents; actual
-argument delivery at login remains a manual release check.
+argument delivery at login remains a manual release check. Runtime startup
+verification uses plugin enabled-state readback, not registration argument readback.
 Linux starts a private Secret Service in
 an owned DBus session and temporary XDG paths; a separate invalid socket tests
 unavailable-backend errors. A missing backend fails, rather than passing as a
@@ -132,6 +135,15 @@ consumer VMs before replacing this checklist with automated jobs.
   running window hidden. Windows paths with spaces need an actual login check:
   the plugin writes an unquoted executable path. Registration refresh errors
   retry next launch; prior registration arguments cannot be restored by the plugin.
+  On Linux, confirm external `Hidden=true`/`X-GNOME-Autostart-enabled=false`,
+  `OnlyShowIn`/`NotShowIn`/`TryExec` restrictions and unfamiliar entries remain
+  untouched. The pinned auto-launch 0.6.0 uses `~/.config/autostart` even when
+  `XDG_CONFIG_HOME` differs; this fix reads only that same own registration.
+  macOS automatic refresh must defer on `/Volumes` and AppTranslocation paths
+  without marking migration done; retry from the installed location.
+- Update an app originally launched with `--autostart`: relaunch deliberately
+  retains that argument and returns hidden. Verify tray Open Window reveals it.
+  A legitimate macOS user Reopen must also reveal the login-started app.
 - Confirm startup registration/removal and restart/login behavior, real tray
   close/reopen and update actions, minimum OS webview support, Unicode/spaces paths
   and restricted-folder errors. Do not use real upload credentials for testing.
@@ -149,3 +161,16 @@ sets contain 13 advisories (4 critical, 8 high, 1 low); RustSec reports 0
 vulnerabilities. This historical run used the blocking policy. As of 2026-10-07,
 findings are informational; full reports and original audit exit statuses remain
 available. PR checks remain secret-free and do not require this audit job.
+
+### Registration refresh scope (#57)
+
+The automatic Linux rewrite accepts only the plugin's plain generated desktop
+entry and explicit enabled flags. It defers on external restrictions, unknown
+keys/groups, duplicate keys, malformed/oversized/nonregular/symlinked entries or
+read failures. No general desktop-entry parser or desktop-session inference is
+introduced. Explicit Settings toggle behavior and rollback are unchanged.
+The [XDG autostart specification](https://specifications.freedesktop.org/autostart/latest/)
+defines `Hidden`, `OnlyShowIn`, `NotShowIn`, and `TryExec` as launch restrictions;
+rewriting a customized entry would erase them. This guard does not claim to
+resolve all OS-level disabling policies. A concurrent external edit after
+preflight is not serialized by the app's settings mutex.

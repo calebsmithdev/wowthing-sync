@@ -17,11 +17,17 @@ const binary = resolve(root, 'target/debug', process.platform === 'win32' ? 'wow
 try {
   await command('cargo', ['build', '--locked', '--bin', 'wowthing-os-test', '--features', 'os-integration-test'])
   built = true
+  if (!unavailable) {
+    const seed = await command(binary, [], { env: { ...scopedEnvironment, WOWTHING_OS_SEED_LEGACY: '1' }, timeout: 30_000, label: 'os-legacy-seed', reportDirectory })
+    const lines = seed.stdout.split('\n').filter(line => line.startsWith('OS_LEGACY_REPORT '))
+    if (lines.length !== 1 || JSON.parse(lines[0].slice('OS_LEGACY_REPORT '.length)).passed !== true) throw new Error('Legacy registration seed failed')
+    await writeFile(resolve(reportDirectory, 'legacy-seed.json'), lines[0].slice('OS_LEGACY_REPORT '.length))
+  }
   const result = await command(binary, [], { cwd: root, env: scopedEnvironment, timeout: 90_000, label: 'os-probe', reportDirectory, onStdout: bytes => { stdout += bytes.toString() }, onStderr: bytes => { stderr += bytes.toString() } })
   const reports = result.stdout.split('\n').filter(line => line.startsWith('OS_INTEGRATION_REPORT '))
   if (reports.length !== 1) throw new Error('OS probe missing expected successful report')
   const report = JSON.parse(reports[0].slice('OS_INTEGRATION_REPORT '.length))
-  if (report.passed !== true || report.marker !== 'WOWTHING_OS_CI_V1') throw new Error('OS adapter probe failed')
+  if (report.passed !== true || report.marker !== 'WOWTHING_OS_CI_V1' || (!unavailable && report.autostartRefresh !== true)) throw new Error('OS adapter probe failed')
   await writeFile(resolve(reportDirectory, `${unavailable ? 'unavailable-' : ''}report.json`), JSON.stringify(report, null, 2))
 } catch (error) { console.error(error); process.exitCode = 1 }
 finally {

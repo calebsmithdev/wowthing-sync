@@ -66,13 +66,20 @@ fn commit_folder(
     }
     Ok(())
 }
-trait AutoStart {
+pub(crate) trait AutoStart {
+    #[cfg(any(test, not(feature = "integration-test")))]
+    fn prepare_refresh(&self) -> Result<(), String> {
+        Ok(())
+    }
     fn actual(&self) -> Result<bool, String>;
     fn set(&self, enabled: bool) -> Result<(), String>;
 }
 struct NativeAutoStart<'a>(&'a tauri::AppHandle);
 #[cfg(not(feature = "integration-test"))]
 impl AutoStart for NativeAutoStart<'_> {
+    fn prepare_refresh(&self) -> Result<(), String> {
+        crate::login_registration::prepare(self.0, &self.0.package_info().name)
+    }
     fn actual(&self) -> Result<bool, String> {
         self.0
             .autolaunch()
@@ -104,7 +111,7 @@ impl AutoStart for NativeAutoStart<'_> {
 // Refresh only existing enabled registrations. A failed rewrite can leave changed
 // arguments behind; the plugin cannot restore them, so never attempt a rollback.
 #[cfg(any(test, not(feature = "integration-test")))]
-fn refresh_registration(
+pub(crate) fn refresh_registration(
     os: &impl AutoStart,
     done: bool,
     mark: impl FnOnce() -> Result<(), String>,
@@ -113,6 +120,7 @@ fn refresh_registration(
         return Ok(());
     }
     if os.actual()? {
+        os.prepare_refresh()?;
         os.set(true)?;
         if !os.actual()? {
             return Err("OS did not accept launch-at-login registration refresh".into());
@@ -408,6 +416,24 @@ mod tests {
         assert_eq!(
             *os.calls.borrow(),
             ["actual", "actual", "set(true)", "actual"]
+        );
+    }
+    #[test]
+    fn deferred_refresh_neither_rewrites_nor_marks_done() {
+        struct Deferred;
+        impl AutoStart for Deferred {
+            fn actual(&self) -> Result<bool, String> {
+                Ok(true)
+            }
+            fn prepare_refresh(&self) -> Result<(), String> {
+                Err("defer".into())
+            }
+            fn set(&self, _: bool) -> Result<(), String> {
+                panic!("must not rewrite")
+            }
+        }
+        assert!(
+            refresh_registration(&Deferred, false, || panic!("must not mark deferred")).is_err()
         );
     }
     #[test]
