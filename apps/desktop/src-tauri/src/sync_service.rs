@@ -476,7 +476,7 @@ fn run(
     let mut queue = crate::sync_queue::SyncQueue::default();
     let mut batch = BatchSummary::default();
     let mut active_generation = 0;
-    let mut watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+    let mut watcher: Option<CollectorWatcher> = None;
     let mut next_scan = Instant::now();
     publish(&io, &shared, &state);
     while !stopping.load(Ordering::Acquire) {
@@ -510,7 +510,7 @@ fn run(
                         .as_ref()
                         .map(|root| root.path().to_string_lossy().into_owned());
                     approved = root;
-                    watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, epoch);
+                    watcher = None;
                     previous.clear();
                     cache.clear();
                     queue = Default::default();
@@ -574,8 +574,7 @@ fn run(
         }) {
             Ok((fresh, false)) => {
                 approved = Some(fresh);
-                watcher =
-                    CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+                watcher = None;
                 // Restored files may preserve old metadata but contain new bytes.
                 cache.clear();
             }
@@ -585,7 +584,7 @@ fn run(
                 watcher = None;
                 cache.clear();
                 next_scan = Instant::now() + FALLBACK_INTERVAL;
-                state.error = Some(format!("{error} Sync will resume when the folder returns. If it moved, choose it again in Settings."));
+                state.error = Some(format!("{error} Sync will retry automatically."));
                 state.files.clear();
                 state.pending = queue.len();
                 publish(&io, &shared, &state);
@@ -593,13 +592,9 @@ fn run(
             }
         }
         let root = approved.as_ref().expect("successfully reopened WoW folder");
+        // Without an established healthy watcher, use the shorter content
+        // verification interval for this scan, even if setup succeeds afterward.
         let watching = watcher.as_ref().is_some_and(CollectorWatcher::healthy);
-        next_scan = Instant::now()
-            + if watching {
-                RECONCILE_INTERVAL
-            } else {
-                FALLBACK_INTERVAL
-            };
         let result = root.scan().map(|(files, mut failures)| {
             let (prints, read_failures) = fingerprints(
                 root,
@@ -621,13 +616,25 @@ fn run(
                 watcher = None;
                 cache.clear();
                 next_scan = Instant::now() + FALLBACK_INTERVAL;
-                state.error = Some(format!("{error} Sync will resume when the folder returns. If it moved, choose it again in Settings."));
+                state.error = Some(format!("{error} Sync will retry automatically."));
                 state.files.clear();
                 state.pending = queue.len();
                 publish(&io, &shared, &state);
                 continue;
             }
         };
+        // Recursive setup can be expensive. A persistent scan failure must not
+        // recreate a watcher on every one-second retry.
+        if watcher.is_none() {
+            watcher = CollectorWatcher::start(approved.as_ref(), &wake_sender, active_generation);
+        }
+        let watching = watcher.as_ref().is_some_and(CollectorWatcher::healthy);
+        next_scan = Instant::now()
+            + if watching {
+                RECONCILE_INTERVAL
+            } else {
+                FALLBACK_INTERVAL
+            };
         // Clear only previous scan errors. Upload failures survive a healthy scan.
         state
             .failures

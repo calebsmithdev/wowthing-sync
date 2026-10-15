@@ -17,10 +17,11 @@ pub struct ApprovedRoot {
 impl ApprovedRoot {
     pub fn open(path: &Path) -> Result<Self, String> {
         let path = path.canonicalize().map_err(|_| {
-            "The selected WoW folder is unavailable. Choose it again in Settings.".to_string()
+            "The selected WoW folder is unavailable. If it moved, choose it again in Settings."
+                .to_string()
         })?;
         let dir = Dir::open_ambient_dir(&path, cap_std::ambient_authority())
-            .map_err(|_| "Cannot open selected WoW folder".to_string())?;
+            .map_err(|_| "Cannot open selected WoW folder.".to_string())?;
         dir.open_dir("WTF/Account")
             .map_err(|_| "Choose the _retail_ folder containing WTF/Account.".to_string())?;
         Ok(Self { path, dir })
@@ -33,7 +34,7 @@ impl ApprovedRoot {
         let handle = |dir: &Dir| {
             dir.try_clone()
                 .and_then(|dir| same_file::Handle::from_file(dir.into_std_file()))
-                .map_err(|error| format!("Cannot compare selected WoW folder: {error}"))
+                .map_err(|error| format!("Cannot compare selected WoW folder: {error}."))
         };
         Ok(handle(&self.dir)? == handle(&other.dir)?)
     }
@@ -69,17 +70,17 @@ impl ApprovedRoot {
         let accounts = self
             .dir
             .read_dir("WTF/Account")
-            .map_err(|_| "Cannot read WoW account directory".to_string())?;
+            .map_err(|_| "Cannot read WoW account directory.".to_string())?;
         let mut files = Vec::new();
         let mut failures = Vec::new();
         for (count, account) in accounts.enumerate() {
             if count >= 1000 {
-                return Err("WoW account directory contains too many entries".into());
+                return Err("WoW account directory contains too many entries.".into());
             }
-            let account = account.map_err(|_| "Cannot read WoW account entry".to_string())?;
+            let account = account.map_err(|_| "Cannot read WoW account entry.".to_string())?;
             if !account
                 .file_type()
-                .map_err(|_| "Cannot inspect WoW account entry".to_string())?
+                .map_err(|_| "Cannot inspect WoW account entry.".to_string())?
                 .is_dir()
             {
                 continue;
