@@ -44,6 +44,8 @@
     const invoke = window.__TAURI_INTERNALS__.invoke
     const control = async action => { nativeState = await invoke('integration_control', { action }); return nativeState }
     try {
+      await control('login-startup')
+      await wait('login startup manually revealed', async () => (await control('state')).visible)
       await wait('app ready', () => document.body.innerText.includes('Version __SMOKE_VERSION__'))
       click('Settings')
       await wait('hydration failure', () => document.body.innerText.includes('Retry Loading Settings'))
@@ -96,6 +98,10 @@
       await control('close')
       await wait('second-instance close hidden', async () => !(await control('state')).visible)
       await waitForClock('second-instance clock stopped', false)
+      await control('autostart-second-instance')
+      await new Promise(resolve => setTimeout(resolve, 250))
+      await control('confirm-autostart-hidden')
+      if (displayTimers.size !== 0) throw new Error('Marked instance restarted the display clock')
       await control('second-instance')
       await wait('second-instance visible', async () => (await control('state')).visible)
       await waitForClock('second-instance clock resumed', true)

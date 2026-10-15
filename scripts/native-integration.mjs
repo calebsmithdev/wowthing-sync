@@ -41,7 +41,7 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
     } catch { response.writeHead(400); response.end() }
   })
   await new Promise((resolvePromise, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolvePromise) })
-    const result = await command(binary, [], {
+    const result = await command(binary, ['--autostart'], {
       cwd: temporary,
       env: { ...process.env, WOWTHING_TEST_ROOT: temporary, WOWTHING_TEST_ENDPOINT: `http://127.0.0.1:${server.address().port}/upload/` },
       timeout: 60_000, label: 'native-integration', reportDirectory: join(reportDirectory, 'process'),
