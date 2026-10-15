@@ -221,6 +221,8 @@ struct Io {
     key: Result<Option<String>, String>,
     states: Arc<Mutex<Vec<SyncStatus>>>,
     key_reads: Arc<AtomicU64>,
+    watcher_setup_attempts: Arc<AtomicU64>,
+    watcher_setup_fails: bool,
 }
 impl WorkerIo for Io {
     fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String> {
@@ -238,6 +240,10 @@ impl WorkerIo for Io {
     fn notify(&self, summary: BatchSummary) -> Result<(), String> {
         self.notifications.lock().unwrap().push(summary);
         Ok(())
+    }
+    fn watcher_setup_fails(&self) -> bool {
+        self.watcher_setup_attempts.fetch_add(1, Ordering::Release);
+        self.watcher_setup_fails
     }
     fn endpoint(&self) -> &str {
         &self.endpoint
@@ -270,6 +276,8 @@ fn io(temp: &tempfile::TempDir, server: &Server) -> Io {
         key: Ok(Some("synthetic-worker-key".into())),
         states: Default::default(),
         key_reads: Default::default(),
+        watcher_setup_attempts: Default::default(),
+        watcher_setup_fails: false,
     }
 }
 fn wait(label: &str, condition: impl Fn() -> bool) {
@@ -302,6 +310,111 @@ fn configure(service: &SyncService, root: &Path) {
     service
         .configure(Some(crate::collector_fs::ApprovedRoot::open(root).unwrap()))
         .unwrap();
+}
+
+// Key reads precede scanning. Three further passes guarantee at least two
+// completed scans, even if the last observed pass is still in progress.
+fn wait_for_worker_passes(io: &Io, passes: u64) {
+    let initial = io.key_reads.load(Ordering::Acquire);
+    wait("repeated worker passes", || {
+        io.key_reads.load(Ordering::Acquire) >= initial + passes
+    });
+}
+
+#[test]
+fn real_worker_attempts_failed_watcher_setup_once_until_reconfigured_or_scan_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    file(&root, "GOOD", "initial");
+    let server = Server::new(vec![]);
+    let mut io = io(&temp, &server);
+    io.watcher_setup_fails = true;
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io.clone());
+    wait("initial upload with failed watcher setup", || {
+        service.snapshot().last_success.is_some()
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 1);
+
+    // Even reconfiguring the same directory explicitly permits a new attempt.
+    configure(&service, &root);
+    wait("configured watcher setup", || {
+        io.watcher_setup_attempts.load(Ordering::Acquire) == 2
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
+
+    for index in 0..1000 {
+        std::fs::create_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
+    }
+    wait("root discarded after scan error", || {
+        service
+            .snapshot()
+            .error
+            .is_some_and(|e| e.contains("too many entries"))
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
+    for index in 0..1000 {
+        std::fs::remove_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
+    }
+    wait("watcher setup after scan recovery", || {
+        io.watcher_setup_attempts.load(Ordering::Acquire) == 3
+    });
+    wait_for_worker_passes(&io, 3);
+    service.shutdown();
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 3);
+}
+
+#[cfg(unix)]
+#[test]
+fn real_worker_retries_failed_watcher_setup_for_replaced_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("_retail_");
+    file(&root, "GOOD", "initial");
+    let server = Server::new(vec![]);
+    let mut io = io(&temp, &server);
+    io.watcher_setup_fails = true;
+    io.store
+        .commit("program-folder", Some(serde_json::json!(root)))
+        .unwrap();
+    let service = SyncService::start_with_io(io.clone());
+    wait("initial upload with failed watcher setup", || {
+        service.snapshot().last_success.is_some()
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 1);
+
+    let staged = temp.path().join("staged");
+    file(&staged, "GOOD", "replacement");
+    std::fs::rename(&root, temp.path().join("backup")).unwrap();
+    std::fs::rename(&staged, &root).unwrap();
+    wait("replacement upload", || {
+        server.bodies().contains(&"replacement".into())
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
+
+    // An unavailable path discards the root and permits one setup on return,
+    // without reuploading the unchanged collector.
+    let missing = temp.path().join("missing");
+    std::fs::rename(&root, &missing).unwrap();
+    wait("configured root unavailable", || {
+        service.snapshot().error.is_some()
+    });
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 2);
+    std::fs::rename(&missing, &root).unwrap();
+    wait("watcher setup after root returns", || {
+        io.watcher_setup_attempts.load(Ordering::Acquire) == 3
+    });
+    wait_for_worker_passes(&io, 3);
+    service.shutdown();
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 3);
+    assert_eq!(server.bodies(), ["initial", "replacement"]);
 }
 
 #[cfg(unix)]
@@ -438,11 +551,12 @@ fn real_worker_retries_failed_scans_without_reconfiguration() {
         std::fs::create_dir(root.join(format!("WTF/Account/EMPTY-{index}"))).unwrap();
     }
     let server = Server::new(vec![]);
-    let io = io(&temp, &server);
+    let mut io = io(&temp, &server);
+    io.watcher_setup_fails = true;
     io.store
         .commit("program-folder", Some(serde_json::json!(root)))
         .unwrap();
-    let service = SyncService::start_with_io(io);
+    let service = SyncService::start_with_io(io.clone());
     wait("scan error", || {
         service
             .snapshot()
@@ -454,6 +568,8 @@ fn real_worker_retries_failed_scans_without_reconfiguration() {
         Some("WoW account directory contains too many entries. Sync will retry automatically.")
     );
     assert!(server.bodies().is_empty());
+    wait_for_worker_passes(&io, 3);
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 0);
     // Remove the problem without changing the configured folder or asking for
     // sync. A discarded watcher must not leave a 30-second retry deadline.
     for index in 0..1000 {
@@ -462,7 +578,9 @@ fn real_worker_retries_failed_scans_without_reconfiguration() {
     wait("scan recovered automatically", || {
         service.snapshot().last_success.is_some()
     });
+    wait_for_worker_passes(&io, 3);
     service.shutdown();
+    assert_eq!(io.watcher_setup_attempts.load(Ordering::Acquire), 1);
     assert_eq!(server.bodies(), ["initial"]);
 }
 

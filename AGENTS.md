@@ -421,8 +421,10 @@ tree replaces it. Open, identity, or scan errors discard the held capability,
 watcher and metadata cache, then retry at the one-second fallback interval.
 The status explains automatic recovery and choosing a moved folder again.
 Replacement watchers start only after a successful scan; failed scans retain
-one-second polling without repeatedly setting up recursive watchers. Content
-hashes and queued work survive recovery; accounts with unchanged content that
+one-second polling without repeatedly setting up recursive watchers. Setup is
+attempted once per held root even when watcher setup fails; configuring or
+discarding/replacing that root permits a fresh attempt after a successful scan.
+Content hashes and queued work survive recovery; accounts with unchanged content that
 remain present across successful scans are not uploaded again. A successful
 scan that temporarily omits an account can cause a later upload when it returns.
 Unix real-worker fixtures publish complete staged trees by rename for
@@ -504,7 +506,8 @@ disabled where the backend supports it. Discovery, file limits and uploads still
 use the held `ApprovedRoot` capability. Periodic reconciliation covers missed
 events/new directories; same-metadata changes missed by events are detected by
 the five-minute content verification. Failed watchers keep the polling fallback
-until the folder is configured again. No new frontend filesystem permissions.
+until the folder is configured again or its root is discarded/replaced. No new
+frontend filesystem permissions.
 
 Successful uploads persist `last-success` and `account-uploads` in one synced
 atomic transaction, including in the isolated integration builder. The Status
