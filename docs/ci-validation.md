@@ -80,7 +80,8 @@ OS probes require `WOWTHING_OS_TESTS=1`, `GITHUB_ACTIONS=true` and
 Every credential service/account and autostart app is unique and cleanup is
 verified, including recovery cleanup. The autostart probe first seeds an enabled
 old registration without the marker in a separate process, then runs the shared
-production refresh algorithm with an in-memory completion marker and requires the exact
+production refresh core directly in both debug and release probes (bypassing the
+production startup debug guard), with an in-memory completion marker, and requires the exact
 `--autostart` argument in its scoped LaunchAgent plist, Windows Run value (HKLM
 or HKCU), or Linux desktop entry. This checks registration contents; actual
 argument delivery at login remains a manual release check. Runtime startup
@@ -141,6 +142,14 @@ consumer VMs before replacing this checklist with automated jobs.
   `XDG_CONFIG_HOME` differs; this fix reads only that same own registration.
   macOS automatic refresh must defer on `/Volumes` and AppTranslocation paths
   without marking migration done; retry from the installed location.
+  In a disposable macOS profile, turn System Settings → General → Login Items →
+  Allow in Background off **before upgrading**, then confirm the upgrade preserves
+  that choice and login does not start the app. LaunchAgent plist existence does
+  not prove consent; hosted artifact checks do not cover this OS policy.
+  On Windows, also disable the legacy registration in Task Manager before upgrade,
+  then externally reenable it after migration. It may still lack `--autostart`:
+  disabled registrations can be marked done without rewriting. Use the app's
+  Settings to disable and reenable Launch at Login to register the current arguments.
 - Update an app originally launched with `--autostart`: relaunch deliberately
   retains that argument and returns hidden. Verify tray Open Window reveals it.
   A legitimate macOS user Reopen must also reveal the login-started app.
@@ -163,6 +172,20 @@ findings are informational; full reports and original audit exit statuses remain
 available. PR checks remain secret-free and do not require this audit job.
 
 ### Registration refresh scope (#57)
+
+Automatic startup migration is disabled in debug builds, including `tauri:dev`:
+they share the installed app's identifier/preferences and must not retarget its
+login item to `target/debug` or consume `autostart-args-version`. The guard runs
+before any refresh preference or OS access; the pure core remains available to
+unit tests and the explicitly isolated hosted probes in debug and release.
+
+Windows Task Manager disabling may make the plugin report an existing registration
+as disabled, so migration can mark it done without updating its arguments. Later
+external reenablement can therefore retain a legacy unmarked command. This is an
+accepted limitation; disable and reenable Launch at Login in app Settings to
+rewrite it. On macOS, plugin enabled-state readback (plist existence) does not
+prove System Settings Allow in Background consent; the disposable-profile check
+above remains required and has not been exercised locally.
 
 The automatic Linux rewrite accepts only the plugin's plain generated desktop
 entry and explicit enabled flags. It defers on external restrictions, unknown
