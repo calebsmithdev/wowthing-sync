@@ -10,24 +10,60 @@ pub const MAX_COLLECTOR_BYTES: u64 = 32 * 1024 * 1024;
 const COLLECTOR: &str = "WoWthing_Collector.lua";
 pub type ScanFailures = Vec<(PathBuf, String)>;
 pub type ScanResult = (Vec<PathBuf>, ScanFailures);
+
+/// One spelling for display, persisted history and validated queue entries.
+/// This does not authorize a path: validate the original input before calling it.
+pub fn display_path(path: &Path) -> PathBuf {
+    let path = dunce::simplified(path);
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        // A verbatim path that dunce cannot simplify may treat '/' literally.
+        if !matches!(path.components().next(), Some(Component::Prefix(prefix)) if prefix.kind().is_verbatim())
+        {
+            let spelling: Vec<_> = path
+                .as_os_str()
+                .encode_wide()
+                .map(|unit| {
+                    if unit == b'/' as u16 {
+                        b'\\' as u16
+                    } else {
+                        unit
+                    }
+                })
+                .collect();
+            return std::ffi::OsString::from_wide(&spelling).into();
+        }
+    }
+    path.to_path_buf()
+}
+
 pub struct ApprovedRoot {
     path: PathBuf,
+    canonical: PathBuf,
     dir: Dir,
 }
 impl ApprovedRoot {
     pub fn open(path: &Path) -> Result<Self, String> {
-        let path = path.canonicalize().map_err(|_| {
+        let canonical = path.canonicalize().map_err(|_| {
             "The selected WoW folder is unavailable. If it moved, choose it again in Settings."
                 .to_string()
         })?;
-        let dir = Dir::open_ambient_dir(&path, cap_std::ambient_authority())
+        let dir = Dir::open_ambient_dir(&canonical, cap_std::ambient_authority())
             .map_err(|_| "Cannot open selected WoW folder.".to_string())?;
         dir.open_dir("WTF/Account")
             .map_err(|_| "Choose the _retail_ folder containing WTF/Account.".to_string())?;
-        Ok(Self { path, dir })
+        Ok(Self {
+            path: display_path(&canonical),
+            canonical,
+            dir,
+        })
     }
     pub fn path(&self) -> &Path {
         &self.path
+    }
+    pub fn accounts_path(&self) -> PathBuf {
+        display_path(&self.canonical.join("WTF").join("Account"))
     }
     /// Compare held handles, since a renamed directory keeps its original path here.
     pub fn same_directory(&self, other: &Self) -> Result<bool, String> {
@@ -41,6 +77,9 @@ impl ApprovedRoot {
     fn relative(&self, path: &Path) -> Result<PathBuf, String> {
         let relative = path
             .strip_prefix(&self.path)
+            // Older clients may still submit the canonical Windows verbatim path.
+            // Both spellings resolve only through the held directory capability.
+            .or_else(|_| path.strip_prefix(&self.canonical))
             .map_err(|_| "Collector must be inside the selected WoW folder".to_string())?;
         let parts: Vec<_> = relative.components().collect();
         if parts.len() != 5
@@ -55,6 +94,10 @@ impl ApprovedRoot {
             );
         }
         Ok(relative.to_owned())
+    }
+    /// Validate the original spelling before rebuilding the same key used by scans.
+    pub fn queue_path(&self, path: &Path) -> Result<PathBuf, String> {
+        Ok(display_path(&self.canonical.join(self.relative(path)?)))
     }
     pub fn discover(&self) -> Result<Vec<PathBuf>, String> {
         let (files, failures) = self.scan()?;
@@ -85,11 +128,12 @@ impl ApprovedRoot {
             {
                 continue;
             }
-            let relative = Path::new("WTF/Account")
+            let relative = Path::new("WTF")
+                .join("Account")
                 .join(account.file_name())
                 .join("SavedVariables")
                 .join(COLLECTOR);
-            let file = self.path.join(&relative);
+            let file = display_path(&self.canonical.join(&relative));
             match self.dir.metadata(&relative) {
                 Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_COLLECTOR_BYTES => files.push(file),
                 Ok(_) => failures.push((file, "Collector must be a regular file of at most 32 MiB".into())),
@@ -137,6 +181,91 @@ impl ApprovedRoot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn windows_display_paths_unify_separators_without_resolving_components() {
+        let root = Path::new(r"C:\WoW");
+        // Pin the string distinction that Path equality hides on Windows.
+        assert_eq!(
+            root.join("WTF/Account").to_str().unwrap(),
+            r"C:\WoW\WTF/Account"
+        );
+        assert_eq!(
+            Path::new(r"\\?\C:\WoW")
+                .join("WTF/Account")
+                .to_str()
+                .unwrap(),
+            r"\\?\C:\WoW\WTF\Account"
+        );
+        for (input, expected) in [
+            (r"C:\WoW\WTF/Account", r"C:\WoW\WTF\Account"),
+            (r"C:/WoW/WTF/Account", r"C:\WoW\WTF\Account"),
+            (r"\\?\C:\WoW\WTF\Account", r"C:\WoW\WTF\Account"),
+            (
+                r"\\server\share\WoW/WTF/Account",
+                r"\\server\share\WoW\WTF\Account",
+            ),
+            (
+                r"C:\WoW\WTF/Account/../Account",
+                r"C:\WoW\WTF\Account\..\Account",
+            ),
+        ] {
+            assert_eq!(display_path(Path::new(input)).as_os_str(), expected);
+        }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn unsafe_verbatim_display_paths_remain_byte_for_byte_unchanged() {
+        let long = format!(r"\\?\C:\{}", "long".repeat(70));
+        for input in [
+            r"\\?\C:\WoW\NUL\collector.lua",
+            r"\\?\C:\WoW\trailing.\collector.lua",
+            r"\\?\C:\WoW\WTF/Account\collector.lua",
+            r"\\?\C:\WoW\..\collector.lua",
+            r"\\?\UNC\server\share\WoW\collector.lua",
+            long.as_str(),
+        ] {
+            assert_eq!(display_path(Path::new(input)).as_os_str(), input);
+        }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn long_collector_queue_paths_match_scan_with_short_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("WoW");
+        std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+        let approved = ApprovedRoot::open(&root).unwrap();
+        assert!(!approved.path().to_string_lossy().starts_with(r"\\?\"));
+        let relative = Path::new("WTF")
+            .join("Account")
+            .join("A".repeat(220))
+            .join("SavedVariables")
+            .join(COLLECTOR);
+        let canonical = approved.canonical.join(&relative);
+        let plain = approved.path().join(&relative);
+        assert!(plain.as_os_str().len() > 260);
+        std::fs::create_dir_all(canonical.parent().unwrap()).unwrap();
+        std::fs::write(&canonical, "synthetic long collector").unwrap();
+        let scanned = approved.scan().unwrap().0;
+        assert_eq!(scanned.len(), 1);
+        assert!(scanned[0].to_string_lossy().starts_with(r"\\?\"));
+        for input in [plain, canonical] {
+            approved.metadata(&input).unwrap();
+            assert_eq!(
+                approved.queue_path(&input).unwrap().as_os_str(),
+                scanned[0].as_os_str()
+            );
+        }
+        // Build the string directly so a verbatim join cannot erase traversal.
+        let traversal = format!(
+            r"{}\WTF\Account\{}\SavedVariables\..\SavedVariables\{}",
+            approved.canonical.display(),
+            "A".repeat(220),
+            COLLECTOR
+        );
+        assert!(approved.queue_path(Path::new(&traversal)).is_err());
+        drop(approved);
+    }
     #[test]
     fn compares_directory_handles() {
         let temp = tempfile::tempdir().unwrap();
@@ -242,9 +371,29 @@ mod tests {
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, "synthetic").unwrap();
         let approved = ApprovedRoot::open(&root).unwrap();
-        let file = approved
-            .path()
-            .join("WTF/Account/SYNTHETIC/SavedVariables/WoWthing_Collector.lua");
+        let expected = format!(
+            r"{}\WTF\Account\SYNTHETIC\SavedVariables\WoWthing_Collector.lua",
+            approved.path().display()
+        );
+        let file = PathBuf::from(&expected);
+        assert!(!approved.path().to_string_lossy().starts_with(r"\\?\"));
+        assert_eq!(
+            approved.accounts_path().to_str().unwrap(),
+            format!(r"{}\WTF\Account", approved.path().display())
+        );
+        assert_eq!(approved.discover().unwrap()[0].to_str().unwrap(), expected);
+        assert_eq!(approved.read(&file).unwrap(), b"synthetic");
+        assert_eq!(
+            approved.read(&file.canonicalize().unwrap()).unwrap(),
+            b"synthetic"
+        );
+        assert!(approved
+            .read(
+                &approved
+                    .canonical
+                    .join("WTF/Account/SYNTHETIC/SavedVariables/../WoWthing_Collector.lua")
+            )
+            .is_err());
         let outside = temp.path().join("outside.lua");
         std::fs::write(&outside, "must not escape").unwrap();
         std::fs::remove_file(&file).unwrap();
