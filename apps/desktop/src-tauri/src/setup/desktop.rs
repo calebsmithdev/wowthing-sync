@@ -11,9 +11,9 @@ pub fn setup_desktop(app: &AppHandle) -> tauri::Result<()> {
             Some(vec![AUTOSTART_ARG]),
         ))?;
         app.plugin(tauri_plugin_updater::Builder::new().build())?;
-        let _ = app.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        app.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             crate::window_lifecycle::on_second_instance(app, &args);
-        }));
+        }))?;
 
         if initially_visible(std::env::args_os()) {
             let main_window = app.get_webview_window("main").expect("no main window");
