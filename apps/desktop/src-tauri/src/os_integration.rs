@@ -18,10 +18,11 @@ pub fn run() {
                 .all(|v| v.is_ascii_lowercase() || v.is_ascii_digit() || v == b'-')
     );
     if std::env::var("WOWTHING_EXPECT_VAULT_UNAVAILABLE").as_deref() == Ok("1") {
-        let passed = crate::credentials::ci_unavailable(&unique).is_ok();
+        let result = crate::credentials::ci_unavailable(&unique);
+        let passed = result.is_ok();
         println!(
             "OS_INTEGRATION_REPORT {}",
-            serde_json::json!({"passed":passed,"probe":"unavailable-vault","marker":"WOWTHING_OS_CI_V1"})
+            serde_json::json!({"passed":passed,"probe":"unavailable-vault-fallback","error":result.err(),"marker":"WOWTHING_OS_CI_V1"})
         );
         std::process::exit(if passed { 0 } else { 1 });
     }

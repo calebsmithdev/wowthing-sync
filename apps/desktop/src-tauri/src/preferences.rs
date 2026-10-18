@@ -143,6 +143,22 @@ mod tests {
         assert!(blocked.is_dir());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn settings_file_is_owner_only_because_it_can_hold_the_api_key() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".settings.dat");
+        std::fs::write(&path, b"{}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        Preferences::load(path.clone())
+            .unwrap()
+            .commit("api-key-local", Some(serde_json::json!("fixture")))
+            .unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
     #[test]
     fn related_timestamps_commit_together_or_both_remain_unchanged() {
         let dir = tempfile::tempdir().unwrap();

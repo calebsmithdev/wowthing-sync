@@ -25,11 +25,20 @@ impl Default for OsVault {
         }
     }
 }
-const LOCKED: &str = "OS credential storage is locked or unavailable. Unlock your keychain/credential service, then save your API key or retry.";
+#[cfg(not(target_os = "linux"))]
+const LOCKED: &str = "Could not open your system credential store. Unlock it and retry, or save your API key again to keep it in this app's settings file.";
+#[cfg(target_os = "linux")]
+const LOCKED: &str = "Could not open your system credential store (Secret Service: KWallet, GNOME Keyring or KeePassXC). Unlock it and retry, or save your API key again to keep it in this app's settings file.";
+/// Logs the backend's reason; keyring errors describe the store, never the secret.
+#[cfg(not(feature = "integration-test"))]
+fn unavailable(operation: &str, error: keyring::Error) -> String {
+    log::error!("Credential store {operation} failed: {error}");
+    LOCKED.into()
+}
 #[cfg(not(feature = "integration-test"))]
 impl OsVault {
     fn entry(&self) -> Result<keyring::Entry, String> {
-        keyring::Entry::new(&self.service, &self.account).map_err(|_| LOCKED.into())
+        keyring::Entry::new(&self.service, &self.account).map_err(|e| unavailable("open", e))
     }
 }
 #[cfg(not(feature = "integration-test"))]
@@ -38,11 +47,13 @@ impl Vault for OsVault {
         match self.entry()?.get_password() {
             Ok(key) => Ok(Some(key)),
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(_) => Err(LOCKED.into()),
+            Err(error) => Err(unavailable("read", error)),
         }
     }
     fn write(&self, key: &str) -> Result<(), String> {
-        self.entry()?.set_password(key).map_err(|_| LOCKED.into())
+        self.entry()?
+            .set_password(key)
+            .map_err(|e| unavailable("write", e))
     }
 }
 #[cfg(feature = "integration-test")]
@@ -82,23 +93,73 @@ fn verified_save(vault: &impl Vault, key: &str) -> Result<(), String> {
     }
     Ok(())
 }
-fn migrate(
+/// Returns the active key and whether it lives in the settings file. The API key is only
+/// a transmission key, so an unusable vault falls back to the owner-only settings file
+/// instead of blocking sync. A local key stays there until the user saves again, so
+/// startup never touches (or prompts to unlock) the vault for it. A legacy key predates
+/// the vault: a readable vault key always wins over it, and the legacy key is only used
+/// in place when the vault cannot be read or cannot accept it.
+fn load_key(
     vault: &impl Vault,
-    legacy: Option<&str>,
-    remove_legacy: impl FnOnce() -> Result<(), String>,
-) -> Result<Option<String>, String> {
-    let existing = vault.read()?;
-    let key = match existing {
-        Some(key) => Some(validate_key(&key)?),
-        None => legacy.map(validate_key).transpose()?,
-    };
-    if legacy.is_some() {
-        if let Some(key) = &key {
-            verified_save(vault, key)?;
-            remove_legacy()?;
+    store: &crate::preferences::Preferences,
+) -> Result<(Option<String>, bool), String> {
+    let local = store.get(LOCAL_KEY);
+    if let Some(key) = local.as_ref().and_then(|v| v.as_str()) {
+        match validate_key(key) {
+            Ok(key) => return Ok((Some(key), true)),
+            Err(_) => log::warn!("Ignoring an invalid API key in the settings file"),
         }
     }
-    Ok(key)
+    let legacy = store.get(LEGACY_KEY);
+    let legacy = legacy.as_ref().and_then(|v| v.as_str());
+    let cleanup = || {
+        if let Err(error) = remove_plaintext(store) {
+            log::warn!("Could not remove the API key from the settings file: {error}");
+        }
+    };
+    let existing = match vault.read() {
+        Ok(existing) => existing,
+        Err(error) => {
+            return match legacy.map(validate_key) {
+                Some(Ok(key)) => {
+                    log::warn!("Using the API key from the settings file: {error}");
+                    Ok((Some(key), true))
+                }
+                _ => Err(error),
+            }
+        }
+    };
+    if let Some(key) = existing {
+        let key = validate_key(&key)?;
+        if legacy.is_some() {
+            cleanup();
+        }
+        return Ok((Some(key), false));
+    }
+    let Some(legacy) = legacy else {
+        return Ok((None, false));
+    };
+    let key = validate_key(legacy)?;
+    match verified_save(vault, &key) {
+        Ok(()) => {
+            cleanup();
+            Ok((Some(key), false))
+        }
+        Err(error) => {
+            log::warn!("Using the API key from the settings file: {error}");
+            Ok((Some(key), true))
+        }
+    }
+}
+/// Settings-file entry for a key saved while the vault was unusable.
+const LOCAL_KEY: &str = "api-key-local";
+/// Settings-file entry from versions before the vault.
+const LEGACY_KEY: &str = "api-key";
+fn remove_plaintext(store: &crate::preferences::Preferences) -> Result<(), String> {
+    if store.get(LOCAL_KEY).is_none() && store.get(LEGACY_KEY).is_none() {
+        return Ok(());
+    }
+    store.commit_many([(LOCAL_KEY, None), (LEGACY_KEY, None)])
 }
 #[derive(Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -106,6 +167,8 @@ pub struct ApiKeyStatus {
     pub has_key: bool,
     pub loaded: bool,
     pub error: Option<String>,
+    /// The key is in the settings file because the OS credential store was unusable.
+    pub stored_locally: bool,
 }
 #[derive(Default)]
 struct SecretCache {
@@ -121,16 +184,60 @@ fn save_cached(
     vault: &impl Vault,
     key: &str,
     cleanup: impl FnOnce() -> Result<(), String>,
+    save_locally: impl FnOnce() -> Result<(), String>,
 ) -> Result<ApiKeyStatus, String> {
-    verified_save(vault, key)?;
-    // The verified vault write is the commit point. Cleanup cannot revert the active key.
+    // A verified vault write or the local fallback write is the commit point. Cleanup
+    // cannot revert the active key.
+    let (stored_locally, error) = match verified_save(vault, key) {
+        Ok(()) => (false, cleanup().err()),
+        Err(vault_error) => {
+            save_locally().map_err(|_| vault_error.clone())?;
+            log::warn!("Saved the API key to the settings file: {vault_error}");
+            (true, None)
+        }
+    };
     cache.key = Some(key.into());
     cache.status = ApiKeyStatus {
         has_key: true,
         loaded: true,
-        error: cleanup().err(),
+        error,
+        stored_locally,
     };
     Ok(cache.status.clone())
+}
+fn save_key(
+    cache: &mut SecretCache,
+    vault: &impl Vault,
+    store: Result<&crate::preferences::Preferences, &String>,
+    key: &str,
+) -> Result<ApiKeyStatus, String> {
+    // A local key outranks the vault on reload, so it must never be older than the
+    // vault. Replace it first; then a later cleanup failure leaves the newest key.
+    if let Ok(store) = store {
+        if store.get(LOCAL_KEY).is_some() {
+            store
+                .commit(LOCAL_KEY, Some(serde_json::json!(key)))
+                .map_err(|_| "Could not update the API key in the settings file. Fix settings permissions and retry saving.".to_string())?;
+        }
+    }
+    save_cached(
+        cache,
+        vault,
+        key,
+        || {
+            let store = store.map_err(|_| {
+                "Key saved securely, but legacy settings could not be accessed. Retry saving."
+                    .to_string()
+            })?;
+            remove_plaintext(store).map_err(|_| "Secure key saved, but legacy cleanup failed. Retry saving after fixing settings permissions.".to_string())
+        },
+        || {
+            store.map_err(Clone::clone)?.commit_many([
+                (LOCAL_KEY, Some(serde_json::json!(key))),
+                (LEGACY_KEY, None),
+            ])
+        },
+    )
 }
 impl SecretManager {
     pub fn reload(&self, app: &tauri::AppHandle) -> ApiKeyStatus {
@@ -138,22 +245,15 @@ impl SecretManager {
         let result = (|| {
             let store = crate::preferences::store(app)
                 .map_err(|_| "Could not access legacy settings for secure migration".to_string())?;
-            let legacy = store.get("api-key");
-            migrate(
-                &OsVault::default(),
-                legacy.as_ref().and_then(|v| v.as_str()),
-                || {
-                    store.commit("api-key", None).map_err(|_| "Key saved securely, but legacy settings cleanup failed. Retry after fixing settings permissions.".to_string())?;
-                    Ok(())
-                },
-            )
+            load_key(&OsVault::default(), &store)
         })();
         match result {
-            Ok(key) => {
+            Ok((key, stored_locally)) => {
                 cache.status = ApiKeyStatus {
                     has_key: key.is_some(),
                     loaded: true,
                     error: None,
+                    stored_locally,
                 };
                 cache.key = key;
             }
@@ -163,6 +263,7 @@ impl SecretManager {
                     has_key: false,
                     loaded: true,
                     error: Some(error),
+                    stored_locally: false,
                 };
             }
         }
@@ -187,14 +288,8 @@ impl SecretManager {
     fn save(&self, app: &tauri::AppHandle, key: String) -> Result<ApiKeyStatus, String> {
         let key = validate_key(&key)?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        save_cached(&mut cache, &OsVault::default(), &key, || {
-            let store = crate::preferences::store(app).map_err(|_| {
-                "Key saved securely, but legacy settings could not be accessed. Retry saving."
-                    .to_string()
-            })?;
-            store.commit("api-key", None).map_err(|_| "Secure key saved, but legacy cleanup failed. Retry saving after fixing settings permissions.".to_string())?;
-            Ok(())
-        })
+        let store = crate::preferences::store(app);
+        save_key(&mut cache, &OsVault::default(), store.as_deref(), &key)
     }
 }
 #[tauri::command]
@@ -210,10 +305,8 @@ pub async fn save_api_key(app: tauri::AppHandle, key: String) -> Result<ApiKeySt
             .manual()
             .is_err()
         {
-            result.error = Some(
-                "API key saved securely, but the sync service is unavailable. Restart the app."
-                    .into(),
-            );
+            result.error =
+                Some("API key saved, but the sync service is unavailable. Restart the app.".into());
         }
         Ok(result)
     })
@@ -250,10 +343,27 @@ pub(crate) fn ci_unavailable(identity: &str) -> Result<(), String> {
         service: format!("com.calebsmithdev.{identity}"),
         account: "synthetic-ci-account".into(),
     };
-    if vault.read().is_err() {
-        Ok(())
-    } else {
-        Err("Credential backend unexpectedly available; unavailable probe did not execute".into())
+    if vault.read().is_ok() {
+        return Err(
+            "Credential backend unexpectedly available; unavailable probe did not execute".into(),
+        );
+    }
+    // Real backend errors must reach the settings-file fallback for save and reload.
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let store = crate::preferences::Preferences::load(dir.path().join(".settings.dat"))?;
+    let status = save_key(
+        &mut SecretCache::default(),
+        &vault,
+        Ok(&store),
+        "synthetic-fallback-key",
+    )?;
+    if !status.stored_locally {
+        return Err("Unavailable backend save did not fall back to the settings file".into());
+    }
+    let reloaded = crate::preferences::Preferences::load(dir.path().join(".settings.dat"))?;
+    match load_key(&vault, &reloaded)? {
+        (Some(key), true) if key == "synthetic-fallback-key" => Ok(()),
+        _ => Err("Settings-file fallback key did not reload".into()),
     }
 }
 
@@ -324,22 +434,170 @@ mod tests {
         }
     }
     #[test]
-    fn removes_plaintext_only_after_verified_secure_write() {
-        let vault = vault();
-        let removed = RefCell::new(false);
+    fn legacy_key_is_removed_only_after_a_verified_vault_write() {
+        let (_dir, store) = settings(serde_json::json!({"api-key": " test-key "}));
+        let working = vault();
         assert_eq!(
-            migrate(&vault, Some(" test-key "), || {
-                *removed.borrow_mut() = true;
-                Ok(())
-            })
-            .unwrap(),
-            Some("test-key".into())
+            load_key(&working, &store),
+            Ok((Some("test-key".into()), false))
         );
-        assert!(*removed.borrow());
-        assert_eq!(vault.read().unwrap(), Some("test-key".into()));
+        assert_eq!(store.get(LEGACY_KEY), None);
+        assert_eq!(working.read().unwrap(), Some("test-key".into()));
+        for (fail_write, corrupt) in [(true, false), (false, true)] {
+            let (_dir, store) = settings(serde_json::json!({"api-key": "test-key"}));
+            let vault = FakeVault {
+                fail_write,
+                corrupt,
+                ..vault()
+            };
+            assert_eq!(
+                load_key(&vault, &store),
+                Ok((Some("test-key".into()), true))
+            );
+            assert_eq!(store.get(LEGACY_KEY), Some(serde_json::json!("test-key")));
+        }
     }
     #[test]
-    fn migration_failures_retain_plaintext_without_fallback() {
+    fn readable_vault_key_wins_over_legacy_even_if_cleanup_fails() {
+        let (dir, store) = settings(serde_json::json!({"api-key": "legacy-key"}));
+        make_unwritable(&dir);
+        let vault = vault();
+        vault.write("secure-key").unwrap();
+        assert_eq!(
+            load_key(&vault, &store),
+            Ok((Some("secure-key".into()), false))
+        );
+        assert_eq!(
+            load_key(&vault, &store),
+            Ok((Some("secure-key".into()), false))
+        );
+        assert_eq!(vault.read().unwrap(), Some("secure-key".into()));
+    }
+    #[test]
+    fn replacement_commit_keeps_cache_and_vault_consistent_if_cleanup_fails() {
+        let vault = vault();
+        let mut cache = SecretCache {
+            key: Some("old-key".into()),
+            ..Default::default()
+        };
+        let status = save_cached(
+            &mut cache,
+            &vault,
+            "new-key",
+            || Err("cleanup failed".into()),
+            || panic!("a working vault must not fall back"),
+        )
+        .unwrap();
+        assert_eq!(cache.key.as_deref(), Some("new-key"));
+        assert_eq!(vault.read().unwrap().as_deref(), Some("new-key"));
+        assert!(status.has_key);
+        assert!(!status.stored_locally);
+        assert_eq!(status.error.as_deref(), Some("cleanup failed"));
+    }
+    fn settings(values: serde_json::Value) -> (tempfile::TempDir, crate::preferences::Preferences) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".settings.dat");
+        std::fs::write(&path, values.to_string()).unwrap();
+        let store = crate::preferences::Preferences::load(path).unwrap();
+        (dir, store)
+    }
+    fn make_unwritable(dir: &tempfile::TempDir) {
+        let path = dir.path().join(".settings.dat");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+    }
+    fn unusable_vault() -> FakeVault {
+        FakeVault {
+            fail_read: true,
+            fail_write: true,
+            ..vault()
+        }
+    }
+    #[test]
+    fn local_key_is_used_without_touching_the_vault() {
+        let (_dir, store) = settings(serde_json::json!({"api-key-local": "local-key"}));
+        let vault = unusable_vault();
+        assert_eq!(
+            load_key(&vault, &store),
+            Ok((Some("local-key".into()), true))
+        );
+        assert_eq!(store.get(LOCAL_KEY), Some(serde_json::json!("local-key")));
+    }
+    #[test]
+    fn invalid_local_key_is_ignored_in_favor_of_the_vault() {
+        let (_dir, store) = settings(serde_json::json!({"api-key-local": "a b"}));
+        let vault = vault();
+        vault.write("vault-key").unwrap();
+        assert_eq!(
+            load_key(&vault, &store),
+            Ok((Some("vault-key".into()), false))
+        );
+    }
+    #[test]
+    fn legacy_key_moves_into_a_working_vault_or_is_used_in_place() {
+        let (_dir, store) = settings(serde_json::json!({"api-key": "legacy-key"}));
+        let vault = vault();
+        assert_eq!(
+            load_key(&vault, &store),
+            Ok((Some("legacy-key".into()), false))
+        );
+        assert_eq!(store.get(LEGACY_KEY), None);
+        assert_eq!(vault.read().unwrap().as_deref(), Some("legacy-key"));
+
+        let (_dir, store) = settings(serde_json::json!({"api-key": "legacy-key"}));
+        assert_eq!(
+            load_key(&unusable_vault(), &store),
+            Ok((Some("legacy-key".into()), true))
+        );
+        assert_eq!(store.get(LEGACY_KEY), Some(serde_json::json!("legacy-key")));
+        assert_eq!(
+            load_key(&unusable_vault(), &settings(serde_json::json!({})).1),
+            Err("locked".into())
+        );
+    }
+    #[test]
+    fn saving_replaces_a_local_key_and_reloads_from_where_it_was_saved() {
+        let (_dir, store) = settings(serde_json::json!({"api-key-local": "old-key"}));
+        let vault = vault();
+        let status = save_key(&mut SecretCache::default(), &vault, Ok(&store), "new-key").unwrap();
+        assert!(!status.stored_locally);
+        assert_eq!(store.get(LOCAL_KEY), None);
+        assert_eq!(
+            load_key(&vault, &store),
+            Ok((Some("new-key".into()), false))
+        );
+
+        let (_dir, store) = settings(serde_json::json!({"api-key": "legacy-key"}));
+        let vault = unusable_vault();
+        let status = save_key(&mut SecretCache::default(), &vault, Ok(&store), "new-key").unwrap();
+        assert!(status.stored_locally);
+        assert_eq!(store.get(LEGACY_KEY), None);
+        assert_eq!(load_key(&vault, &store), Ok((Some("new-key".into()), true)));
+    }
+    #[test]
+    fn unwritable_settings_with_a_local_key_fail_the_whole_save() {
+        let (dir, store) = settings(serde_json::json!({"api-key-local": "old-key"}));
+        make_unwritable(&dir);
+        let vault = vault();
+        let mut cache = SecretCache {
+            key: Some("old-key".into()),
+            ..Default::default()
+        };
+        assert!(save_key(&mut cache, &vault, Ok(&store), "new-key").is_err());
+        assert_eq!(cache.key.as_deref(), Some("old-key"));
+        assert_eq!(vault.read().unwrap(), None);
+        assert_eq!(store.get(LOCAL_KEY), Some(serde_json::json!("old-key")));
+    }
+    #[test]
+    fn cleanup_without_settings_file_keys_does_not_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".settings.dat");
+        let store = crate::preferences::Preferences::load(path.clone()).unwrap();
+        remove_plaintext(&store).unwrap();
+        assert!(!path.exists());
+    }
+    #[test]
+    fn failed_vault_save_falls_back_to_the_settings_file() {
         for (fail_write, fail_read, corrupt) in [
             (true, false, false),
             (false, true, false),
@@ -351,41 +609,43 @@ mod tests {
                 corrupt,
                 ..vault()
             };
-            let removed = RefCell::new(false);
-            assert!(migrate(&vault, Some("test-key"), || {
-                *removed.borrow_mut() = true;
-                Ok(())
-            })
-            .is_err());
-            assert!(!*removed.borrow());
+            let mut cache = SecretCache::default();
+            let saved = RefCell::new(false);
+            let status = save_cached(
+                &mut cache,
+                &vault,
+                "new-key",
+                || panic!("cleanup only follows a verified vault write"),
+                || {
+                    *saved.borrow_mut() = true;
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert!(*saved.borrow());
+            assert!(status.has_key && status.stored_locally && status.error.is_none());
+            assert_eq!(cache.key.as_deref(), Some("new-key"));
         }
     }
     #[test]
-    fn secure_existing_key_wins_and_cleanup_failure_is_recoverable() {
-        let vault = vault();
-        vault.write("secure-key").unwrap();
-        assert!(migrate(&vault, Some("legacy-key"), || Err("disk failure".into())).is_err());
-        assert_eq!(vault.read().unwrap(), Some("secure-key".into()));
-        assert_eq!(
-            migrate(&vault, Some("legacy-key"), || Ok(())).unwrap(),
-            Some("secure-key".into())
-        );
-    }
-    #[test]
-    fn replacement_commit_keeps_cache_and_vault_consistent_if_cleanup_fails() {
-        let vault = vault();
+    fn failed_fallback_save_reports_the_vault_error_and_keeps_the_old_key() {
+        let vault = FakeVault {
+            fail_write: true,
+            ..vault()
+        };
         let mut cache = SecretCache {
             key: Some("old-key".into()),
             ..Default::default()
         };
-        let status = save_cached(&mut cache, &vault, "new-key", || {
-            Err("cleanup failed".into())
-        })
-        .unwrap();
-        assert_eq!(cache.key.as_deref(), Some("new-key"));
-        assert_eq!(vault.read().unwrap().as_deref(), Some("new-key"));
-        assert!(status.has_key);
-        assert_eq!(status.error.as_deref(), Some("cleanup failed"));
+        let result = save_cached(
+            &mut cache,
+            &vault,
+            "new-key",
+            || panic!("cleanup only follows a verified vault write"),
+            || Err("disk failure".into()),
+        );
+        assert_eq!(result.err().as_deref(), Some("locked"));
+        assert_eq!(cache.key.as_deref(), Some("old-key"));
     }
     #[test]
     fn validates_keys_without_including_them_in_errors() {

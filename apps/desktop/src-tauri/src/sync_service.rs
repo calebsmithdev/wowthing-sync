@@ -18,6 +18,8 @@ use tauri::{Emitter, Manager};
 pub struct SyncStatus {
     pub folder: Option<String>,
     pub has_api_key: bool,
+    /// The key is in the settings file because the OS credential store was unusable.
+    pub api_key_stored_locally: bool,
     pub files: Vec<String>,
     pub is_processing: bool,
     pub last_success: Option<u64>,
@@ -147,6 +149,9 @@ pub(crate) trait WorkerIo: Send + Sync + 'static {
     fn preferences(&self) -> Result<Arc<crate::preferences::Preferences>, String>;
     fn key(&self) -> Result<Option<String>, String>;
     fn reload(&self);
+    fn key_stored_locally(&self) -> bool {
+        false
+    }
     fn emit(&self, status: &SyncStatus);
     /// Called once when the queue drains after one or more uploads finished.
     fn notify(&self, _summary: BatchSummary) -> Result<(), String> {
@@ -178,6 +183,12 @@ impl WorkerIo for AppIo {
         self.0
             .state::<crate::credentials::SecretManager>()
             .reload(&self.0);
+    }
+    fn key_stored_locally(&self) -> bool {
+        self.0
+            .state::<crate::credentials::SecretManager>()
+            .status()
+            .stored_locally
     }
     fn emit(&self, status: &SyncStatus) {
         let _ = self.0.emit("sync-status", status);
@@ -448,6 +459,7 @@ fn run(
     io.reload();
     let key = io.key();
     state.has_api_key = matches!(&key, Ok(Some(_)));
+    state.api_key_stored_locally = io.key_stored_locally();
     state.error = key.err();
     match io.preferences() {
         Ok(store) => {
@@ -555,6 +567,7 @@ fn run(
             };
         let key = io.key();
         state.has_api_key = matches!(&key, Ok(Some(_)));
+        state.api_key_stored_locally = io.key_stored_locally();
         if let Err(error) = io.preferences() {
             state.error = Some(error);
             publish(&io, &shared, &state);

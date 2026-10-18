@@ -91,7 +91,8 @@ pub fn run() {
             settings::save_sync_folder,
             settings::set_autostart,
             settings::set_notifications,
-            settings::default_wow_folder
+            settings::default_wow_folder,
+            settings::open_log_folder
         ])
         .build(tauri::generate_context!())
         .expect("Error while building the Wowthing Sync application")
