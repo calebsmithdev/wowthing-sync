@@ -64,7 +64,7 @@ const { handleUpload, lastUpdated, lastUpdatedFromNow, isProcessing, formattedLa
 
 const configured = computed(() => hasApiKey.value && !!status.value.folder)
 const setupSteps = computed(() => [
-  { title: 'Connect your WoWthing account', complete: hasApiKey.value, description: hasApiKey.value ? 'API key saved securely.' : 'Copy your API key from WoWthing Settings → Account.' },
+  { title: 'Connect your WoWthing account', complete: hasApiKey.value, description: hasApiKey.value ? 'API key saved.' : 'Copy your API key from WoWthing Settings → Account.' },
   { title: 'Choose your game folder', complete: !!status.value.folder, description: status.value.folder ? 'World of Warcraft folder selected.' : 'Select the _retail_ folder that contains WTF/Account.' },
 ])
 /** Listed files plus any failing file the scan could not list, so every failure has a row. */

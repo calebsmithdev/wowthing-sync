@@ -11,11 +11,12 @@ struct Fixture {
     folder_saved: AtomicBool,
     updater_checks: AtomicUsize,
     opener_calls: AtomicUsize,
+    log_folder_calls: AtomicUsize,
 }
 fn status(fixture: &Fixture) -> Value {
     let synced = fixture.synced.load(Ordering::Acquire);
     let folder_saved = fixture.folder_saved.load(Ordering::Acquire);
-    json!({"folder":if folder_saved { Some("/fixture/_retail_") } else { None }, "hasApiKey":fixture.saved.load(Ordering::Acquire) > 0,
+    json!({"folder":if folder_saved { Some("/fixture/_retail_") } else { None }, "hasApiKey":fixture.saved.load(Ordering::Acquire) > 0, "apiKeyStoredLocally":false,
         "files":if folder_saved { json!(["/fixture/collector.lua"]) } else { json!([]) }, "isProcessing":false,
         "lastSuccess":if synced { Some(1791244800u64) } else { None }, "error":null, "pending":0, "failures":[], "warning":null,
         "uploads":if synced { json!({"/fixture/collector.lua": 1791244800u64}) } else { json!({}) }})
@@ -67,6 +68,7 @@ fn sync_now(app: tauri::AppHandle, fixture: tauri::State<'_, Fixture>) -> Result
 fn smoke_report(app: tauri::AppHandle, fixture: tauri::State<'_, Fixture>, errors: Vec<String>) {
     let passed = errors.is_empty()
         && fixture.opener_calls.load(Ordering::Acquire) == 4
+        && fixture.log_folder_calls.load(Ordering::Acquire) == 2
         && fixture.saved.load(Ordering::Acquire) == 1
         && fixture.folder_saved.load(Ordering::Acquire)
         && fixture.updater_checks.load(Ordering::Acquire) >= 2
@@ -75,7 +77,7 @@ fn smoke_report(app: tauri::AppHandle, fixture: tauri::State<'_, Fixture>, error
         "NATIVE_SMOKE {} {}",
         if passed { "PASS" } else { "FAIL" },
         json!({"errors":errors,"saved":fixture.saved.load(Ordering::Acquire),"synced":fixture.synced.load(Ordering::Acquire),
-            "openerCalls":fixture.opener_calls.load(Ordering::Acquire), "setup":fixture.folder_saved.load(Ordering::Acquire), "updaterChecks":fixture.updater_checks.load(Ordering::Acquire)})
+            "openerCalls":fixture.opener_calls.load(Ordering::Acquire), "logFolderCalls":fixture.log_folder_calls.load(Ordering::Acquire), "setup":fixture.folder_saved.load(Ordering::Acquire), "updaterChecks":fixture.updater_checks.load(Ordering::Acquire)})
     );
     app.exit(if passed { 0 } else { 1 });
 }
@@ -101,6 +103,15 @@ mod opener {
         } else {
             Ok(())
         }
+    }
+}
+/// Never opens a file manager: the first attempt fails so the UI's retry path runs.
+#[tauri::command]
+fn open_log_folder(fixture: tauri::State<'_, Fixture>) -> Result<(), String> {
+    match fixture.log_folder_calls.fetch_add(1, Ordering::AcqRel) {
+        0 => Err("Could not open the logs folder.".into()),
+        1 => Ok(()),
+        _ => Err("Unexpected log folder attempt".into()),
     }
 }
 mod updater {
@@ -143,6 +154,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_sync_status,
+            open_log_folder,
             get_settings,
             save_api_key,
             save_sync_folder,

@@ -10,7 +10,7 @@
   const emit = (event, payload) => {
     for (const listener of listeners.values()) if (listener.event === event) callbacks.get(listener.handler)?.({ event, id: listener.id, payload })
   }
-  const fixture = { calls, settings, status, emit, openerError: null, updaterError: onboarding ? 'error sending request for url https://example.invalid/latest.json' : null }
+  const fixture = { calls, settings, status, emit, openerError: null, logFolderError: null, updaterError: onboarding ? 'error sending request for url https://example.invalid/latest.json' : null }
   window.__SMOKE__ = fixture
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
     unregisterListener(_event, id) {
@@ -44,6 +44,7 @@
           if (!['https://wowthing.org/user/Failcookie', 'https://wowthing.org', 'https://github.com/calebsmithdev/wowthing-sync/releases/latest'].includes(args.url)) throw new Error('URL outside fixture scope')
           if (fixture.openerError) throw new Error(fixture.openerError)
           return null
+        case 'open_log_folder': if (fixture.logFolderError) throw new Error(fixture.logFolderError); return null
         case 'plugin:updater|check': if (fixture.updaterError) throw new Error(fixture.updaterError); return null
         case 'get_settings': return { ...settings }
         case 'get_sync_status': return { ...status }

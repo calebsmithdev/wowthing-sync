@@ -14,6 +14,7 @@ it('native smoke waits for each rendered opener retry to become idle before cont
     <p>Updates could not be checked. You can try again here.</p>
     <a aria-disabled="false">Failcookie</a><a aria-disabled="false">WoWthing</a>
     <p id="error"></p><button id="retry" hidden></button>
+    <button id="logs">Open Logs Folder</button><p id="logs-error"></p>
     <button>Save API Key</button><button>Check for Updates</button><button>Status</button><button>Sync Now</button>`
   // jsdom has no layout-backed innerText; this fixture only needs rendered text.
   Object.defineProperty(document.body, 'innerText', { configurable: true, get: () => document.body.textContent })
@@ -39,12 +40,16 @@ it('native smoke waits for each rendered opener retry to become idle before cont
       }
     }
   }
-  for (const button of document.querySelectorAll('button:not(#retry)')) {
+  let logAttempts = 0
+  document.querySelector('#logs')!.addEventListener('click', () => {
+    document.querySelector('#logs-error')!.textContent = logAttempts++ === 0 ? 'Could not open the logs folder. Try again.' : ''
+  })
+  for (const button of document.querySelectorAll('button:not(#retry):not(#logs)')) {
     button.addEventListener('click', () => {
       const messages: Record<string, string> = {
         'Save API Key': 'Settings saved.',
         'Check for Updates': 'You Are Up to Date',
-        'Status': 'Welcome to WoWthing Sync API key saved securely.',
+        'Status': 'Welcome to WoWthing Sync API key saved.',
         'Sync Now': 'Synced just now',
       }
       state.textContent = messages[button.textContent!] ?? state.textContent
@@ -72,6 +77,7 @@ it('native smoke waits for each rendered opener retry to become idle before cont
     await completed
     expect(report).toHaveBeenCalledExactlyOnceWith({ errors: [] })
     expect(calls).toEqual(['Failcookie', 'Failcookie', 'WoWthing', 'WoWthing'])
+    expect(logAttempts).toBe(2)
   } finally {
     vi.useRealTimers()
     delete (document.body as Partial<HTMLElement>).innerText

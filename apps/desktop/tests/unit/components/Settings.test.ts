@@ -11,7 +11,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open }))
 
 const stubs = {
   UCard: { template: '<section><slot name="header" /><slot /></section>' },
-  UFormField: { template: '<div><slot name="hint" /><slot /></div>' },
+  UFormField: { props: ['description'], template: '<div><p>{{ description }}</p><slot name="hint" /><slot /></div>' },
   UInput: { props: ['modelValue', 'readonly', 'type'], emits: ['update:modelValue'], template: '<input :value="modelValue" :readonly="readonly" :type="type" @input="$emit(\'update:modelValue\', $event.target.value)" />' },
   UButton: { props: ['disabled'], emits: ['click'], template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>' },
   USwitch: { template: '<div />' },
@@ -20,10 +20,10 @@ const stubs = {
   UAlert: { template: '<div />' },
 }
 
-const mountSettings = () => {
+const mountSettings = (hasApiKey = false, storedLocally = ref(false)) => {
   const settings = createSettings(); settings.loaded.value = true
   settings.state.value = { ...emptySettings(), folder: '/working/_retail_', autoStart: false }
-  vi.stubGlobal('useSettings', () => settings); vi.stubGlobal('useApiKeys', () => ({ hasApiKey: ref(false) }))
+  vi.stubGlobal('useSettings', () => settings); vi.stubGlobal('useApiKeys', () => ({ hasApiKey: ref(hasApiKey), storedLocally }))
   const updater = { busy: ref(false), phase: ref('idle'), errorOperation: ref('check'), visible: ref(false), checkForUpdates: vi.fn() }
   vi.stubGlobal('useUpdater', () => updater); vi.stubGlobal('ref', ref); vi.stubGlobal('computed', computed)
   return { settings, updater, wrapper: mount(Settings, { global: { stubs } }) }
@@ -98,6 +98,27 @@ describe('settings', () => {
     invoke.mockResolvedValueOnce({ hasKey: true, loaded: true, error: null })
     await input.setValue('enter-key'); await input.trigger('keydown.enter'); await flushPromises()
     expect(invoke).toHaveBeenLastCalledWith('save_api_key', { key: 'enter-key' })
+    wrapper.unmount(); vi.unstubAllGlobals()
+  })
+
+  it('says where a saved API key is stored', async () => {
+    const storedLocally = ref(false)
+    const { wrapper } = mountSettings(true, storedLocally)
+    expect(wrapper.text()).toContain('saved securely in your system credential store')
+    storedLocally.value = true; await flushPromises()
+    expect(wrapper.text()).toContain('saved in this app\'s settings file because no system credential store was available. Save your key again')
+    wrapper.unmount(); vi.unstubAllGlobals()
+  })
+
+  it('opens the logs folder natively and shows a failure beside the button', async () => {
+    const { wrapper } = mountSettings()
+    invoke.mockRejectedValueOnce(new Error('Could not open the logs folder.'))
+    await button(wrapper, 'Open Logs Folder').trigger('click'); await flushPromises()
+    expect(invoke).toHaveBeenLastCalledWith('open_log_folder')
+    expect(wrapper.get('[role="alert"]').text()).toBe('Could not open the logs folder. Try again.')
+    invoke.mockResolvedValueOnce(null)
+    await button(wrapper, 'Open Logs Folder').trigger('click'); await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount(); vi.unstubAllGlobals()
   })
 

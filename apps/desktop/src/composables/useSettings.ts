@@ -52,6 +52,7 @@ export function createSettings() {
     setAutostart: (enabled: boolean) => perform('autostart', () => invoke<SettingsSnapshot>('set_autostart', { enabled })),
     setNotifications: (enabled: boolean) => perform('notifications', () => invoke<SettingsSnapshot>('set_notifications', { enabled })),
     defaultFolder: () => invoke<string>('default_wow_folder'),
+    openLogFolder: () => invoke<null>('open_log_folder'),
   }
 }
 export type SettingsController = ReturnType<typeof createSettings>

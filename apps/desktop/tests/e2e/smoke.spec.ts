@@ -42,7 +42,7 @@ test('fresh offline profile shows setup, preserves manual update feedback and be
   await page.getByRole('button', { name: 'Save API Key', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Settings saved.' })).toBeVisible()
   await page.getByRole('link', { name: 'Status', exact: true }).click()
-  await expect(page.getByText('API key saved securely.')).toBeVisible()
+  await expect(page.getByText('API key saved.')).toBeVisible()
   await expect(page.locator('[aria-label=Complete]')).toHaveCount(1)
   await expect(page.getByRole('heading', { name: 'Welcome to WoWthing Sync' })).toBeVisible()
   await page.getByRole('link', { name: 'Open Settings', exact: true }).click()
@@ -127,5 +127,21 @@ test('About links use opener with exact URLs and recover from browser failures',
     )
     await expect(page).toHaveURL(/\/settings$/)
   }
+  expect(errors).toEqual([])
+})
+
+test('Open Logs Folder asks the native side and shows a failure inline', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  await page.goto('/settings')
+  const smoke = () => (window as unknown as { __SMOKE__: { logFolderError: string | null, calls: { command: string, args: object }[] } }).__SMOKE__
+  await page.evaluate(`(${smoke})().logFolderError = 'Could not open the logs folder.'`)
+  await page.getByRole('button', { name: 'Open Logs Folder', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Could not open the logs folder.')
+  await page.evaluate(`(${smoke})().logFolderError = null`)
+  await page.getByRole('button', { name: 'Open Logs Folder', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(await page.evaluate(`(${smoke})().calls.filter(call => call.command === 'open_log_folder').map(call => call.args)`)).toEqual([{}, {}])
   expect(errors).toEqual([])
 })

@@ -45,7 +45,7 @@ describe('status page', () => {
     wrapper.unmount(); vi.unstubAllGlobals()
   })
   it.each([
-    { hasApiKey: true, folder: null, complete: 'API key saved securely.', remaining: 'Select the _retail_ folder' },
+    { hasApiKey: true, folder: null, complete: 'API key saved.', remaining: 'Select the _retail_ folder' },
     { hasApiKey: false, folder: '/wow/_retail_', complete: 'World of Warcraft folder selected.', remaining: 'Copy your API key' },
   ])('marks completed setup steps and keeps the remaining step actionable', value => {
     const wrapper = mountStatus(value)

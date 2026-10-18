@@ -17,7 +17,7 @@
       <h2 class="section-title">WoWthing Account</h2>
       <div class="group-rows">
         <div class="space-y-2 py-3">
-          <UFormField label="API Key" name="apiKey" :description="hasApiKey ? 'An API key is saved securely in your system credential store.' : 'Find your API key in WoWthing Settings → Account.'">
+          <UFormField label="API Key" name="apiKey" :description="apiKeyDescription">
             <div class="flex gap-2">
               <UInput
                 v-model="apiKeyDraft"
@@ -98,6 +98,14 @@
           </div>
           <UButton color="neutral" variant="outline" class="shrink-0" :loading="updaterBusy" @click="checkForUpdates(true)">Check for Updates</UButton>
         </div>
+        <div class="flex items-center justify-between gap-4 py-3">
+          <div class="text-sm">
+            <p class="font-medium text-highlighted">Logs</p>
+            <p v-if="logFolderFailed" role="alert" class="text-error">Could not open the logs folder. Try again.</p>
+            <p v-else class="text-muted">Helpful when reporting a problem.</p>
+          </div>
+          <UButton color="neutral" variant="outline" class="shrink-0" :loading="openingLogFolder" @click="openLogFolder">Open Logs Folder</UButton>
+        </div>
         <div class="space-y-2 py-3 text-sm text-muted">
           <p>Built by <a :href="aboutLinks.Failcookie" :aria-disabled="openingAboutLink !== null" class="underline hover:text-primary" @click.prevent="openAboutLink('Failcookie')">Failcookie</a>.
           Powered by <a :href="aboutLinks.WoWthing" :aria-disabled="openingAboutLink !== null" class="underline hover:text-primary" @click.prevent="openAboutLink('WoWthing')">WoWthing</a>.</p>
@@ -119,7 +127,13 @@ import { folderFlavor } from '../utils/collector'
 
 const settings = useSettings()
 const { state, loading, loaded, busy, saving, error, notice, scope, setAutostart, setNotifications } = settings
-const { hasApiKey } = useApiKeys()
+const { hasApiKey, storedLocally } = useApiKeys()
+const apiKeyDescription = computed(() => {
+  if (!hasApiKey.value) return 'Find your API key in WoWthing Settings → Account.'
+  return storedLocally.value
+    ? 'An API key is saved in this app\'s settings file because no system credential store was available. Save your key again to move it into your system credential store.'
+    : 'An API key is saved securely in your system credential store.'
+})
 const { busy: updaterBusy, phase: updaterPhase, errorOperation: updaterErrorOperation, visible: updateVisible, checkForUpdates } = useUpdater()
 const apiKeyDraft = ref('')
 const showPassword = ref(false)
@@ -136,6 +150,16 @@ const openAboutLink = async (link: AboutLink) => {
   try { await openUrl(aboutLinks[link]) }
   catch { failedAboutLink.value = link }
   finally { openingAboutLink.value = null }
+}
+const openingLogFolder = ref(false)
+const logFolderFailed = ref(false)
+const openLogFolder = async () => {
+  if (openingLogFolder.value) return
+  openingLogFolder.value = true
+  logFolderFailed.value = false
+  try { await settings.openLogFolder() }
+  catch { logFolderFailed.value = true }
+  finally { openingLogFolder.value = false }
 }
 
 const loadFailed = computed(() => !loading.value && (!loaded.value || (scope.value === null && !!error.value)))

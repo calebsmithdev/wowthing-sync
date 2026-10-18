@@ -280,6 +280,25 @@ pub fn default_wow_folder(app: tauri::AppHandle) -> Result<String, String> {
         .to_string_lossy()
         .into_owned())
 }
+
+/// Opens the app's own log folder for support. The path is resolved here, never
+/// supplied by the frontend, so the webview needs no opener path permission.
+#[cfg(not(feature = "integration-test"))]
+#[tauri::command]
+pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let unavailable = "Could not open the logs folder.";
+    let dir = app.path().app_log_dir().map_err(|error| {
+        log::error!("Log folder unavailable: {error}");
+        unavailable.to_string()
+    })?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|error| {
+            log::error!("Could not open the log folder: {error}");
+            unavailable.to_string()
+        })
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -88,8 +88,9 @@ argument delivery at login remains a manual release check. Runtime startup
 verification uses plugin enabled-state readback, not registration argument readback.
 Linux starts a private Secret Service in
 an owned DBus session and temporary XDG paths; a separate invalid socket tests
-unavailable-backend errors. A missing backend fails, rather than passing as a
-skip. Do not run these on developer machines or self-hosted runners.
+unavailable-backend errors, then saves and reloads a synthetic key through the
+settings-file fallback in a temporary directory. A missing backend fails, rather
+than passing as a skip. Do not run these on developer machines or self-hosted runners.
 
 Release updater signatures are verified against the committed public key,
 including signed version. Every updater payload must have a signature. Platform

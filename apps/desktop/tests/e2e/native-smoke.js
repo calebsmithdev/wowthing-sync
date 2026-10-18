@@ -35,6 +35,11 @@
         // The error clears when retry starts; aria-disabled clears only after opener settles.
         await wait(() => idle() && !document.body.innerText.includes(`Could not open ${name} in your browser`))
       }
+      // The fixture fails the first attempt, so the inline failure and retry both run.
+      click('Open Logs Folder')
+      await wait(() => document.body.innerText.includes('Could not open the logs folder.'))
+      click('Open Logs Folder')
+      await wait(() => !document.body.innerText.includes('Could not open the logs folder.') && [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Open Logs Folder' && !button.disabled))
       const input = document.querySelector('input[type="password"]')
       input.value = 'smoke-fixture-key'
       input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -44,7 +49,7 @@
       click('Check for Updates')
       await wait(() => document.body.innerText.includes('You Are Up to Date'))
       click('Status')
-      await wait(() => document.body.innerText.includes('API key saved securely.'))
+      await wait(() => document.body.innerText.includes('API key saved.'))
       if (!document.body.innerText.includes('Welcome to WoWthing Sync')) throw new Error('Partial setup lost its remaining step')
       await window.__TAURI_INTERNALS__.invoke('save_sync_folder', { folder: '/fixture/_retail_' })
       await wait(() => document.body.innerText.includes('Watching 1 account'))
