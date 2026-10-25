@@ -408,9 +408,11 @@ fn real_worker_bounds_history_through_account_and_root_churn_and_restart() {
         wait("new root history persisted", || {
             service.snapshot().uploads.len() == 1
                 && io.store.get("account-uploads").is_some_and(|value| {
-                    value[collector.to_string_lossy().as_ref()]
-                        .as_u64()
-                        .is_some()
+                    value[crate::collector_fs::display_path(&collector)
+                        .to_string_lossy()
+                        .as_ref()]
+                    .as_u64()
+                    .is_some()
                 })
         });
     }
@@ -421,9 +423,11 @@ fn real_worker_bounds_history_through_account_and_root_churn_and_restart() {
         wait("account churn prunes prior account", || {
             let history = io.store.get("account-uploads").unwrap();
             history.as_object().unwrap().len() == 1
-                && history[collector.to_string_lossy().as_ref()]
-                    .as_u64()
-                    .is_some()
+                && history[crate::collector_fs::display_path(&collector)
+                    .to_string_lossy()
+                    .as_ref()]
+                .as_u64()
+                .is_some()
         });
     }
     let uploads = service.snapshot().uploads;
