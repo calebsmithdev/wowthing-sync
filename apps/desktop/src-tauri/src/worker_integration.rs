@@ -1005,7 +1005,8 @@ fn real_worker_retries_http_failures_and_reports_bounded_timeouts() {
 fn real_worker_clears_removed_upload_failures_and_keeps_healthy_accounts_retryable() {
     for remove_account in [false, true] {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().canonicalize().unwrap().join("root");
+        let root =
+            crate::collector_fs::display_path(&temp.path().canonicalize().unwrap()).join("root");
         let failed = file(&root, "FAILED", "rejected payload");
         let server = Server::new(vec![(400, Duration::ZERO)]);
         let mut io = io(&temp, &server);
@@ -1050,7 +1051,7 @@ fn real_worker_clears_removed_upload_failures_and_keeps_healthy_accounts_retryab
 #[test]
 fn real_worker_preserves_upload_failures_on_failed_scan_until_successful_empty_scan() {
     let temp = tempfile::tempdir().unwrap();
-    let root = temp.path().canonicalize().unwrap().join("root");
+    let root = crate::collector_fs::display_path(&temp.path().canonicalize().unwrap()).join("root");
     let failed = file(&root, "FAILED", "rejected payload");
     let server = Server::new(vec![(400, Duration::ZERO)]);
     let mut io = io(&temp, &server);
@@ -1081,7 +1082,7 @@ fn real_worker_preserves_upload_failures_on_failed_scan_until_successful_empty_s
 #[test]
 fn real_worker_replaces_upload_failures_with_fresh_read_and_scan_errors() {
     let temp = tempfile::tempdir().unwrap();
-    let root = temp.path().canonicalize().unwrap().join("root");
+    let root = crate::collector_fs::display_path(&temp.path().canonicalize().unwrap()).join("root");
     let failed = file(&root, "FAILED", "rejected payload");
     let server = Server::new(vec![(400, Duration::ZERO)]);
     let mut io = io(&temp, &server);
