@@ -1007,7 +1007,7 @@ fn real_worker_clears_removed_upload_failures_and_keeps_healthy_accounts_retryab
         let temp = tempfile::tempdir().unwrap();
         let root =
             crate::collector_fs::display_path(&temp.path().canonicalize().unwrap()).join("root");
-        let failed = file(&root, "FAILED", "rejected payload");
+        let failed = crate::collector_fs::display_path(&file(&root, "FAILED", "rejected payload"));
         let server = Server::new(vec![(400, Duration::ZERO)]);
         let mut io = io(&temp, &server);
         io.watcher_setup_fails = true;
@@ -1015,7 +1015,7 @@ fn real_worker_clears_removed_upload_failures_and_keeps_healthy_accounts_retryab
         configure(&service, &root);
         wait("HTTP failure", || service.snapshot().failures.len() == 1);
         let failure = service.snapshot().failures[0].clone();
-        let healthy = file(&root, "HEALTHY", "healthy payload");
+        let healthy = crate::collector_fs::display_path(&file(&root, "HEALTHY", "healthy payload"));
         wait("healthy account uploaded", || {
             service
                 .snapshot()
@@ -1052,7 +1052,7 @@ fn real_worker_clears_removed_upload_failures_and_keeps_healthy_accounts_retryab
 fn real_worker_preserves_upload_failures_on_failed_scan_until_successful_empty_scan() {
     let temp = tempfile::tempdir().unwrap();
     let root = crate::collector_fs::display_path(&temp.path().canonicalize().unwrap()).join("root");
-    let failed = file(&root, "FAILED", "rejected payload");
+    let failed = crate::collector_fs::display_path(&file(&root, "FAILED", "rejected payload"));
     let server = Server::new(vec![(400, Duration::ZERO)]);
     let mut io = io(&temp, &server);
     io.watcher_setup_fails = true;
@@ -1060,9 +1060,19 @@ fn real_worker_preserves_upload_failures_on_failed_scan_until_successful_empty_s
     configure(&service, &root);
     wait("HTTP failure", || service.snapshot().failures.len() == 1);
     let failure = service.snapshot().failures[0].clone();
-    // A missing account directory is a failed root scan, not empty discovery.
+    // An incomplete root scan cannot authoritatively retire any failure.
+    for index in 0..1000 {
+        std::fs::write(root.join(format!("WTF/Account/EXCESS-{index}")), "").unwrap();
+    }
+    wait("failed root scan", || {
+        service
+            .snapshot()
+            .error
+            .is_some_and(|error| error.contains("too many entries"))
+    });
+    assert!(service.snapshot().failures == [failure.clone()]);
+    // Reopening a root with no account directory fails too, not empty discovery.
     std::fs::remove_dir_all(root.join("WTF/Account")).unwrap();
-    wait("failed root scan", || service.snapshot().error.is_some());
     wait_for_worker_passes(&io, 3);
     assert!(service.snapshot().failures == [failure]);
     assert!(service.snapshot().files.is_empty());
@@ -1083,7 +1093,7 @@ fn real_worker_preserves_upload_failures_on_failed_scan_until_successful_empty_s
 fn real_worker_replaces_upload_failures_with_fresh_read_and_scan_errors() {
     let temp = tempfile::tempdir().unwrap();
     let root = crate::collector_fs::display_path(&temp.path().canonicalize().unwrap()).join("root");
-    let failed = file(&root, "FAILED", "rejected payload");
+    let failed = crate::collector_fs::display_path(&file(&root, "FAILED", "rejected payload"));
     let server = Server::new(vec![(400, Duration::ZERO)]);
     let mut io = io(&temp, &server);
     io.watcher_setup_fails = true;
