@@ -8,6 +8,8 @@ use std::{
 };
 use tauri::Manager;
 
+pub(crate) const MAX_SETTINGS_BYTES: usize = 1024 * 1024;
+
 pub struct Preferences {
     path: PathBuf,
     values: Mutex<BTreeMap<String, serde_json::Value>>,
@@ -18,7 +20,7 @@ impl Preferences {
         let bytes = match std::fs::File::open(&path) {
             Ok(file) => {
                 let mut bytes = Vec::new();
-                file.take(1024 * 1024 + 1)
+                file.take((MAX_SETTINGS_BYTES + 1) as u64)
                     .read_to_end(&mut bytes)
                     .map_err(|_| {
                         "Could not read settings. Check app-data permissions and restart the app."
@@ -35,7 +37,7 @@ impl Preferences {
             }
         };
         let values = match bytes {
-            Some(bytes) if bytes.len() <= 1024 * 1024 => {
+            Some(bytes) if bytes.len() <= MAX_SETTINGS_BYTES => {
                 serde_json::from_slice(&bytes).map_err(|_| {
                     "Settings file is invalid. Repair or restore it and restart the app before saving settings."
                         .to_string()
@@ -79,11 +81,18 @@ impl Preferences {
     }
 }
 fn write_atomic(path: &Path, values: &BTreeMap<String, serde_json::Value>) -> Result<(), String> {
+    let bytes = serde_json::to_vec(values).map_err(|_| "Could not write settings")?;
+    if bytes.len() > MAX_SETTINGS_BYTES {
+        return Err(
+            "Settings would exceed the size limit. Your previous settings were retained.".into(),
+        );
+    }
     let parent = path.parent().ok_or("Invalid settings location")?;
     std::fs::create_dir_all(parent).map_err(|_| "Could not create settings directory")?;
     let mut file =
         tempfile::NamedTempFile::new_in(parent).map_err(|_| "Could not prepare settings save")?;
-    serde_json::to_writer(&mut file, values).map_err(|_| "Could not write settings")?;
+    file.write_all(&bytes)
+        .map_err(|_| "Could not write settings")?;
     file.flush().map_err(|_| "Could not flush settings")?;
     file.as_file()
         .sync_all()
@@ -108,6 +117,53 @@ pub fn initialize(app: &tauri::AppHandle) -> PreferencesState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn serialized_byte_limit_round_trips_and_rejection_preserves_disk_and_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let store = Preferences::load(path.clone()).unwrap();
+        // Include UTF-8 and JSON escapes: character counts are not byte budgets.
+        let prefix = "雪\\\"\n".repeat(100);
+        let overhead = serde_json::to_vec(&serde_json::json!({"value": prefix}))
+            .unwrap()
+            .len();
+        let exact = format!("{prefix}{}", "x".repeat(MAX_SETTINGS_BYTES - overhead));
+        for length in [exact.len() - 1, exact.len()] {
+            let value = serde_json::json!(&exact[..length]);
+            store.commit("value", Some(value.clone())).unwrap();
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().len() as usize,
+                MAX_SETTINGS_BYTES - (exact.len() - length)
+            );
+            assert_eq!(
+                Preferences::load(path.clone()).unwrap().get("value"),
+                Some(value)
+            );
+        }
+        let original = std::fs::read(&path).unwrap();
+        assert!(store
+            .commit("value", Some(serde_json::json!(format!("{exact}x"))))
+            .unwrap_err()
+            .contains("size limit"));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(store.get("value"), Some(serde_json::json!(exact)));
+        assert!(store
+            .commit_many([
+                ("value", Some(serde_json::json!(format!("{exact}x")))),
+                ("api-key-local", Some(serde_json::json!("synthetic"))),
+            ])
+            .unwrap_err()
+            .contains("size limit"));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(store.get("value"), Some(serde_json::json!(exact)));
+        assert_eq!(store.get("api-key-local"), None);
+        // Oversized existing files remain untouched and require explicit repair.
+        let oversized = [original.as_slice(), b" "].concat();
+        std::fs::write(&path, &oversized).unwrap();
+        assert!(Preferences::load(path.clone()).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), oversized);
+    }
+
     #[test]
     fn saves_legacy_json_atomically_and_failed_write_preserves_memory_and_disk() {
         let dir = tempfile::tempdir().unwrap();
