@@ -414,6 +414,20 @@ Production CSP has self/hashed bundled scripts, external CSS, local SVG icons, I
 
 Autostart reflects actual OS state, verifies changes before saving, and attempts OS rollback on persistence failure. Desktop notification APIs do not expose actual delivery consent truthfully: UI reports unknown and points to OS settings; background failures never prompt. Update controller is shared for background/manual/tray events, serializes checks/installs, closes resources before relaunch and suppresses late teardown callbacks. `__debug` remains a development diagnostic page; there is no general-purpose FS/secret diagnostic endpoint.
 
+### Upload history (#67)
+
+Preferences reject serialized writes above the same 1 MiB
+load limit before replacement, retaining prior disk and Preferences memory.
+`account-uploads` retains at most 1000 entries and 512 KiB of compact JSON,
+favoring recent timestamps (path order breaks ties) and protecting the just-uploaded
+file. Hydration bounds memory without writing. Successful scans prune absent
+collectors, including old roots, and persist removals even without an upload;
+failed-present collectors retain history, and whole-scan/open failures do not
+establish absence. An exceptionally large active set can lose older account
+timestamps until its next upload; `last-success` still records actual successes.
+Other settings are never pruned. Existing files already above 1 MiB still require
+explicit repair and restart; loading does not truncate or rewrite them.
+
 ### WoW folder recovery (#59)
 
 Each worker scan reopens the configured folder and compares directory handles

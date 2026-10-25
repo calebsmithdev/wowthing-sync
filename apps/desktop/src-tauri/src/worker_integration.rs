@@ -322,6 +322,182 @@ fn wait_for_worker_passes(io: &Io, passes: u64) {
 }
 
 #[test]
+fn real_worker_bounds_legacy_history_in_memory_without_startup_writes() {
+    let temp = tempfile::tempdir().unwrap();
+    let server = Server::new(vec![]);
+    let mut io = io(&temp, &server);
+    let history: BTreeMap<_, _> = (0..900)
+        .map(|index| {
+            (
+                format!(
+                    "/old-root/{}-{index}/WoWthing_Collector.lua",
+                    "雪\\\"".repeat(90)
+                ),
+                index,
+            )
+        })
+        .collect();
+    io.store
+        .commit("account-uploads", Some(serde_json::json!(history)))
+        .unwrap();
+    let original = std::fs::read(temp.path().join("settings.json")).unwrap();
+    io.key = Ok(None);
+    let service = SyncService::start_with_io(io.clone());
+    wait("bounded history hydration", || {
+        !service.snapshot().uploads.is_empty()
+    });
+    let uploads = service.snapshot().uploads;
+    assert!(uploads.len() < history.len());
+    assert!(serde_json::to_vec(&uploads).unwrap().len() <= MAX_UPLOAD_HISTORY_BYTES);
+    assert_eq!(uploads.values().max(), Some(&899));
+    service.shutdown();
+    assert_eq!(
+        std::fs::read(temp.path().join("settings.json")).unwrap(),
+        original
+    );
+    assert_eq!(
+        io.store.get("account-uploads"),
+        Some(serde_json::json!(history))
+    );
+    assert!(server.bodies().is_empty());
+}
+
+#[test]
+fn real_worker_bounds_history_through_account_and_root_churn_and_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let server = Server::new(vec![]);
+    let io = io(&temp, &server);
+    let base = crate::collector_fs::display_path(&temp.path().canonicalize().unwrap());
+    let mut root = base.join("root-0");
+    let mut collector = file(&root, "CURRENT", "root 0");
+    let history: BTreeMap<_, _> = (0..900)
+        .map(|index| {
+            (
+                format!(
+                    "/old-root/{}/WTF/Account/{index}/SavedVariables/WoWthing_Collector.lua",
+                    "雪\\\"".repeat(90)
+                ),
+                index,
+            )
+        })
+        .collect();
+    io.store
+        .commit_many([
+            ("program-folder", Some(serde_json::json!(root))),
+            ("account-uploads", Some(serde_json::json!(history))),
+            (
+                "api-key-local",
+                Some(serde_json::json!("unrelated-synthetic-key")),
+            ),
+            ("notifications-enabled", Some(serde_json::json!(false))),
+        ])
+        .unwrap();
+    let service = SyncService::start_with_io(io.clone());
+    wait("legacy history replaced by current account", || {
+        let status = service.snapshot();
+        status.uploads.len() == 1 && status.last_success.is_some()
+    });
+    // Multiple root changes must replace history, rather than accumulate it.
+    for index in 1..4 {
+        root = base.join(format!("root-{index}"));
+        collector = file(&root, "CURRENT", &format!("root {index}"));
+        io.store
+            .commit("program-folder", Some(serde_json::json!(root)))
+            .unwrap();
+        configure(&service, &root);
+        wait("new root history persisted", || {
+            service.snapshot().uploads.len() == 1
+                && io.store.get("account-uploads").is_some_and(|value| {
+                    value[crate::collector_fs::display_path(&collector)
+                        .to_string_lossy()
+                        .as_ref()]
+                    .as_u64()
+                    .is_some()
+                })
+        });
+    }
+    for index in 0..3 {
+        std::fs::remove_file(&collector).unwrap();
+        collector = file(&root, &format!("NEW-{index}"), &format!("account {index}"));
+        service.manual().unwrap();
+        wait("account churn prunes prior account", || {
+            let history = io.store.get("account-uploads").unwrap();
+            history.as_object().unwrap().len() == 1
+                && history[crate::collector_fs::display_path(&collector)
+                    .to_string_lossy()
+                    .as_ref()]
+                .as_u64()
+                .is_some()
+        });
+    }
+    let uploads = service.snapshot().uploads;
+    let last_success = service.snapshot().last_success;
+    // An empty (present but unreadable) collector retains its last good time.
+    std::fs::write(&collector, "").unwrap();
+    service.manual().unwrap();
+    wait("empty collector failure", || {
+        !service.snapshot().failures.is_empty()
+    });
+    assert_eq!(service.snapshot().uploads, uploads);
+    // A failed whole scan cannot establish that any account disappeared.
+    for index in 0..1000 {
+        std::fs::write(root.join(format!("WTF/Account/EXCESS-{index}")), "").unwrap();
+    }
+    service.manual().unwrap();
+    wait("incomplete scan", || {
+        service
+            .snapshot()
+            .error
+            .is_some_and(|error| error.contains("too many entries"))
+    });
+    assert_eq!(service.snapshot().uploads, uploads);
+    for index in 0..1000 {
+        std::fs::remove_file(root.join(format!("WTF/Account/EXCESS-{index}"))).unwrap();
+    }
+    service.manual().unwrap();
+    wait("scan recovers with failed-present collector", || {
+        service
+            .snapshot()
+            .error
+            .is_some_and(|error| error.contains("No readable"))
+    });
+    assert_eq!(service.snapshot().uploads, uploads);
+    service.shutdown();
+    let store =
+        Arc::new(crate::preferences::Preferences::load(temp.path().join("settings.json")).unwrap());
+    assert_eq!(
+        store.get("api-key-local"),
+        Some(serde_json::json!("unrelated-synthetic-key"))
+    );
+    assert_eq!(
+        store.get("notifications-enabled"),
+        Some(serde_json::json!(false))
+    );
+    let service = SyncService::start_with_io(Io {
+        store: store.clone(),
+        ..io.clone()
+    });
+    wait("restart retains current account timestamp", || {
+        service.snapshot().uploads == uploads && service.snapshot().last_success == last_success
+    });
+    // A successful empty scan persists pruning even without another upload.
+    std::fs::remove_file(&collector).unwrap();
+    service.manual().unwrap();
+    wait("empty history persisted", || {
+        store.get("account-uploads") == Some(serde_json::json!({}))
+    });
+    service.shutdown();
+    let reloaded =
+        crate::preferences::Preferences::load(temp.path().join("settings.json")).unwrap();
+    assert_eq!(reloaded.get("account-uploads"), Some(serde_json::json!({})));
+    assert_eq!(
+        reloaded.get("last-success").and_then(|v| v.as_u64()),
+        last_success
+    );
+    assert_eq!(server.bodies().len(), 7);
+}
+
+#[test]
 fn real_worker_attempts_failed_watcher_setup_once_until_reconfigured_or_scan_error() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("_retail_");

@@ -117,7 +117,8 @@ impl SyncStatus {
         match outcome {
             Ok(()) => {
                 self.last_success = Some(now);
-                self.uploads.insert(file, now);
+                self.uploads.insert(file.clone(), now);
+                bound_upload_history(&mut self.uploads, Some(&file));
             }
             Err(message) => self.failures.push(FileFailure { file, message }),
         }
@@ -223,6 +224,51 @@ impl WorkerIo for AppIo {
 const FALLBACK_INTERVAL: Duration = Duration::from_secs(1);
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
 const VERIFY_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+// Leave half the settings budget for credentials, preferences and future fields.
+// Count alone cannot bound escaped/Unicode collector paths.
+const MAX_UPLOAD_HISTORY_BYTES: usize = crate::preferences::MAX_SETTINGS_BYTES / 2;
+const MAX_UPLOAD_HISTORY_ENTRIES: usize = 1000;
+fn bound_upload_history(uploads: &mut BTreeMap<String, u64>, protected: Option<&str>) {
+    let mut newest: Vec<_> = std::mem::take(uploads).into_iter().collect();
+    newest.sort_by(|(a_path, a_time), (b_path, b_time)| {
+        (Some(b_path.as_str()) == protected)
+            .cmp(&(Some(a_path.as_str()) == protected))
+            .then_with(|| b_time.cmp(a_time))
+            .then_with(|| a_path.cmp(b_path))
+    });
+    let mut bytes = 2; // JSON object braces.
+    for (path, time) in newest {
+        // String/u64 serialization is infallible. Include colon and commas.
+        let entry_bytes = serde_json::to_vec(&path)
+            .expect("serialize history path")
+            .len()
+            + 1
+            + time.to_string().len()
+            + usize::from(!uploads.is_empty());
+        if uploads.len() < MAX_UPLOAD_HISTORY_ENTRIES
+            && bytes + entry_bytes <= MAX_UPLOAD_HISTORY_BYTES
+        {
+            bytes += entry_bytes;
+            uploads.insert(path, time);
+        }
+    }
+}
+
+/// Only a complete scan establishes absence. Failed collectors still have history.
+fn reconcile_upload_history(
+    uploads: &mut BTreeMap<String, u64>,
+    present: impl IntoIterator<Item = PathBuf>,
+) -> bool {
+    let present: BTreeSet<_> = present
+        .into_iter()
+        .map(|file| file.to_string_lossy().into_owned())
+        .collect();
+    let previous_len = uploads.len();
+    uploads.retain(|file, _| present.contains(file));
+    bound_upload_history(uploads, None);
+    uploads.len() != previous_len
+}
 
 /// Native events only wake capability-based scans; they never authorize a path.
 /// A single outstanding wake bounds memory during bursts or stalled uploads.
@@ -503,6 +549,7 @@ fn run(
                 .and_then(|value| serde_json::from_value(value).ok())
                 .map(simplify_upload_keys)
                 .unwrap_or_default();
+            bound_upload_history(&mut state.uploads, None);
         }
         Err(e) => state.error = Some(e.to_string()),
     }
@@ -674,6 +721,25 @@ fn run(
                 continue;
             }
         };
+        if reconcile_upload_history(
+            &mut state.uploads,
+            prints
+                .keys()
+                .cloned()
+                .chain(failures.iter().map(|(file, _)| file.clone())),
+        ) {
+            // Prune even when all remaining collectors are unreadable or absent.
+            // Never alter last-success or unrelated settings during reconciliation.
+            if io
+                .preferences()
+                .and_then(|store| {
+                    store.commit("account-uploads", Some(serde_json::json!(state.uploads)))
+                })
+                .is_err()
+            {
+                state.warning = Some("Upload history could not be saved.".into());
+            }
+        }
         // Recursive setup can be expensive. Attempt only after a successful
         // scan, once per held root, including when setup itself fails. Failed or
         // unhealthy watchers retain polling until this root is discarded/reset.
@@ -1106,6 +1172,55 @@ mod tests {
         assert_eq!(approved.read(&collector).unwrap(), b"replacement contents");
         drop(approved); // Release the held directory before deleting the Windows fixture.
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn history_budget_counts_serialized_unicode_and_escapes_and_keeps_newest() {
+        let mut uploads = BTreeMap::new();
+        for time in 0..1000 {
+            let path = format!("/{}-{time}/WoWthing_Collector.lua", "雪\\\"".repeat(200));
+            uploads.insert(path, time);
+        }
+        assert!(serde_json::to_vec(&uploads).unwrap().len() > MAX_UPLOAD_HISTORY_BYTES);
+        bound_upload_history(&mut uploads, None);
+        assert!(
+            uploads.len() < 1000,
+            "byte budget must bind before count limit"
+        );
+        assert!(serde_json::to_vec(&uploads).unwrap().len() <= MAX_UPLOAD_HISTORY_BYTES);
+        assert_eq!(uploads.values().max(), Some(&999));
+        let retained = uploads.clone();
+        bound_upload_history(&mut uploads, None);
+        assert_eq!(
+            uploads, retained,
+            "budgeting is deterministic and idempotent"
+        );
+        let mut short = (0..2000).map(|time| (time.to_string(), time)).collect();
+        bound_upload_history(&mut short, None);
+        assert_eq!(short.len(), MAX_UPLOAD_HISTORY_ENTRIES);
+        assert_eq!(short.values().min(), Some(&1000));
+        // A just-completed upload survives equal times or a backwards clock.
+        short.insert("just-uploaded".into(), 0);
+        bound_upload_history(&mut short, Some("just-uploaded"));
+        assert_eq!(short.get("just-uploaded"), Some(&0));
+        assert_eq!(short.len(), MAX_UPLOAD_HISTORY_ENTRIES);
+        let mut tied: BTreeMap<_, _> = (0..1001).map(|n| (format!("{n:04}"), 42)).collect();
+        bound_upload_history(&mut tied, Some("1000"));
+        assert!(tied.contains_key("1000"));
+        assert!(!tied.contains_key("0999"));
+        let path = format!("雪\\\"\n{}", "x".repeat(MAX_UPLOAD_HISTORY_BYTES - 32));
+        let cost = serde_json::to_vec(&BTreeMap::from([(path.clone(), 42)]))
+            .unwrap()
+            .len();
+        let exact_path = format!("{path}{}", "x".repeat(MAX_UPLOAD_HISTORY_BYTES - cost));
+        let mut exact = BTreeMap::from([(exact_path.clone(), 42)]);
+        bound_upload_history(&mut exact, None);
+        assert_eq!(
+            serde_json::to_vec(&exact).unwrap().len(),
+            MAX_UPLOAD_HISTORY_BYTES
+        );
+        let mut over = BTreeMap::from([(format!("{exact_path}x"), 42)]);
+        bound_upload_history(&mut over, None);
+        assert!(over.is_empty());
     }
 }
 
