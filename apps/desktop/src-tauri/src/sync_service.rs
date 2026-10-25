@@ -857,56 +857,6 @@ pub fn sync_now(service: tauri::State<'_, SyncService>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn history_budget_counts_serialized_unicode_and_escapes_and_keeps_newest() {
-        let mut uploads = BTreeMap::new();
-        for time in 0..1000 {
-            let path = format!("/{}-{time}/WoWthing_Collector.lua", "雪\\\"".repeat(200));
-            uploads.insert(path, time);
-        }
-        assert!(serde_json::to_vec(&uploads).unwrap().len() > MAX_UPLOAD_HISTORY_BYTES);
-        bound_upload_history(&mut uploads, None);
-        assert!(
-            uploads.len() < 1000,
-            "byte budget must bind before count limit"
-        );
-        assert!(serde_json::to_vec(&uploads).unwrap().len() <= MAX_UPLOAD_HISTORY_BYTES);
-        assert_eq!(uploads.values().max(), Some(&999));
-        let retained = uploads.clone();
-        bound_upload_history(&mut uploads, None);
-        assert_eq!(
-            uploads, retained,
-            "budgeting is deterministic and idempotent"
-        );
-        let mut short = (0..2000).map(|time| (time.to_string(), time)).collect();
-        bound_upload_history(&mut short, None);
-        assert_eq!(short.len(), MAX_UPLOAD_HISTORY_ENTRIES);
-        assert_eq!(short.values().min(), Some(&1000));
-        // A just-completed upload survives equal times or a backwards clock.
-        short.insert("just-uploaded".into(), 0);
-        bound_upload_history(&mut short, Some("just-uploaded"));
-        assert_eq!(short.get("just-uploaded"), Some(&0));
-        assert_eq!(short.len(), MAX_UPLOAD_HISTORY_ENTRIES);
-        let mut tied: BTreeMap<_, _> = (0..1001).map(|n| (format!("{n:04}"), 42)).collect();
-        bound_upload_history(&mut tied, Some("1000"));
-        assert!(tied.contains_key("1000"));
-        assert!(!tied.contains_key("0999"));
-        let path = format!("雪\\\"\n{}", "x".repeat(MAX_UPLOAD_HISTORY_BYTES - 32));
-        let cost = serde_json::to_vec(&BTreeMap::from([(path.clone(), 42)]))
-            .unwrap()
-            .len();
-        let exact_path = format!("{path}{}", "x".repeat(MAX_UPLOAD_HISTORY_BYTES - cost));
-        let mut exact = BTreeMap::from([(exact_path.clone(), 42)]);
-        bound_upload_history(&mut exact, None);
-        assert_eq!(
-            serde_json::to_vec(&exact).unwrap().len(),
-            MAX_UPLOAD_HISTORY_BYTES
-        );
-        let mut over = BTreeMap::from([(format!("{exact_path}x"), 42)]);
-        bound_upload_history(&mut over, None);
-        assert!(over.is_empty());
-    }
-
     #[cfg(windows)]
     #[test]
     fn upload_keys_simplify_safely_and_keep_latest_time() {
@@ -1185,6 +1135,55 @@ mod tests {
         assert_eq!(approved.read(&collector).unwrap(), b"replacement contents");
         drop(approved); // Release the held directory before deleting the Windows fixture.
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn history_budget_counts_serialized_unicode_and_escapes_and_keeps_newest() {
+        let mut uploads = BTreeMap::new();
+        for time in 0..1000 {
+            let path = format!("/{}-{time}/WoWthing_Collector.lua", "雪\\\"".repeat(200));
+            uploads.insert(path, time);
+        }
+        assert!(serde_json::to_vec(&uploads).unwrap().len() > MAX_UPLOAD_HISTORY_BYTES);
+        bound_upload_history(&mut uploads, None);
+        assert!(
+            uploads.len() < 1000,
+            "byte budget must bind before count limit"
+        );
+        assert!(serde_json::to_vec(&uploads).unwrap().len() <= MAX_UPLOAD_HISTORY_BYTES);
+        assert_eq!(uploads.values().max(), Some(&999));
+        let retained = uploads.clone();
+        bound_upload_history(&mut uploads, None);
+        assert_eq!(
+            uploads, retained,
+            "budgeting is deterministic and idempotent"
+        );
+        let mut short = (0..2000).map(|time| (time.to_string(), time)).collect();
+        bound_upload_history(&mut short, None);
+        assert_eq!(short.len(), MAX_UPLOAD_HISTORY_ENTRIES);
+        assert_eq!(short.values().min(), Some(&1000));
+        // A just-completed upload survives equal times or a backwards clock.
+        short.insert("just-uploaded".into(), 0);
+        bound_upload_history(&mut short, Some("just-uploaded"));
+        assert_eq!(short.get("just-uploaded"), Some(&0));
+        assert_eq!(short.len(), MAX_UPLOAD_HISTORY_ENTRIES);
+        let mut tied: BTreeMap<_, _> = (0..1001).map(|n| (format!("{n:04}"), 42)).collect();
+        bound_upload_history(&mut tied, Some("1000"));
+        assert!(tied.contains_key("1000"));
+        assert!(!tied.contains_key("0999"));
+        let path = format!("雪\\\"\n{}", "x".repeat(MAX_UPLOAD_HISTORY_BYTES - 32));
+        let cost = serde_json::to_vec(&BTreeMap::from([(path.clone(), 42)]))
+            .unwrap()
+            .len();
+        let exact_path = format!("{path}{}", "x".repeat(MAX_UPLOAD_HISTORY_BYTES - cost));
+        let mut exact = BTreeMap::from([(exact_path.clone(), 42)]);
+        bound_upload_history(&mut exact, None);
+        assert_eq!(
+            serde_json::to_vec(&exact).unwrap().len(),
+            MAX_UPLOAD_HISTORY_BYTES
+        );
+        let mut over = BTreeMap::from([(format!("{exact_path}x"), 42)]);
+        bound_upload_history(&mut over, None);
+        assert!(over.is_empty());
     }
 }
 
