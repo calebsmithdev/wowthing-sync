@@ -1002,6 +1002,117 @@ fn real_worker_retries_http_failures_and_reports_bounded_timeouts() {
     service.shutdown();
 }
 #[test]
+fn real_worker_clears_removed_upload_failures_and_keeps_healthy_accounts_retryable() {
+    for remove_account in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap().join("root");
+        let failed = file(&root, "FAILED", "rejected payload");
+        let server = Server::new(vec![(400, Duration::ZERO)]);
+        let mut io = io(&temp, &server);
+        io.watcher_setup_fails = true;
+        let service = SyncService::start_with_io(io.clone());
+        configure(&service, &root);
+        wait("HTTP failure", || service.snapshot().failures.len() == 1);
+        let failure = service.snapshot().failures[0].clone();
+        let healthy = file(&root, "HEALTHY", "healthy payload");
+        wait("healthy account uploaded", || {
+            service
+                .snapshot()
+                .uploads
+                .contains_key(&healthy.to_string_lossy().into_owned())
+        });
+        wait_for_worker_passes(&io, 3);
+        assert!(service.snapshot().failures == [failure]);
+        assert_eq!(server.bodies(), ["rejected payload", "healthy payload"]);
+
+        if remove_account {
+            std::fs::remove_dir_all(failed.parent().unwrap().parent().unwrap()).unwrap();
+        } else {
+            std::fs::remove_file(&failed).unwrap();
+        }
+        wait("removed upload failure reconciled", || {
+            let state = service.snapshot();
+            state.failures.is_empty() && state.files == [healthy.to_string_lossy()]
+        });
+        service.manual().unwrap();
+        wait("remaining account manually retried", || {
+            server.bodies().len() == 3 && !service.snapshot().is_processing
+        });
+        assert_eq!(
+            server.bodies(),
+            ["rejected payload", "healthy payload", "healthy payload"]
+        );
+        assert!(service.snapshot().failures.is_empty());
+        service.shutdown();
+    }
+}
+
+#[test]
+fn real_worker_preserves_upload_failures_on_failed_scan_until_successful_empty_scan() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap().join("root");
+    let failed = file(&root, "FAILED", "rejected payload");
+    let server = Server::new(vec![(400, Duration::ZERO)]);
+    let mut io = io(&temp, &server);
+    io.watcher_setup_fails = true;
+    let service = SyncService::start_with_io(io.clone());
+    configure(&service, &root);
+    wait("HTTP failure", || service.snapshot().failures.len() == 1);
+    let failure = service.snapshot().failures[0].clone();
+    // A missing account directory is a failed root scan, not empty discovery.
+    std::fs::remove_dir_all(root.join("WTF/Account")).unwrap();
+    wait("failed root scan", || service.snapshot().error.is_some());
+    wait_for_worker_passes(&io, 3);
+    assert!(service.snapshot().failures == [failure]);
+    assert!(service.snapshot().files.is_empty());
+    std::fs::create_dir_all(root.join("WTF/Account")).unwrap();
+    wait("successful empty scan clears removed failure", || {
+        let state = service.snapshot();
+        state.failures.is_empty()
+            && state
+                .error
+                .is_some_and(|error| error.starts_with("No readable"))
+    });
+    assert!(!failed.exists());
+    assert_eq!(server.bodies(), ["rejected payload"]);
+    service.shutdown();
+}
+
+#[test]
+fn real_worker_replaces_upload_failures_with_fresh_read_and_scan_errors() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap().join("root");
+    let failed = file(&root, "FAILED", "rejected payload");
+    let server = Server::new(vec![(400, Duration::ZERO)]);
+    let mut io = io(&temp, &server);
+    io.watcher_setup_fails = true;
+    let service = SyncService::start_with_io(io.clone());
+    configure(&service, &root);
+    wait("HTTP failure", || service.snapshot().failures.len() == 1);
+    let upload_error = service.snapshot().failures[0].message.clone();
+    std::fs::write(&failed, "").unwrap();
+    wait("fresh empty-file read failure", || {
+        let state = service.snapshot();
+        state.files.is_empty()
+            && state.failures.len() == 1
+            && state.failures[0].message != upload_error
+    });
+    let read_error = service.snapshot().failures[0].message.clone();
+    std::fs::remove_file(&failed).unwrap();
+    std::fs::create_dir(&failed).unwrap();
+    wait("fresh non-file scan failure", || {
+        let state = service.snapshot();
+        state.failures.len() == 1 && state.failures[0].message != read_error
+    });
+    wait_for_worker_passes(&io, 3);
+    let state = service.snapshot();
+    assert_eq!(state.failures[0].file, failed.to_string_lossy());
+    assert!(state.failures[0].message.contains("regular file"));
+    assert_eq!(server.bodies(), ["rejected payload"]);
+    service.shutdown();
+}
+
+#[test]
 fn real_worker_notifies_once_per_drained_batch() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("batch");
