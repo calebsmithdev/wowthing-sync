@@ -76,6 +76,29 @@ impl BatchSummary {
     }
 }
 impl SyncStatus {
+    /// Only a successful scan can retire failures for collectors no longer found.
+    fn reconcile_scan_failures(
+        &mut self,
+        readable: &BTreeMap<PathBuf, u64>,
+        scan_failures: &mut BTreeSet<String>,
+        fresh: Vec<(PathBuf, String)>,
+    ) {
+        let readable: BTreeSet<_> = readable
+            .keys()
+            .map(|file| file.to_string_lossy().into_owned())
+            .collect();
+        self.failures.retain(|failure| {
+            readable.contains(&failure.file) && !scan_failures.contains(&failure.file)
+        });
+        scan_failures.clear();
+        for (file, message) in fresh {
+            let file = file.to_string_lossy().into_owned();
+            self.failures.retain(|failure| failure.file != file);
+            scan_failures.insert(file.clone());
+            self.failures.push(FileFailure { file, message });
+        }
+    }
+
     fn finish_upload(
         &mut self,
         file: &Path,
@@ -672,17 +695,7 @@ fn run(
             } else {
                 FALLBACK_INTERVAL
             };
-        // Clear only previous scan errors. Upload failures survive a healthy scan.
-        state
-            .failures
-            .retain(|failure| !scan_failures.contains(&failure.file));
-        scan_failures.clear();
-        for (file, message) in failures {
-            let file = file.to_string_lossy().into_owned();
-            state.failures.retain(|failure| failure.file != file);
-            scan_failures.insert(file.clone());
-            state.failures.push(FileFailure { file, message });
-        }
+        state.reconcile_scan_failures(&prints, &mut scan_failures, failures);
         let files: Vec<_> = prints.keys().cloned().collect();
         queue.retain(&files);
         previous.retain(|file, _| prints.contains_key(file));
@@ -791,6 +804,30 @@ pub fn sync_now(service: tauri::State<'_, SyncService>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn successful_scan_reconciles_upload_and_scan_failures() {
+        let mut state = SyncStatus::default();
+        for file in ["readable", "removed", "recovered", "unreadable"] {
+            state.record_upload(Path::new(file), Err("old failure".into()), 0);
+        }
+        let readable = BTreeMap::from([("readable".into(), 1), ("recovered".into(), 2)]);
+        let mut scan_failures = BTreeSet::from(["recovered".into()]);
+        state.reconcile_scan_failures(
+            &readable,
+            &mut scan_failures,
+            vec![("unreadable".into(), "fresh read error".into())],
+        );
+        assert_eq!(state.failures.len(), 2);
+        assert_eq!(state.failures[0].file, "readable");
+        assert_eq!(state.failures[0].message, "old failure");
+        assert_eq!(state.failures[1].file, "unreadable");
+        assert_eq!(state.failures[1].message, "fresh read error");
+        assert_eq!(scan_failures, BTreeSet::from(["unreadable".into()]));
+        state.reconcile_scan_failures(&BTreeMap::new(), &mut scan_failures, vec![]);
+        assert!(state.failures.is_empty());
+        assert!(scan_failures.is_empty());
+    }
+
     #[cfg(windows)]
     #[test]
     fn upload_keys_simplify_safely_and_keep_latest_time() {
