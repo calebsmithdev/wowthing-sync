@@ -31,9 +31,9 @@ test('Nuxt renderer stays bundled when Nitro resolves a Windows path', async () 
     } finally { await nitro.close() }
   }
   try {
-    // Nuxt 4.6 defaults only inline the resolved nuxt/dist path; Nitro 2.13.4
-    // does not normalize that resolved ID before matching it on Windows.
-    assert.equal((await probe(['nuxt/dist'], 'nuxt/internal/renderer')).external, true)
+    // Nitro 2.13.5 normalizes the resolved ID before matching string patterns, so
+    // the nuxt/dist default inlines a Windows path without Nuxt's own matcher.
+    assert.equal(await probe(['nuxt/dist'], 'nuxt/internal/renderer'), null)
     assert.ok(shipped, 'Nuxt no longer normalizes resolved dist IDs; restore nitro.externals.inline in nuxt.config.ts')
     const pattern = new RegExp(shipped[1])
     const isNuxtDistId = id => pattern.test(normalize(id))
