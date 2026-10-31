@@ -129,6 +129,9 @@ consumer VMs before replacing this checklist with automated jobs.
   Windows trust/UI, launch, bundled assets/native libraries and version.
 - Upgrade a previous release in a disposable user profile, preserve preferences,
   approve expected credential prompts and verify a real signed production update.
+  On Windows, update from a release built with the current updater to a newer
+  `.nsis.zip`: production's `v1Compatible` archives use the updater's zip path,
+  while `updater-install.mjs` builds `createUpdaterArtifacts: true` candidates.
 - Approve/deny notification consent and confirm delivery, disabled behavior and
   OS settings links; hosted probes do not claim actual consent/delivery coverage.
 - In a disposable profile, confirm an enabled pre-marker registration is refreshed
