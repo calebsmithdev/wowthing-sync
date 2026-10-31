@@ -101,16 +101,15 @@ fn serve(
         bytes.extend_from_slice(&buffer[..count]);
         if let Some(end) = bytes.windows(4).position(|v| v == b"\r\n\r\n") {
             let headers = String::from_utf8_lossy(&bytes[..end]);
-            let len: usize = headers
-                .lines()
-                .find_map(|line| {
-                    line.to_ascii_lowercase()
-                        .strip_prefix("content-length: ")
-                        .map(str::to_owned)
-                })
-                .unwrap()
-                .parse()
-                .unwrap();
+            // Only uploads carry a body; local port probes may also reach this listener.
+            let Some(len) = headers.lines().find_map(|line| {
+                line.to_ascii_lowercase()
+                    .strip_prefix("content-length: ")
+                    .map(str::to_owned)
+            }) else {
+                return;
+            };
+            let len: usize = len.parse().unwrap();
             if bytes.len() >= end + 4 + len {
                 let body: serde_json::Value =
                     serde_json::from_slice(&bytes[end + 4..end + 4 + len]).unwrap();
