@@ -231,6 +231,18 @@ No authored notes were available for these items; the statements below come from
   [esbuild](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr).
   They occur in build/test tooling; no new reachable shipped-app exploit was
   verified. No forced audit downgrade was applied.
+- Separate marketing lock audit: **19 findings (2 critical, 3 high, 11 moderate,
+  3 low)**. Critical findings are simple-git/argv-parser unsafe-operation guards
+  ([editor detection](https://github.com/advisories/GHSA-v5rq-49vh-5v5c),
+  [trailer configuration](https://github.com/advisories/GHSA-x6jw-m9v5-85vh)).
+  These enter via @nuxt/devtools; node-forge via listhen and undici via Nuxt also
+  have advisories. Marketing was outside the requested desktop dependency update.
+  Its Pages workflow publishes only `marketing/.output/public`
+  (`.github/workflows/static-pages.yml:55`), and source has no direct simple-git,
+  forge or undici API use. No untrusted Git-argument path or deployed server
+  exposure was verified, so no speculative vulnerability issue was filed.
+  A separate marketing dependency refresh remains recommended. Repository-wide
+  Dependabot alert totals include this separate lock and differ from desktop audit.
 - Read Rust IPC/settings/credentials, collector path/capability restrictions and
   worker cancellation, Nuxt controllers, capabilities/CSP, scripts/process/package
   supervision and GitHub release/CI workflows. Queried existing issues in all
