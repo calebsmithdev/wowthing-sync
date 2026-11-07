@@ -1,299 +1,296 @@
-# Dependency review — 2026-10-31
+# Dependency review — 2026-11-07
 
-Weekly maintenance changelog review. Base: `origin/main` @ `d42156d` (v1.1.3).
-Stable code under review: `27b3f64`. Only this report changed after that commit.
-App version stays 1.1.3; Node 22.22.3 and Rust 1.97.1 pins are unchanged.
-
-**Validation:** every requested local check passed on `27b3f64` (macOS ARM64 only);
-see [Validation results](#validation-results). Hosted Windows, Linux and Intel macOS
-results are not claimed here.
-
-Labels used below: **[notes]** = stated in the cited release notes or changelog.
-**[inference]** = how a note applies to this repository; not stated upstream.
-
-## Rust: direct dependency changes
-
-Every changed minimum in `apps/desktop/src-tauri/Cargo.toml`, plus the lock-only
-Tauri plugin moves. Minimums equal lock versions.
-
-| Crate | Old → new | Source |
-| --- | --- | --- |
-| `tauri` | 2.12.4 → 2.12.5 | [CHANGELOG](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri/CHANGELOG.md) |
-| `tauri-build` (build-dep) | 2.7.3 → 2.7.4 | [CHANGELOG](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-build/CHANGELOG.md) |
-| `tauri-plugin-dialog` | 2.8.3 → 2.8.4 | [CHANGELOG](https://github.com/tauri-apps/plugins-workspace/blob/v2/plugins/dialog/CHANGELOG.md) |
-| `tauri-plugin-notification` | 2.7.0 → 2.8.0 | [CHANGELOG](https://github.com/tauri-apps/plugins-workspace/blob/v2/plugins/notification/CHANGELOG.md) |
-| `tauri-plugin-single-instance` | 2.5.4 → 2.5.5 | [CHANGELOG](https://github.com/tauri-apps/plugins-workspace/blob/v2/plugins/single-instance/CHANGELOG.md) |
-| `tauri-plugin-updater` | 2.14.0 → 2.14.1 | [CHANGELOG](https://github.com/tauri-apps/plugins-workspace/blob/v2/plugins/updater/CHANGELOG.md) |
-| `notify` | 8.2.0 → 8.2.1 | [release](https://github.com/notify-rs/notify/releases/tag/notify-8.2.1) |
-| `tokio` | 1.53.3 → 1.54.1 | [CHANGELOG](https://github.com/tokio-rs/tokio/blob/master/tokio/CHANGELOG.md) |
-| `log` | 0.4.34 → 0.4.35 | [repository](https://github.com/rust-lang/log); changelog not retrieved, see [Research gaps](#research-gaps) |
-
-## Rust: transitive changes (all lock changes)
-
-`Cargo.lock` has 68 package-level changes.
-
-| Group | Changes | Source |
-| --- | --- | --- |
-| Tauri core | `tauri-codegen`, `tauri-macros` 2.7.3→2.7.4; `tauri-runtime-wry` 2.12.2→2.12.3; `tauri-winres` 0.3.6→0.3.7 | [`crates/*`](https://github.com/tauri-apps/tauri/tree/dev/crates) |
-| Webview/window | `wry` 0.57.0→0.57.1; `tao` 0.37.1→0.37.2 | [wry](https://github.com/tauri-apps/wry/blob/dev/CHANGELOG.md), [tao](https://github.com/tauri-apps/tao/blob/dev/CHANGELOG.md) |
-| Updater/archive | `zip` 4.6.1→**9.1.3** (major); new `typed-path` 0.13.0, `utf_types` 1.0.0; removed `arbitrary`, `derive_arbitrary` | [zip CHANGELOG](https://github.com/zip-rs/zip2/blob/master/CHANGELOG.md) |
-| Dialog | `rfd` 0.16.0→0.17.2 | [CHANGELOG](https://github.com/PolyMeilex/rfd/blob/master/CHANGELOG.md) |
-| File watching | `notify-types` 2.1.0→2.2.0; new `objc2-core-services` 0.3.2; removed `fsevent-sys` | notify 8.2.1 release |
-| TLS | `aws-lc-rs` 1.18.2→1.19.0; `aws-lc-sys` 0.46.0→0.47.0; `rustls-webpki` 0.103.15→0.103.16; `webpki-root-certs` 1.0.9→1.0.11; `openssl-probe` 0.2.1→0.2.2 | [aws-lc-rs](https://github.com/aws/aws-lc-rs/releases/tag/v1.19.0), [webpki](https://github.com/rustls/webpki/releases/tag/v/0.103.16) |
-| Compression/image (build-time via `tauri-codegen`) | `brotli` 9.0.0→9.1.1; `brotli-decompressor` 6.0.1→6.2.0; `ico` 0.5.0→0.6.0; removed `png` 0.17.16 | [brotli](https://github.com/dropbox/rust-brotli), [ico](https://github.com/mdsteele/rust-ico) |
-| ICU/Unicode | `icu_*` 2.3→2.4; `tinystr`, `utf8_iter`, `yoke`, `zcheapstr`, `zerovec`, `zerovec-derive` patch/minor | [ICU4X 2.4](https://github.com/unicode-org/icu4x/releases/tag/icu%402.4.0) |
-| Wasm bindings | `wasm-bindgen*` 0.2.129→0.2.130; `js-sys`, `web-sys` 0.3.106→0.3.107; `wasm-bindgen-futures` 0.4.79→0.4.80 | Not used by the desktop targets [inference] |
-| Misc | `base64` 0.22.1 and `rand` 0.9.5 (+`rand_chacha`, `rand_core`) removed as duplicates; `cc`, `crc32fast`, `encoding_rs`, `erased-serde`, `find-msvc-tools`, `open` 5.4.5, `plist` 1.10.3, `rustix` 1.1.6, `smallvec`, `uuid` 1.29.0, `xattr` 1.7.0 | [open](https://github.com/Byron/open-rs/releases/tag/v5.4.5), [uuid](https://github.com/uuid-rs/uuid/releases/tag/v1.29.0), [xattr](https://github.com/Stebalien/xattr/releases/tag/v1.7.0) |
-
-### Notes by crate
-
-- **tauri 2.12.5 / tauri-cli 2.12.4** [notes]: NSIS installers now block downgrades
-  over a newer MSI-installed version in silent, passive and update modes when
-  `allowDowngrades` is false; `choowHowToInstall` language string renamed; CLI moves to
-  `zip` 9 for the three RUSTSEC findings. [inference] No custom NSIS language file or
-  `allowDowngrades` setting exists in this repo.
-- **tauri-plugin-updater 2.14.1** [notes]: `zip` 9; `Error::Extract` now wraps `zip` 9's
-  `ZipError` on Windows; `base64` 0.23. [inference] This closes the three advisories
-  listed in the previous review. App code never matches `Error::Extract`.
-- **zip 9.x** [notes]: extraction hardening, including not following symlinks during
-  file creation (9.1.2) and `FILE_FLAG_OPEN_REPARSE_POINT` truncation protection
-  (9.1.3); ZIP64 overflow rejection and large-symlink OOM fixes (9.0.0). The 7.0.0
-  breaking section removes feature flags only.
-- **notify 8.2.1** [notes]: MSRV 1.85; macOS moves from `fsevent-sys` to `objc2`
-  bindings; FSEvents stream startup errors now propagate from `watch`; inotify cleans
-  up deleted paths; `FsEventWatcher` no longer crashes unwatching an empty path.
-- **tauri-plugin-single-instance 2.5.5** [notes]: the lock is released in
-  `cleanup_before_exit` instead of on `RunEvent::Exit`; Windows race fixed where a
-  secondary instance could fail to exit if `FindWindowW` missed the event window.
-- **tokio 1.54.0/1.54.1** [notes]: MSRV 1.85; zero-capacity constructors now panic;
-  timer and scheduler fixes. 1.54.1 reverts "remove the runtime handle from timers".
-  [inference] The app enables only `macros`, `time`, `rt`.
-- **wry 0.57.1** [notes]: macOS activates only when a new webview is both visible and
-  focused; macOS drag-path panic fixed; Linux download-state isolation.
-- **tao 0.37.2** [notes]: macOS abort on non-file drags fixed; macOS Objective-C
-  callbacks are `extern "C-unwind"`; macOS memory growth from window churn fixed;
-  Linux null-display undefined behavior fixed.
-- **rfd 0.17.x** [notes]: `tokio` and `async-std` features removed; xdg-portal paths
-  are now URL-decoded (0.17.1). [inference] The dialog plugin stays on GTK3.
-- **tauri-plugin-notification 2.8.0** [notes]: Android chronometer support, `rand`
-  0.10. Nothing desktop-facing.
-- **rustls-webpki 0.103.16** [notes]: rejects certificate paths containing a small set
-  of distrusted intermediate public keys.
-- **aws-lc-rs 1.19.0 / aws-lc-sys 0.47.0** [notes]: new APIs; bundles AWS-LC 5.12.0.
-  [inference] C build; hosted Windows/Linux compilers are the first real test.
-- **open 5.4.5** [notes]: `that_detached` observes each launcher for 250 ms, so a
-  launcher that fails immediately falls through to the next one. [inference] Reaches
-  this app through the opener plugin; About links and Open Logs Folder may return
-  slightly later but should fail less often.
-
-## npm: direct dependency changes (`apps/desktop/package.json`)
-
-| Package | Old → new | Source |
-| --- | --- | --- |
-| `typescript` | 5.9.3 → **6.0.3** (major) | [announcement](https://devblogs.microsoft.com/typescript/announcing-typescript-6-0/), [v6.0.3](https://github.com/microsoft/TypeScript/releases/tag/v6.0.3) |
-| `nuxt` | 4.6.2 → 4.6.3 | [release](https://github.com/nuxt/nuxt/releases/tag/v4.6.3) |
-| `eslint` | 10.13.0 → 10.14.0 | [release](https://github.com/eslint/eslint/releases/tag/v10.14.0) |
-| `vue-tsc` | 3.3.13 → 3.3.14 | [CHANGELOG](https://github.com/vuejs/language-tools/blob/master/CHANGELOG.md) |
-| `postcss` | 8.5.30 → 8.5.32 | [8.5.31](https://github.com/postcss/postcss/releases/tag/8.5.31), [8.5.32](https://github.com/postcss/postcss/releases/tag/8.5.32) |
-| `autoprefixer` | 10.6.1 → 10.6.2 | [release](https://github.com/postcss/autoprefixer/releases/tag/10.6.2) |
-| `@tauri-apps/cli` | 2.12.3 → 2.12.4 | [CHANGELOG](https://github.com/tauri-apps/tauri/blob/dev/packages/cli/CHANGELOG.md) |
-| `@tauri-apps/plugin-dialog` | 2.8.3 → 2.8.4 | Same as the Rust plugin |
-| `@tauri-apps/plugin-updater` | 2.14.0 → 2.14.1 | Same as the Rust plugin |
-| `@iconify-json/lucide` | 1.2.145 → 1.2.149 | No changelog. Published tarballs diffed: 1966→2078 icons; `archive-restore`, `bold`, `circle-parking-off`, `square-parking-off` became aliases; 19 glyphs redrawn. None of the 16 lucide icons named in `nuxt.config.ts:18` changed. |
-
-## npm: notable transitive changes
-
-The lock has 210 changed, 9 added and 8 removed entries. 51 changes are per-platform
-`@rollup/*` (25), `@rolldown/*` (15) and `@tauri-apps/cli-*` (11) binaries that follow
-their parent. 37 are `@tiptap/*` packages from Nuxt UI's optional editor stack.
-
-| Package | Old → new | Note | Source |
-| --- | --- | --- | --- |
-| `nitropack` | 2.13.4 → 2.13.5 | String matchers normalize `\` to `/`; this required the test change below. | [release](https://github.com/nitrojs/nitro/releases/tag/v2.13.5) |
-| `vite` | 8.3.4 → 8.3.5 | Chunk import-map and bundled-dev fixes. | [CHANGELOG](https://github.com/vitejs/vite/blob/main/packages/vite/CHANGELOG.md) |
-| `rolldown` | 1.2.14 → 1.2.16 | Code-splitting, chunk ordering and tree-shaking fixes; `@oxc-project/types` 0.154→0.156. | [1.2.15](https://github.com/rolldown/rolldown/releases/tag/v1.2.15), [1.2.16](https://github.com/rolldown/rolldown/releases/tag/v1.2.16) |
-| `rollup` | 4.64.8 → 4.67.2 | Sourcemap fixes, async-disposal tree-shaking fix, android-x64 build. | [CHANGELOG](https://github.com/rollup/rollup/blob/master/CHANGELOG.md) |
-| `@nuxt/icon` | 2.5.1 → 2.6.2 | Client iconify runtime is lazy-loaded; layer-relative custom collection `dir` (not used here). | [2.6.0](https://github.com/nuxt/icon/releases/tag/v2.6.0), [2.6.2](https://github.com/nuxt/icon/releases/tag/v2.6.2) |
-| `@nuxtjs/color-mode` | 4.0.1 → 4.1.0 | Non-critical client work deferred until after hydration. | [release](https://github.com/nuxt-modules/color-mode/releases/tag/v4.1.0) |
-| `node-forge` | 1.4.0 → 1.4.2 | **[notes]** security release, including an RSA-PKCS signature forgery fix and a PEM ReDoS fix. | [CHANGELOG](https://github.com/digitalbazaar/forge/blob/main/CHANGELOG.md) |
-| `undici` | 8.12.2 → 8.12.3 | h2 stalled-connection and pool context fixes. | [release](https://github.com/nodejs/undici/releases/tag/v8.12.3) |
-| `h3` | 2.0.2 → 2.0.8 | Server-only fixes. [inference] Not shipped in the SPA. | [releases](https://github.com/h3js/h3/releases) |
-| `motion-v` / `framer-motion` / `motion-dom` | 2.6.0 → 2.9.0 / 14.0.0 → 14.7.1 | Nuxt UI animation; Reorder keyboard support and drag fixes. | [2.9.0](https://github.com/motiondivision/motion-vue/releases/tag/v2.9.0) |
-| `es-module-lexer` | 2.3.2 → 3.0.4 (+ nested 2.3.2) | **Major.** Tagged-union build records. Used by `impound`; `vite-node`/`vitest` keep nested 2.3.2 [notes for API]. | [3.0.0](https://github.com/guybedford/es-module-lexer/releases/tag/3.0.0) |
-| `diff` | 8.0.4 → 9.0.0 | **Major.** Only via `@nuxt/devtools-wizard`; devtools are disabled (`nuxt.config.ts:6`). | [release notes](https://github.com/kpdecker/jsdiff/blob/master/release-notes.md) |
-| `image-meta` | 0.2.2 → 0.3.1 | Minor with one flagged change: the largest image of multi-image files is reported. Used by Nuxt tooling [inference]. | [0.3.0](https://github.com/unjs/image-meta/releases/tag/v0.3.0) |
-| `serialize-javascript` | 7.1.2 → 7.1.4 | Concise-method serialization fix. | [7.1.4](https://github.com/yahoo/serialize-javascript/releases/tag/v7.1.4) |
-| `unstorage`, `crossws`, `srvx`, `unplugin`, `jose`, `@nuxt/devtools` | see lock | Patch/minor, server or dev tooling. | [unstorage](https://github.com/unjs/unstorage/releases/tag/v1.17.6), [crossws](https://github.com/h3js/crossws/releases/tag/v0.4.17), [srvx](https://github.com/h3js/srvx/releases/tag/v1.0.8), [unplugin](https://github.com/unjs/unplugin/releases/tag/v3.7.0), [jose](https://github.com/panva/jose/releases/tag/v6.2.14), [devtools](https://github.com/nuxt/devtools/releases/tag/v3.4.4) |
-
-The six nested `@tailwindcss/oxide-wasm32-wasi/node_modules/*` lock entries are gone.
-The parent keeps its bundled dependencies and `cpu: wasm32`, so CI runners don't
-install it. All native platform entries are preserved. `npm ci --dry-run` on npm
-10.9.8 validated the lock for linux/x64, win32/x64 and both macOS architectures.
-
-`@nuxt/ui` 4.12.0, `vue` 3.5.44, `vitest` 5.0.5, `jsdom` 30.1.3, `@playwright/test`
-1.64.1, `tailwindcss` 4.3.3 and `vue-router` 5.4.0 did not change.
+Weekly maintenance from `main` at `8d02692`. App version 1.1.3, Node 22.22.3 and
+Rust 1.97.1 are unchanged. Only dependency manifests, locks and this report change.
+No production app or real credential store was used. Upstream notes are linked
+below; repository impact statements are inferences unless supported by a check.
 
 ## Breaking changes
 
-1. **TypeScript 6.0 (major, adopted).** [notes] Default changes (`types` now `[]`,
-   `rootDir` now `.`), plus deprecations of `--baseUrl`, `target: es5`, `outFile`,
-   `--moduleResolution node`/`classic` and others. Command-line files alongside a
-   `tsconfig.json` are now an error. [inference] `apps/desktop/tsconfig.json:4-10`
-   sets `target`, `module`, `strict` and `types` explicitly, and the generated Nuxt
-   tsconfig uses `moduleResolution: Bundler` with no `baseUrl`. Lint and typecheck pass.
-   A deliberate type error in `src/constants.ts` still failed `nuxt typecheck` with
-   `TS2322`, so type checking was not silently disabled.
-2. **Nitro 2.13.5 string matcher (test change required, applied).** [verified in
-   source] It replaces `\` with `/` before matching, which fixes the hazard
-   `scripts/nuxt-runtime.test.mjs` pinned. The test asserted Nitro did **not** inline
-   the path and failed with `Cannot read properties of null (reading 'external')`. It
-   now asserts `['nuxt/dist']` inlines the Windows path, and a positive control proves
-   the fixture reaches the externalization path. Nuxt's shipped `NUXT_DIST_RE` matcher
-   is still checked.
-3. **zip 4.6.1 → 9.1.3 inside the updater (major, transitive).** [notes] On Windows,
-   `Error::Extract` wraps the new `ZipError`. [inference] No repo code matches it, but
-   this is the extraction path production Windows updates use and it isn't exercised
-   locally or by any automated tier: `tauri.conf.json:40` sets `v1Compatible`, while
-   `scripts/updater-install.mjs:49` overrides to `createUpdaterArtifacts: true`. A
-   manual release check for this path was added to `docs/ci-validation.md`. The v1.1.3
-   `.nsis.zip` is a single Stored entry, and neither lock enables a zip decompressor;
-   no failure is expected, but none of this is proof. Because the installed updater
-   does the extracting, the first real exposure is the release **after** the next one.
-4. **notify 8.2.1 macOS backend replacement.** [notes] A semver patch that replaces
-   the FSEvents binding and propagates stream startup errors. [inference]
-   `CollectorWatcher::start` (`sync_service.rs:281-315`) falls back to one-second
-   polling when `watch` returns an error, so this improves on a watcher that used to
-   look healthy. Real-worker tests passed on macOS.
-5. **single-instance 2.5.5 lock timing.** [notes] [inference] `lib.rs:101-104` runs
-   worker shutdown in `RunEvent::Exit`, and the lock is now released afterwards. A
-   launch during shutdown is absorbed by the exiting instance. This is upstream's
-   intent and avoids two workers overlapping.
-
-Transitive majors `es-module-lexer` 3 and `diff` 9 are not imported by app code.
+- **jsdom 30.1.3 → 31.0.0 (adopted major):** replaces optional `canvas` with
+  `@napi-rs/canvas`, replaces CSS/selector/computed-style implementation, and allows
+  partially parsed documents while blocking script resources load. CSS serialization
+  and computed values can change; `load` fires on window only. Tests use jsdom in
+  `apps/desktop/vitest.config.ts:16`, mount Vue components and do not enable canvas
+  or load script resources. All 65 tests pass without code changes. Future tests
+  loading documents should await DOMContentLoaded after checking readyState.
+  [Release notes](https://github.com/jsdom/jsdom/releases/tag/v31.0.0).
+- **Playwright 1.64.1 → 1.65.0:** class fields follow useDefineForClassFields;
+  actions wait for non-inert targets; accessible names exclude unrendered text;
+  cookie matching follows RFC 6265; proxy credentials only answer proxy challenges;
+  request params append and JSON content-type handling changes; CSS imports must
+  exist; empty sharded runs fail; blob output is cleaned. This repo uses function
+  tests and visible locators (`apps/desktop/tests/e2e/smoke.spec.ts:6`), no page-object
+  classes, proxy credentials, request params, blob reports or sharding. Node 22
+  remains supported (Node 20 no longer tested). Browser smoke results are below.
+  [Release notes](https://github.com/microsoft/playwright/blob/v1.65.0/docs/src/release-notes-js.md).
+- **Nuxt 4.6.3 → 4.6.4 security patch:** production server errors strip details
+  from untrusted errors; Host checks and devServer.allowedHosts expand to webpack
+  and rspack; workspace detection only widens to explicit workspaces/git roots;
+  encoded slash route matching and Nitro cache/proxy rules change. The app is a
+  static SPA (`apps/desktop/nuxt.config.ts:8`) using Vite, loopback development
+  (`:65`) and no server cache/proxy rules. Generate/typecheck verify worktree
+  discovery. No config migration required here.
+  [Release notes](https://github.com/nuxt/nuxt/releases/tag/v4.6.4).
 
 ## Recommended changes
 
-- **Windows update path, before the next release:** make `scripts/updater-install.mjs`
-  use `v1Compatible` on Windows so the harness and production ship the same format.
-  This is untested, and needs a hosted Windows run. The manual check is the stopgap.
-- **`apps/desktop/nuxt.config.ts:45` `envPrefix: ['VITE_', 'TAURI_']`:** consider removing
-  `TAURI_`. No app code reads one through Vite, and no leak exists today: the generated
-  output has no env object. It's a latent risk because release builds hold
-  `TAURI_SIGNING_PRIVATE_KEY`, and a future bare `import.meta.env` reference could embed
-  it. Whether the CLI passes that variable to `beforeBuildCommand` wasn't established.
-- **`apps/desktop/tsconfig.json:5`:** `DOM.Iterable` can go; [notes] TS 6's `dom` lib
-  includes it.
-- **Dev server:** Nuxt 4.6.3 fixes five advisories, including
-  [GHSA-x287-wcfc-q46c](https://github.com/nuxt/nuxt/security/advisories/GHSA-x287-wcfc-q46c),
-  [GHSA-648h-gw55-m2g7](https://github.com/nuxt/nuxt/security/advisories/GHSA-648h-gw55-m2g7) and
-  [GHSA-3xf4-9g3c-4h4w](https://github.com/nuxt/nuxt/security/advisories/GHSA-3xf4-9g3c-4h4w).
-  [inference] These matter for `npm run tauri:dev`, which binds to loopback. No action
-  beyond taking this update.
-- **Audits:** see [Audit results](#audit-results). Don't run `npm audit fix --force`: it
-  would downgrade `nuxt` to 4.1.3 and `@vue/test-utils` to 2.4.11.
-- **marketing/** isn't part of this update. Its lock audits at 20 package findings
-  (2 critical, 3 high, 12 moderate, 3 low); a separate refresh is worthwhile.
+- Take Nuxt 4.6.4 / Nitro 2.13.6: upstream calls this a security release fixing
+  eight Nuxt and three Nitro advisories. These affect development/build/server
+  paths; the shipped frontend is static. Keep loopback binding and strict CSP.
+- Take async-executor 1.14.1: fixes a use-after-free during Executor destruction
+  introduced in 1.14.0. MIME 0.3.18 removes recursive parsing stack overflow, and
+  flate2 1.1.11 fixes decoder progress/flush and incomplete-stream handling. These
+  are transitive fixes; they do not establish a reachable vulnerability in this app.
+- Keep keyring 3.6.3 pending a deliberate lifecycle migration: tagged 4.2.0 still
+  caches store initialization failure in a LazyLock<Result<()>>, so later Entry::new
+  cannot recover before restart. This conflicts with retry guidance at
+  `apps/desktop/src-tauri/src/credentials.rs:29` and repeated entry creation at `:40`.
+  Linux also changes from dbus to zbus. No advisory requires this migration.
+  [4.2.0 implementation](https://github.com/open-source-cooperative/keyring-rs/blob/v4.2.0/src/v1.rs),
+  [release](https://github.com/open-source-cooperative/keyring-rs/releases/tag/v4.2.0).
+- Retain TypeScript 6.0.3. The latest remains 7.0.2, the exact version whose trial
+  failed last week in vue-tsc (ERR_PACKAGE_PATH_NOT_EXPORTED) and typescript-estree
+  (supported range <6.1.0). vue-tsc and the ESLint integration have not changed;
+  this run reuses the prior evidence rather than repeating the same failed trial.
+  [Prior maintenance evidence](https://github.com/calebsmithdev/wowthing-sync/blob/8d02692/docs/dependency-review.md#held-back).
+- Keep @types/node 22.20.5 aligned with the Node 22 pin; latest 26.6.6 is intentionally
+  held. Prerelease Tauri 3 / notify 9 are not adopted. No toolchain bump is required.
 
-## Improvements and opportunities
+## Improvements / opportunities
 
-- `tauri-plugin-updater` `Update::verify` / `Updater::restore_update` (2.14.0) could
-  simplify `updater_fixture.rs` if the fixture is reworked.
-- tao's macOS window-churn memory fix and wry's focus gating need no change; the window
-  is reused rather than recreated.
-- TS 6 `es2025` target/lib and `Temporal` types are available if the frontend needs them.
-- `aws_lc_rs::try_fips_self_test()` and other aws-lc-rs additions aren't relevant here.
-- TS 6's `--stableTypeOrdering` can help compare results when a TS 7 trial is next
-  possible [notes].
+- Vue 3.5.45 fixes Suspense disposal, async component cleanup and out-in transition
+  handling, and avoids unnecessary compiler tsconfig enumeration. The app uses
+  out-in page transitions (`apps/desktop/nuxt.config.ts:34`); benefits require no
+  app changes. [Changelog](https://github.com/vuejs/core/blob/v3.5.45/CHANGELOG.md).
+- Tailwind 4.3.4/4.3.5 improves source/watch handling, CSS @scope preservation,
+  color-mix robustness, ignored-directory scans and variant canonicalization.
+  The Vite integration is at `apps/desktop/nuxt.config.ts:47`; no custom migration.
+  [Changelog](https://github.com/tailwindlabs/tailwindcss/blob/v4.3.5/CHANGELOG.md).
+- Vitest 5.1 adds --last-failed / --since-last-run, fake timers for node:timers,
+  per-attempt results and faster reused workers. Use --last-failed for local
+  diagnosis; keep full suites in CI. Its browser default port change does not
+  affect this repo's jsdom environment (`apps/desktop/vitest.config.ts:16`).
+  [Release notes](https://github.com/vitest-dev/vitest/releases/tag/v5.1.0).
+- Playwright's failure-only reporter could reduce CI noise; its exclusive test lock
+  could help if future browser tests mutate shared fixture state. No need to change
+  the current four-test suite solely for these APIs.
+- Lucide adds icons (2078 → 2109). Published icon JSON comparison shows changes to
+  `circle-alert` and `triangle-alert`, both bundled in `apps/desktop/nuxt.config.ts:18`
+  and used by update/settings/status alerts. No names used here disappeared.
+  [Icon-set history](https://github.com/iconify/icon-sets/commits/master/json/lucide.json).
+- Rust ZIP parallel extraction APIs belong upstream in the updater; do not add app
+  archive handling just to use them. Brotli/CRC/TOML allocation and throughput
+  improvements arrive automatically through Tauri's asset/build stack.
 
-## Held back
+## Direct npm updates
 
-| Item | Version | Status |
+| Package | Old → new |
+| --- | --- |
+| nuxt | 4.6.3 → 4.6.4 |
+| vue | 3.5.44 → 3.5.45 |
+| tailwindcss, @tailwindcss/vite | 4.3.3 → 4.3.5 |
+| @iconify-json/lucide | 1.2.149 → 1.2.152 |
+| @playwright/test | 1.64.1 → 1.65.0 |
+| vitest | 5.0.5 → 5.1.0 |
+| jsdom | 30.1.3 → 31.0.0 |
+
+All direct Rust versions were checked against crates.io's max_stable_version and
+are current except held keyring. cargo-outdated failed because it invoked Cargo
+1.83.0 internally; the repository toolchain is correctly 1.97.1. npm outdated with
+dev dependencies reports only the two documented holds. @nuxt/ui 4.12.0, Tauri core
+2.12.5/plugins, wry 0.57.1, tao 0.37.2, reqwest 0.13.5, notify 8.2.1 and cap-std 4.0.3
+are unchanged.
+
+## Rust lock updates (all 19 packages)
+
+No adopted Rust update requires an app API/config migration. Brotli C buffers now
+require four-byte alignment; this app has no Brotli FFI. UUID deprecates its borsh
+feature, which the app does not select. The build entry remains
+`apps/desktop/src-tauri/build.rs:12`; updater setup remains `apps/desktop/src-tauri/src/setup/desktop.rs:13`.
+
+| Packages | Old → new | Reviewed notes / source |
 | --- | --- | --- |
-| `typescript` 7 | latest 7.0.2; staying on `^6.0.3` | **Failed trial.** `nuxt typecheck` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` from `vue-tsc`'s `resolveTscPath` and `eslint` crashes in `typescript-estree`, whose peer range is `<6.1.0`. |
-| `keyring` 4 | latest 4.2.0; `=3.6.3` at `Cargo.toml:41` | **Compiles, held for behavior.** The previous reason (missing `apple-native`) no longer applies: default `v1` mode passes `cargo check --all-targets` on macOS with no code change. Held because the source shows (1) `Entry::new` caches store initialization in a `LazyLock`, so an unavailable store stays failed until restart, which conflicts with `credentials.rs` retry guidance and login launches where Secret Service may start late; (2) Linux moves from the sync `dbus-secret-service` backend to `zbus`; (3) upstream directs apps to `keyring-core` instead. Existing keys may still resolve (same `service`/`username` attributes on Linux), but this can't be proved here because real credential stores must not be touched. No advisory requires the move. |
-| `@types/node` 26 | `^22.20.5` at `package.json:51` | Held by design to match the Node 22 pin. Latest 26.6.6. |
-| `notify` 9 | 9.0.0-rc.7 | Prerelease; not considered. |
-| `tauri` 3 | alpha | Not considered. |
+| async-executor | 1.14.0 → 1.14.1 | Executor-drop use-after-free fix. [Changelog](https://github.com/smol-rs/async-executor/blob/master/CHANGELOG.md) |
+| async-lock | 3.4.2 → 3.5.0 | OnceCell::try_set, Semaphore::available_permits; not imported by app. [Release](https://github.com/smol-rs/async-lock/releases/tag/v3.5.0) |
+| brotli-decompressor | 6.2.0 → 6.3.0 | Allocation/bit-reader/Huffman performance and C alignment. No authored notes; compare commit messages reviewed. [Compare](https://github.com/dropbox/rust-brotli-decompressor/compare/6.2.0...6.3.0) |
+| cc | 1.10.0 → 1.11.1 | CodeView/source remapping and cl.exe/Linux/wasm argument fixes. [1.11.0](https://github.com/rust-lang/cc-rs/releases/tag/cc-v1.11.0), [1.11.1](https://github.com/rust-lang/cc-rs/releases/tag/cc-v1.11.1) |
+| crc32fast | 1.5.3 → 1.5.4 | Small-buffer/AArch64/big-endian improvements, SIMD bounds checks. No authored notes; compare messages reviewed. [Compare](https://github.com/srijs/rust-crc32fast/compare/v1.5.3...v1.5.4) |
+| flate2 | 1.1.10 → 1.1.11 | Flush/progress, finish/drop and incomplete decoder fixes. [Changelog](https://github.com/rust-lang/flate2-rs/blob/main/CHANGELOG.md) |
+| jiff, jiff-static; jiff-core | 0.2.38 → 0.2.39; 0.1.1 → 0.1.2 | Shared notes: out-of-range/large-duration panics, timezone and arithmetic performance. App uses chrono. [Changelog](https://github.com/BurntSushi/jiff/blob/master/CHANGELOG.md) |
+| mime | 0.3.17 → 0.3.18 | Iterative parser prevents stack overflow; Unicode parameter equality. No authored notes; compare messages reviewed. [Compare](https://github.com/hyperium/mime/compare/v0.3.17...v0.3.18) |
+| smallvec | 1.16.4 → 1.16.5 | CI-only release. [Release](https://github.com/smallvec/smallvec/releases/tag/v1.16.5) |
+| toml; toml_edit | 1.1.8 → 1.2.1; 0.25.17 → 0.25.19 | Serialization allocation/string/key improvements, deserializer size_hint. [toml](https://github.com/toml-rs/toml/blob/main/crates/toml/CHANGELOG.md), [toml_edit](https://github.com/toml-rs/toml/blob/main/crates/toml_edit/CHANGELOG.md) |
+| serde_spanned; toml_datetime | 1.1.2 → 1.1.3 | Deserializer size_hint performance. [serde_spanned](https://github.com/toml-rs/toml/blob/main/crates/serde_spanned/CHANGELOG.md), [toml_datetime](https://github.com/toml-rs/toml/blob/main/crates/toml_datetime/CHANGELOG.md) |
+| toml_writer | 1.1.3 → 1.2.0 | Syntax/string/key writing performance. [Changelog](https://github.com/toml-rs/toml/blob/main/crates/toml_writer/CHANGELOG.md) |
+| uuid | 1.29.0 → 1.29.1 | v7 monotonicity, borsh feature deprecation. [Release](https://github.com/uuid-rs/uuid/releases/tag/v1.29.1) |
+| winnow | 1.0.4 → 1.0.5 | usize support in hex_uint. [Changelog](https://github.com/winnow-rs/winnow/blob/main/CHANGELOG.md) |
+| zip | 9.1.3 → 9.4.1 | Parallel extraction/compression and iterable readers, path allocation reductions, unsupported-compression metadata/iterable length fixes, 9.2.2 feature-build fix. [Changelog](https://github.com/zip-rs/zip2/blob/master/CHANGELOG.md) |
 
-Toolchain pins are unchanged.
+## npm transitive updates
 
-## Audit results
+213 changed npm lock entries, grouped by monorepo/platform package. The lock also has 16 added and 66 removed entries (including deduplicated/relocated dependencies). Primary release/CHANGELOG files and repository usage were reviewed. `[notes]` below means upstream statement; `[inference]` means application to this repo. This is research, not proof of runtime behavior.
 
-- **`cargo audit`** (0.22.2, the CI version, 603 dependencies): **0 vulnerabilities**,
-  down from 3. The `zip` findings RUSTSEC-2026-0367/0368/0369 are resolved. Warnings:
-  `proc-macro-error` unmaintained (RUSTSEC-2024-0370), `glib` 0.18.5 unsound
-  (RUSTSEC-2024-0429), and new unmaintained notices for `zbus_names`
-  (RUSTSEC-2026-0371), `zvariant` (0370) and `zvariant_derive` (0372), because they
-  merged into zbus 6. All arrive through Tauri's Linux stack or `keyring`.
-- **`npm audit`** (desktop): **0 critical, 0 high**, 41 moderate and 3 low packages,
-  down from 11 high. They trace to 4 advisories. The production set reports the same
-  advisories across 19 packages, but npm counts build tooling such as `nitropack` as
-  production here; the app ships a static SPA.
-  - [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) `glob` AbortSignal bypass (moderate)
-  - [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) `minimatch` globparts DoS (moderate)
-  - [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) `deepmerge` prototype poisoning (low)
-  - [GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr) `esbuild` Windows dev-server file read (low)
+### Breaking changes
 
-  [inference] All sit in build, lint and dev tooling, and their inputs are repository
-  config rather than user data. No separate issue was filed, because no reachable app
-  impact was established. The residual risk stays until upstream parents move.
+- **Archiver 8 / zip-stream 7 / compress-commons 7 / crc32-stream 7**: [notes] ESM and Node >=18; crc32-stream 7.0.1 fixes ESM export; later archive subpackage patches mainly update dependencies/publishing. [inference] Introduced by Nitro 2.13.6, no direct repo imports. Node22.22.3 and `type:module` satisfy the runtime requirement (`apps/desktop/package.json:3-6`); generate/script tests exercise Nitro integration. Sources: [archiver8](https://github.com/archiverjs/node-archiver/releases/tag/8.0.0), [compress7](https://github.com/archiverjs/node-compress-commons/releases/tag/7.0.0), [crc32-stream7](https://github.com/archiverjs/node-crc32-stream/releases/tag/7.0.0), [zip-stream7](https://github.com/archiverjs/node-zip-stream/releases/tag/7.0.0).
+- **is-stream 2→4** (inside compress-commons): [notes] pure ESM since3; Node18 since4; isStream also checks closed streams. [inference] Parent takes compatible version, no repo callsite. [v3](https://github.com/sindresorhus/is-stream/releases/tag/v3.0.0), [v4](https://github.com/sindresorhus/is-stream/releases/tag/v4.0.0).
+- **readdir-glob 1→3**: [notes] v2 adds TS/ESM+CJS, drops Node10-specific code and updates minimatch5→9; v3 minimatch10, tsdown packaging and default ESM export. [inference] Internal Archiver dependency, no direct repo callsite. [v2](https://github.com/Yqnn/node-readdir-glob/releases/tag/v2.0.0), [v3](https://github.com/Yqnn/node-readdir-glob/releases/tag/v3.0.0).
+- **entities8→9 via parse5**: [notes] streaming EntityDecoder split into HtmlEntityDecoder/XmlEntityDecoder; decode-table exports removed; numeric encodings become decimal/shorter aliases; `<`/`>` escaped in attributes; getCodePoint removed. Synchronous decoders unchanged. [inference] parse5 8.1.0 explicitly adopts this API, and repo does not import entities directly. Changes HTML parsing/serialization tooling/test fixtures; frontend tests and generate are the relevant checks. [entities9](https://github.com/fb55/entities/releases/tag/v9.0.0), [parse5](https://github.com/inikulin/parse5/releases/tag/v8.1.0).
+- **Tiptap3.33 / y-tiptap3.2**: [notes] collaboration with enableContentCheck now pauses/emits contentError instead of deleting invalid shared content; persistent-position migration removed in3.32.3, older clients must upgrade together. [inference] Optional Nuxt UI editor stack; app has no editor or collaboration import, so no migration currently. [3.32.3](https://github.com/ueberdosis/tiptap/releases/tag/v3.32.3), [3.33](https://github.com/ueberdosis/tiptap/releases/tag/v3.33.0).
+- **seroval1.7.6–9**: [notes] built-ins read via prototype getters; spoofed constructor no longer selects serialization class; objects inheriting a built-in prototype without internal slots rejected. [inference] Nuxt build serialization dependency, no direct app calls. [1.7.6](https://github.com/lxsmnsyc/seroval/releases/tag/seroval%401.7.6), [1.7.7](https://github.com/lxsmnsyc/seroval/releases/tag/seroval%401.7.7).
+- **my-bad0.2.12**: [notes] channel callers default to loopback-only trust; headerless requests also check Host; OS-open fallback restricted to common text/source files; report snippets require module file/scheme; strips ANSI. [inference] Nuxt error tooling; local dev server is loopback (`apps/desktop/nuxt.config.ts:65-67`), no direct use. Preserve loopback/host controls. [release](https://github.com/danielroe/my-bad/releases/tag/v0.2.12).
+- **Rollup4.68**: [notes] dynamic chunks for index.js now use directory name. [inference] Asset filenames can change; do not hardcode generated chunk names. Existing generated static asset smoke is appropriate. [CHANGELOG](https://github.com/rollup/rollup/blob/master/CHANGELOG.md).
 
-## Filed issues (not fixed here)
+### Recommended changes
 
-- [#74](https://github.com/calebsmithdev/wowthing-sync/issues/74): quitting during an
-  upload deadlocks the app (source-verified, not reproduced at runtime).
-- [#75](https://github.com/calebsmithdev/wowthing-sync/issues/75): Linux deb/rpm Launch
-  at Login shows enabled but never starts the app.
-- [#76](https://github.com/calebsmithdev/wowthing-sync/issues/76): Linux deb/rpm installs
-  are offered an AppImage update that can never install.
-- [#77](https://github.com/calebsmithdev/wowthing-sync/issues/77): publishing a release
-  redeploys the marketing site from the tag commit.
+- Take **Nitro2.13.6**: [notes] fixes cache sharing across HTTP methods/replaying Set-Cookie; proxy scope bypass; wildcard redirect backslash/control open redirect. Cache now only GET/HEAD, excludes private/no-store and cookie responses. [inference] Static SPA (`nuxt.config.ts:8`), no cache/proxy rules, so no shipped server fix required; still hardens build/dev tooling. [release/advisory links](https://github.com/nitrojs/nitro/releases/tag/v2.13.6).
+- Take **undici8.12.4**: [notes] six vulnerabilities fixed: redirected cache policy/credential leakage, cross-origin revalidation, tuple-header credential stripping, cache handler exceptions, SRI whitespace. [inference] Node tooling dependency, Rust reqwest handles application upload; no direct app cache/interceptor use. [release](https://github.com/nodejs/undici/releases/tag/v8.12.4).
+- Take **node-forge1.4.3**: [notes] X509 nameConstraints validation flaw, TLS client crashes, HTTP header ReDoS and other TLS issues fixed. [inference] Nitro tooling chain, no app crypto use. [CHANGELOG](https://github.com/digitalbazaar/forge/blob/main/CHANGELOG.md).
+- Take **my-bad0.2.12**, **seroval1.7.8/9**: [notes] former fixes report-triggered file read/trust/control characters; latter hardens strings, stream errors and decoding limits. [inference] No custom integration changes needed. [my-bad](https://github.com/danielroe/my-bad/releases/tag/v0.2.12), [seroval1.7.8](https://github.com/lxsmnsyc/seroval/releases/tag/seroval%401.7.8), [1.7.9](https://github.com/lxsmnsyc/seroval/releases/tag/seroval%401.7.9).
+- **jose6.2.15** [notes] cancels decompression on output limit, rejects negative JWKS cache durations/clockTolerance. [inference] No direct app usage/config. [CHANGELOG](https://github.com/panva/jose/blob/main/CHANGELOG.md).
+- **ESLint regexp3.3.3** [notes] fixes semantic-changing autofix around lookaround quantifiers. [inference] Safer lint autofix, no rule config change. [CHANGELOG](https://github.com/ota-meshi/eslint-plugin-regexp/blob/master/CHANGELOG.md).
 
-## Research gaps
+### Improvements / opportunities and other reviewed groups
 
-- No authored notes were retrieved for `log` 0.4.35, `brotli` 9.1.x, `ico` 0.6.0,
-  `seroval` 1.7.5, `@tanstack/*` or `unrouting` 0.3.x. `rand`/`png` removals and the
-  `icu_*`, `wasm-bindgen`, `cc` and similar leaf updates were read at group level only.
-  `@tiptap/*` 3.32 notes weren't reviewed; it's an optional editor stack this app doesn't
-  use [inference]. `plist` 1.10.3 was read from commit titles.
-- Nuxt, Vite and rolldown were read from their release notes, not commit by commit.
-- Windows, Linux and Intel macOS behavior of every upgrade depends on hosted CI.
-- zip 9 extraction was reviewed by reading source; it hasn't been executed.
-- Signed updater installation and real OS credential stores were never exercised.
+| Changed packages | Upstream notes and repo implication | Primary source |
+|---|---|---|
+| vite8.3.6 | Overlapping plugin-close waits, queried dynamic-import CSS dependencies, stable chunk-map hashes, bundled-dev reload/Node imports and ANSI escaping. No config migration listed; generate and dev fixture should cover. | [CHANGELOG](https://github.com/vitejs/vite/blob/main/packages/vite/CHANGELOG.md) |
+| rollup4.67.3–4.68 + all @rollup platform binaries | Older Xeon compatibility, sourcemap/hash fixes, dynamic shared-edge merge fix, namespace member tree shaking and sourcemap cache. Potential smaller bundles without code changes. | [CHANGELOG](https://github.com/rollup/rollup/blob/master/CHANGELOG.md) |
+| lightningcss1.33 + all platform binaries | New ::highlight, @position-try, search-text, relative alpha() color support; preserves unknown at-rule placement; negative scientific dimension fix. Keep current browser target; syntax support does not prove old webview runtime support. | [release](https://github.com/parcel-bundler/lightningcss/releases/tag/v1.33.0) |
+| motion-v2.10–2.11.1 / motion-dom+framer-motion14.8–14.9.1 | layoutAnchor forwarding, MotionConfig skipAnimations propagation, hidden/remounted presence fixes, roving Reorder focus; WebKit accelerated-animation cleanup. Opportunity: use skipAnimations for reduced-motion if adding direct Motion components. No direct repo Motion imports presently. | [Vue CHANGELOG](https://github.com/motiondivision/motion-vue/blob/master/CHANGELOG.md), [core CHANGELOG](https://github.com/motiondivision/motion/blob/main/CHANGELOG.md) |
+| @tanstack virtual-core3.19.10/11, vue-virtual3.13.51/52 | Keeps viewport filled after shrink, current measurement offsets and RTL horizontal scrolling. Optional Nuxt UI virtualized controls benefit automatically. | [core3.19.10](https://github.com/TanStack/virtual/releases/tag/%40tanstack%2Fvirtual-core%403.19.10), [3.19.11](https://github.com/TanStack/virtual/releases/tag/%40tanstack%2Fvirtual-core%403.19.11) |
+| @tiptap all3.32.3→3.33, y-tiptap3.2 | Nested clearNodes, resizable cleanup, IME menu updates, defaultProtocol paste, shadow-root remount cursor, placeholder cleanup; collaboration changes above. Not used by app. | [3.32.3](https://github.com/ueberdosis/tiptap/releases/tag/v3.32.3), [3.33](https://github.com/ueberdosis/tiptap/releases/tag/v3.33.0) |
+| Babel7.29.13 family; nested Babel parser/types8.1 | TS/parser/generator correctness incl optional-call receiver, static private fields/decorators, global shadowing; 8.1 parsing proposals/imports. No direct Babel config in app. v7.29.13 release notes cover changed helpers/core/parser/traverse. | [7.29.13](https://github.com/babel/babel/releases/tag/v7.29.13), [8.1](https://github.com/babel/babel/releases/tag/v8.1.0) |
+| @nuxt/cli4.0.2/3 | Honors Vite allowedHosts; preserves hints; Windows package-manager version read without shell args. Relevant to tauri dev wrapper, no config change needed for existing loopback. | [4.0.2](https://github.com/nuxt/cli/releases/tag/v4.0.2), [4.0.3](https://github.com/nuxt/cli/releases/tag/v4.0.3) |
+| @vercel/nft1.11.1 | Avoids quadratic analysis on large files; Nitro tooling. | [release](https://github.com/vercel/nft/releases/tag/1.11.1) |
+| unrs-resolver1.13 + all @unrs native bindings | Runtime rather than postinstall binding resolution, package maps, tsconfig path/config/ownership fixes. Ensure npm ci installs native bindings on CI matrix; do not add a workaround without failure. | [CHANGELOG](https://github.com/unrs/unrs-resolver/blob/main/CHANGELOG.md) |
+| napi-postinstall0.3.8 | Releases redirected/non-200 sockets so installer can exit. | [CHANGELOG](https://github.com/un-ts/napi-postinstall/blob/main/CHANGELOG.md) |
+| eslint-plugin-import-x4.18 | extension fixes/options, no-duplicates whitelist and import rule enhancements. Optional config additions only. | [CHANGELOG](https://github.com/un-ts/eslint-plugin-import-x/blob/master/CHANGELOG.md) |
+| vue-eslint-parser10.4.2 | Finds eslint-scope nested under user eslint, AST value export type correction. | [release](https://github.com/vuejs/vue-eslint-parser/releases/tag/v10.4.2) |
+| jsdoc-type-pratt-parser9.5 | jsdocContext option for hyphens in namepaths. | [CHANGELOG](https://github.com/jsdoc-type-pratt-parser/jsdoc-type-pratt-parser/blob/main/CHANGELOG.md) |
+| enhanced-resolve5.26.1 | @types/node26 filesystem compatibility; no Node pin change needed. | [CHANGELOG](https://github.com/webpack/enhanced-resolve/blob/main/CHANGELOG.md) |
+| ansis4.5 | Piped COLORTERM no longer forces ANSI; FORCE_COLOR remains explicit override. Better persisted logs. | [CHANGELOG](https://github.com/webdiscus/ansis/blob/master/CHANGELOG.md) |
+| semver7.8.6 | Faster range parsing. | [CHANGELOG](https://github.com/npm/node-semver/blob/main/CHANGELOG.md) |
+| builtin-modules5.5, is-core-module2.18, globals17.14 | Node27 module table/global-data updates; no requirement to upgrade runtime. | [builtin](https://github.com/sindresorhus/builtin-modules/releases/tag/v5.5.0), [core](https://github.com/inspect-js/is-core-module/blob/main/CHANGELOG.md), [globals](https://github.com/sindresorhus/globals/releases/tag/v17.14.0) |
+| rollup-plugin-visualizer7.1.2 | Faster report generation, repaired dependency links. | [CHANGELOG](https://github.com/btd/rollup-plugin-visualizer/blob/master/CHANGELOG.md) |
+| unrouting0.3.2 | Avoids catchall+suffix backtracking, required by Nuxt security release. | [release](https://github.com/unjs/unrouting/releases/tag/v0.3.2) |
+| vue-bundle-renderer2.5 | prefetch resource-hint option, import-cycle consistency; no manual hint setup here. | [release](https://github.com/nuxt-contrib/vue-bundle-renderer/releases/tag/v2.5.0) |
+| ws8.22.1 | IPC URL paths no longer truncated at colon. Tauri IPC does not use Node ws. | [release](https://github.com/websockets/ws/releases/tag/8.22.1) |
+| devframe + @devframes/agentic1.3.1/2 | MCP prompt route options, sidebar toggle/aria fixes, root-base fallthrough, local initial snapshots. Devtools disabled at nuxt.config.ts:6; no app feature opportunity. | [1.3.1](https://github.com/devframes/devframe/releases/tag/v1.3.1), [1.3.2](https://github.com/devframes/devframe/releases/tag/v1.3.2) |
+| vite-plugin-vue-tracer1.7 | Dock inspector toggles; devtools disabled. | [release](https://github.com/antfu/vite-plugin-vue-tracer/releases/tag/v1.7.0) |
+| ast-kit3.0.1 | Upstream says no significant changes. | [release](https://github.com/sxzz/ast-kit/releases/tag/v3.0.1) |
+| parse5 8.1 | Element creation context, tokenizer flushing, CR/end-tag parsing fixes, faster slices, entities9 adoption. | [release](https://github.com/inikulin/parse5/releases/tag/v8.1.0) |
+
+### Additional sources
+
+- **tough-cookie6.1.0**: [notes] rejects Secure cookies set over untrustworthy origins; loopback/localhost remain accepted by default. `__Host-` needs explicit Path=/; Cookie.validate validates token names; SameSite=None serializes explicitly; IPv4 Domain accepted; synchronous APIs accept URL. [inference] Through jsdom/test tooling; no app CookieJar calls. Do not opt out unless a test specifically needs insecure cookie simulation. [release](https://github.com/salesforce/tough-cookie/releases/tag/v6.1.0).
+- **ProseMirror changeset2.4.6 / transform1.12.5 / view1.42.9**: packaged upstream CHANGELOGs read. Respectively fix large-change diff crash; ReplaceAroundStep gap mapping and open-slice fitting crashes; Android backspace/composition/focus-selection bugs. [inference] Optional Nuxt UI editor stack not used by app. Sources: [changeset CHANGELOG](https://github.com/ProseMirror/prosemirror-changeset/blob/master/CHANGELOG.md), [transform CHANGELOG](https://github.com/ProseMirror/prosemirror-transform/blob/master/CHANGELOG.md), [view CHANGELOG](https://github.com/ProseMirror/prosemirror-view/blob/master/CHANGELOG.md). Notes were read in npm tarballs because registry now points to code.haverbeke.berlin.
+- **semver6.3.2**: exact release read; backports v7 range parsing performance fix. [release](https://github.com/npm/node-semver/releases/tag/v6.3.2).
+
+### Source comparisons
+
+No authored notes were available for these items; the statements below come from exact upstream compare commit titles or downloaded npm tarballs, not inferred release summaries.
+
+| Package | Read evidence | Result |
+|---|---|---|
+| bare-url2.5.6 | [exact compare](https://github.com/holepunchto/bare-url/compare/v2.5.5...v2.5.6) | Fix query-string escapes. New bare-buffer3.7.1 is a support dependency; no application URL API changes. |
+| baseline-browser-mapping2.11.35 | [exact compare](https://github.com/web-platform-dx/baseline-browser-mapping/compare/v2.11.34...v2.11.35) | Browser/feature data regeneration and static-site update. |
+| caniuse-lite1.0.30001823 | [exact compare](https://github.com/browserslist/caniuse-lite/compare/1.0.30001820...1.0.30001823) | caniuse database refresh. |
+| electron-to-chromium1.5.478 | [exact compare](https://github.com/Kilian/electron-to-chromium/compare/v1.5.471...v1.5.478) | Generated version updates only in commit titles. |
+| emoji-regex8→10.6 | [exact compare](https://github.com/mathiasbynens/emoji-regex/compare/v8.0.0...v10.6.0) | Unicode13→17 support, pattern-generation rewrite, ESM support and corrected CJS types. Transitive text tooling, no app import. |
+| node-releases2.0.63 | [exact compare](https://github.com/chicoxyzzy/node-releases/compare/v2.0.62...v2.0.63) | Nightly data sync. |
+| resolve1.22.14 | [exact compare](https://github.com/browserify/resolve/compare/v1.22.13...v1.22.14) | is-core-module dependency update, development dependencies. |
+| tinybench6.2.3 | [exact compare](https://github.com/tinylibs/tinybench/compare/v6.2.2...v6.2.3) | Large-sample sorting performance plus dependency maintenance. Not evidence that app benchmarks improved. |
+| @dxup/nuxt0.5.11 | [scoped tag compare](https://github.com/KazariEX/dxup/compare/%40dxup%2Fnuxt%400.5.10...%40dxup%2Fnuxt%400.5.11) | Stops warning about missing registry when no layout; dependency update adds nested chokidar6. |
+| @iconify/vue5.0.5 | [published5.0.4](https://registry.npmjs.org/@iconify/vue/-/vue-5.0.4.tgz), [5.0.5](https://registry.npmjs.org/@iconify/vue/-/vue-5.0.5.tgz) | API rotate delay750→2000ms, timeout5000→10000ms; api2.iconify.design fallback added. Types unchanged. `nuxt.config.ts:16-18` uses local SVG/provider:none; no new network grant needed. |
+| @swc/helpers0.5.24 | [published0.5.23](https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.23.tgz), [0.5.24](https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.24.tgz) | **Compatibility change:** `_jsx` index/package export removed. TS helpers embedded instead of imported from tslib; Map/Set fallback fixed to use Array.from(o). Repo source/scripts have no @swc/helpers/_jsx imports. Keep generated-client smoke: no assumption that a patch is behavior-free. |
+
+#### Newly introduced groups
+
+- **Nested chokidar6**: [release](https://github.com/paulmillr/chokidar/releases/tag/6.0.0). Rewrites observation pipeline; native-recursive backend on macOS/Windows; shared handles; Node>=22.22 (existing22.22.3 pin satisfies). `usePolling`, `interval`, `binaryInterval` are deprecated aliases; close is terminal, getWatched null-prototype, options now validated. Repo does not directly call this watcher; it is nested under @dxup/nuxt, while production Rust notify remains unchanged. No config migration required in app.
+- **bcp-47 2.1.2 / bcp-47-match2.0.3**: [bcp release](https://github.com/wooorm/bcp-47/releases/tag/2.1.2), [match release](https://github.com/wooorm/bcp-47-match/releases/tag/2.0.3): empty private-use sequence parser fix and improved type documentation. Newly used by jsdom language handling, with is-alphabetical/is-alphanumerical/is-decimal2.0.1 character classifier helpers. No direct app calls.
+- **cjs-module-lexer2.3.0**: [release](https://github.com/nodejs/cjs-module-lexer/releases/tag/2.3.0): automatic Wasm init before parsing, parser stack-bound check, UTF16 copies/identifier scanning improvements. No direct app API use.
+- **parse5-parser-stream8.1.0**: same [parse5 release](https://github.com/inikulin/parse5/releases/tag/v8.1.0); stream parser supports jsdom31's parsing path; optional flush/create-element context enhancements and tokenizer fixes covered above.
+- Six `@tailwindcss/oxide-wasm32-wasi/node_modules/*` entries reappear for bundled dependencies (@emnapi core/runtime/wasi-threads, @napi-rs/wasm-runtime, @tybys/wasm-util, tslib). These are bundled in the updated Tailwind package; versions are the same as previously documented bundle metadata. Their applicability is Tailwind's WASI fallback fixes rather than a native app dependency/API migration.
+
+**Iconify collections:** published tarballs [1.0.758](https://registry.npmjs.org/@iconify/collections/-/collections-1.0.758.tgz) / [1.0.762](https://registry.npmjs.org/@iconify/collections/-/collections-1.0.762.tgz) differ only in package version and collections.json. Collection count255→276 (21 additions, none removed);46 existing collection metadata records refreshed. This is catalog metadata, not an added frontend permission; actual bundled icon glyphs remain governed by the Lucide review above and nuxt.config.ts icon list. No authored changelog exists in the fetched evidence, so state “published metadata compared” in coverage.
+
+## Audit and whole-repository scan
+
+- cargo-audit 0.22.2: **0 vulnerabilities**. RustSec DB commit
+  `309392b18f6b17022f82c701f300433126901068` (2026-11-06). Informational warnings:
+  proc-macro-error, zbus_names/zvariant/zvariant_derive unmaintained (seven package
+  instances), and glib 0.18.5 VariantStrIter unsoundness. No direct VariantStrIter
+  use found; these are existing transitive Linux-stack notices.
+- Desktop npm audit: **30 package findings, 23 moderate / 7 low, no high or critical**.
+  Same four advisory families as last week:
+  [glob](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4),
+  [minimatch](https://github.com/advisories/GHSA-g3hv-75wg-m249),
+  [deepmerge](https://github.com/advisories/GHSA-gcqx-w48m-w2h4),
+  [esbuild](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr).
+  They occur in build/test tooling; no new reachable shipped-app exploit was
+  verified. No forced audit downgrade was applied.
+- Read Rust IPC/settings/credentials, collector path/capability restrictions and
+  worker cancellation, Nuxt controllers, capabilities/CSP, scripts/process/package
+  supervision and GitHub release/CI workflows. Queried existing issues in all
+  states before considering new reports. Verified concerns match existing
+  [#74](https://github.com/calebsmithdev/wowthing-sync/issues/74),
+  [#75](https://github.com/calebsmithdev/wowthing-sync/issues/75),
+  [#76](https://github.com/calebsmithdev/wowthing-sync/issues/76),
+  [#77](https://github.com/calebsmithdev/wowthing-sync/issues/77).
+  **No new issues created.** This scan is source review, not a penetration test.
+- Independent final dependency review found no actionable regression. Manifest/lock
+  roots agree; locked npm dependency resolution is complete; declared Node engine
+  ranges accept 22.22.3. Removed platform entries were deduplicated to complete
+  top-level bindings or removed by upstream; supported native bindings remain.
 
 ## Validation results
 
-Stable code `27b3f64`, macOS ARM64, Node 22.22.3, Rust 1.97.1. All steps ran from one
-script against the committed tree, which was clean before and after.
+macOS ARM64, Node 22.22.3, Rust 1.97.1. Dependencies were stable throughout checks;
+only this report was assembled afterwards. Local logs are under
+`/tmp/wowthing-maintenance-2026-11-07/`.
 
-| Check | Command | Result |
-| --- | --- | --- |
-| Install | `npm ci --prefix apps/desktop --include=dev` | pass |
-| Lint, typecheck | `npm run --prefix apps/desktop lint` / `typecheck` | pass |
-| Frontend unit | `npm run --prefix apps/desktop test:unit` | 65 tests, 13 files pass |
-| Generate | `npm run --prefix apps/desktop generate` | pass |
-| Rust format, lint | `cargo fmt --all -- --check`; `cargo clippy --locked --all-targets -- -D warnings` (default and `integration-test`) | pass |
-| Rust tests | `cargo test --locked` | 77 pass, 1 ignored (endurance) |
-| Rust check | `cargo check --locked` | pass |
-| Script tests | `node --test scripts/*.test.mjs` | 31 pass, 3 skipped (Linux-only) |
-| Release metadata | `node scripts/release-metadata.mjs verify` | pass |
-| Browser smoke | `npm run --prefix apps/desktop test:e2e` | 4 pass |
-| Native smoke | `npm run --prefix apps/desktop test:native` | pass, `errors:[]` |
-| Native integration | `npm run --prefix apps/desktop test:integration` | pass, `errors:[]` |
-| Debug build | `npm run --prefix apps/desktop tauri -- build --debug --no-bundle -- --locked` | pass; no normal app launched |
-| Outdated | `npm outdated` | only `typescript` and `@types/node` (held) |
+| Check | Result |
+| --- | --- |
+| npm ci --prefix apps/desktop --include=dev | pass |
+| npm run --prefix apps/desktop lint | pass |
+| npm run --prefix apps/desktop typecheck | pass |
+| npm run --prefix apps/desktop test:unit | 65 tests, 13 files pass |
+| npm run --prefix apps/desktop generate | pass |
+| cargo fmt --all -- --check | pass |
+| cargo clippy --locked --all-targets -- -D warnings | pass |
+| cargo test --locked | 77 pass, 1 ignored endurance test |
+| cargo check --locked | pass |
+| node --test scripts/*.test.mjs | 31 pass, 3 Linux-only skips |
+| node scripts/release-metadata.mjs verify | pass, version 1.1.3 |
+| Playwright Chromium install | pass, Chromium 158.0.8127.18 |
+| npm run --prefix apps/desktop test:e2e | 4 pass |
 
-Failures found and resolved before the final run:
+Browser screenshots cover light/dark setup, minimum window size, update failure,
+settings/dashboard and opener failures. They prove fixture UI behavior in Chromium,
+not WKWebView or real OS integration. Windows, Linux and Intel macOS execution,
+signed updater installation, real OS credential stores and notification delivery
+were not exercised locally.
 
-- **`cargo test --locked` aborted with SIGABRT** on `0dbb8c8`, and also on base
-  `d42156d`, so it isn't caused by this update. The T3 Code desktop app sends
-  `GET /` probes to new localhost ports, and the mock server's `.unwrap()` panicked on
-  a request with no `Content-Length`. `worker_integration.rs` now drops such requests.
-  An upload lacking the header would still fail its test, because the client sees an
-  error and nothing is recorded.
-- **`node --test scripts/*.test.mjs`** failed on `0dbb8c8`: see Breaking changes item 2.
+### Additional native smoke: failed, host-session limitation
 
-Failure trials, not in the final diff: TypeScript 7.0.2 (see Held back).
+The isolated `npm run --prefix apps/desktop test:native` build succeeded, but two
+runs failed with the same output:
 
-Not run: hosted Windows, Linux and Intel macOS CI; signed updater install; OS
-credential stores; the production app.
+```text
+native-smoke exceeded 45000ms deadline
+```
+
+No completion report was produced. The runner confirmed the timed-out process tree
+closed. A fresh diagnosis with temporary instrumentation showed window creation,
+page Started/Finished at tauri://localhost/, injected JavaScript, DOMContentLoaded
+and fixture IPC working; onboarding markup eventually existed. CUA observed a blank
+window with no accessibility elements. Its activation result reported
+`workspace_frontmost_pid=619 (loginwindow)`, `process_activated=false`, `focused=false`;
+all listed applications were inactive. This is evidence that the current host
+login session prevents presentation/focus; background WebKit suspension is an
+inference, not a proved dependency cause. Native runtime acceptance remains
+unverified and needs rerunning in an unlocked interactive macOS session. No
+production workaround was added; all diagnostic instrumentation was removed.
+This limitation is separate from the requested checks above, which all passed.
