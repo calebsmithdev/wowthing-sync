@@ -8,7 +8,7 @@ authors = ["CalebSmithDev"]
 license = "MIT"
 repository = "https://github.com/calebsmithdev/wowthing-sync"
 edition = "2021"
-rust-version = "1.90"
+rust-version = "1.91"
 default-run = "wowthing-sync"
 
 [lib]
@@ -24,12 +24,12 @@ tauri-build = { version = "2.7.4", features = [] }
 serde_json = "1.0.154"
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 minisign-verify = "0.3.0"
-tauri-plugin-opener = "2.7.2"
+tauri-plugin-opener = "2.7.3"
 tauri-plugin-process = "2.4.0"
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-os = "2.4.0"
-tauri-plugin-notification = "2.8.0"
-tauri-plugin-log = "2.10.1"
+tauri-plugin-notification = "2.8.1"
+tauri-plugin-log = "2.10.2"
 log = "0.4.35"
 httpdate = "1.0.3"
 tempfile = "3.27.0"
@@ -37,7 +37,7 @@ libc = "0.2.191"
 cap-std = "4.0.3"
 dunce = "1.0.5"
 same-file = "1.0.6"
-notify = "8.2.1"
+notify = "8.2.2"
 keyring = { version = "=3.6.3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 tokio = { version = "1.54.1", features = ["macros", "time", "rt"] }
