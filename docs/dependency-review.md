@@ -168,6 +168,16 @@ Clippy after generation passed. These are setup failures, not hidden passing run
   [minimatch](https://github.com/advisories/GHSA-g3hv-75wg-m249),
   [glob](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4),
   [esbuild](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr).
+- **Separate marketing lockfile:** 20 findings (2 critical / 3 high / 12 moderate /
+  3 low), already recorded as 20 findings in the previous maintenance report.
+  Critical roots are simple-git/argv-parser; high roots include node-forge and
+  undici. These are not included in the desktop counts above. Marketing dependencies
+  were outside the requested `apps/desktop` update. Its workflow deploys generated
+  `marketing/.output/public` (`.github/workflows/static-pages.yml:55`), rather than a
+  Node server; no project use of simple-git or node-forge APIs was found. This does
+  not establish exploitability or make the dependency findings harmless. Refresh
+  the marketing graph in a separate tested update. GitHub's default-branch advisory
+  totals also include this separate lockfile.
 - Independent read-only scan covered Rust IPC validation, collector capabilities and
   path handling, credentials/settings, worker cancellation and queues, frontend
   controllers, scripts/process supervision, release signing, workflows, capabilities
