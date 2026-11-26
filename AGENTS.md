@@ -339,7 +339,7 @@ Use the reproducible validation catalog below. The desktop npm directory is `app
 
 The desktop app is `apps/desktop`; Cargo is a root workspace with `Cargo.lock` and `target/` at the root. Native frontend assets are read directly from `apps/desktop/.output/public`; CI never depends on an untracked local `dist` symlink. Run all Cargo commands from the repo root with `--locked`. Cargo package version in `apps/desktop/src-tauri/Cargo.toml` is the only release version source; Tauri config intentionally omits `version`. `scripts/release-metadata.mjs` verifies input/tag/lock/build/updater consistency before creating any draft.
 
-Node CI is pinned to **22.22.3**, Rust to **1.97.1** (`rust-toolchain.toml`, rustfmt/clippy). The dependency minimum is Rust 1.90; only the pinned toolchain is tested. Nuxt4/Vue3/NuxtUI4, TypeScript **strict:true**, `@nuxt/eslint`, Vitest and Playwright are configured. Nuxt modules are `@nuxt/ui` and `@nuxt/eslint`. Frontend assets must be generated before standalone Cargo checks.
+Node CI is pinned to **22.22.3**, Rust to **1.97.1** (`rust-toolchain.toml`, rustfmt/clippy). The dependency minimum is Rust 1.91 (notify-types 2.3); only the pinned toolchain is tested. Nuxt4/Vue3/NuxtUI4, TypeScript **strict:true**, `@nuxt/eslint`, Vitest and Playwright are configured. Nuxt modules are `@nuxt/ui` and `@nuxt/eslint`. Frontend assets must be generated before standalone Cargo checks.
 
 | Native command | Arguments / result | Typed frontend entry |
 | --- | --- | --- |
