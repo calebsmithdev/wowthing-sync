@@ -2,4 +2,5 @@
 # Lint/format check of staged files (eslint stylistic rules, rustfmt).
 # Enabled by `npm ci --prefix apps/desktop` (scripts/install-hooks.mjs).
 # Fix: node scripts/validate.mjs --fix · bypass once: git commit --no-verify
+command -v node >/dev/null 2>&1 || { echo "wowthing hook: node not on PATH; skipping validation" >&2; exit 0; }
 exec node scripts/validate.mjs --staged

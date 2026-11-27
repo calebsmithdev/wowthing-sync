@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { classify, plan } from './validate.mjs'
 
-const ids = options => plan({ scriptTests: ['scripts/a.test.mjs'], ...options }).map(step => step.id)
+const scriptTests = ['scripts/a.test.mjs', 'scripts/signature-check.test.mjs']
+const ids = options => plan({ scriptTests, ...options }).map(step => step.id)
 
 test('files are classified into validation areas', () => {
   assert.deepEqual(classify(['apps/desktop/src-tauri/src/lib.rs']), { rust: true, frontend: false, scripts: false, workflows: false, release: false })
@@ -16,26 +17,43 @@ test('files are classified into validation areas', () => {
 
 test('quick plans run only the checks the changed areas need', () => {
   assert.deepEqual(ids({ files: ['README.md'] }), [])
-  assert.deepEqual(ids({ files: ['apps/desktop/src/app.vue'] }), ['eslint', 'typecheck', 'vitest'])
-  assert.deepEqual(ids({ files: ['apps/desktop/src-tauri/src/lib.rs'] }), ['rustfmt', 'clippy', 'clippy-integration', 'check-os-probe', 'cargo-test'])
-  assert.deepEqual(ids({ files: ['scripts/ci-gate.mjs'] }), ['eslint', 'script-tests'])
+  assert.deepEqual(ids({ files: ['apps/desktop/src/app.vue'] }), ['eslint', 'generate', 'typecheck', 'vitest'])
+  assert.deepEqual(ids({ files: ['apps/desktop/src-tauri/src/lib.rs'] }), ['rustfmt', 'clippy', 'clippy-integration', 'check-os-probe', 'cargo-test', 'signature-check'])
+  assert.deepEqual(ids({ files: ['scripts/ci-gate.mjs'] }), ['eslint', 'script-tests', 'signature-check'])
   assert.deepEqual(ids({ files: ['.github/workflows/rust-tests.yml'] }), ['script-tests', 'actionlint'])
+})
+
+test('cargo-compiling script tests run in the cargo lane, not beside it', () => {
+  const steps = plan({ files: ['scripts/ci-gate.mjs', 'src/lib.rs'], scriptTests })
+  assert.ok(!steps.find(step => step.id === 'script-tests').args.includes('scripts/signature-check.test.mjs'))
+  assert.equal(steps.find(step => step.id === 'signature-check').lane, 'cargo')
+  assert.ok(steps.findIndex(step => step.id === 'signature-check') > steps.findIndex(step => step.id === 'cargo-test'))
 })
 
 test('cargo steps get generated frontend assets when they are missing or stale', () => {
   assert.ok(ids({ files: ['src/main.rs'], assetsExist: false }).includes('generate'))
+  assert.ok(ids({ files: ['scripts/ci-gate.mjs'], assetsExist: false }).includes('generate'), 'signature-check compiles the app')
   assert.ok(!ids({ files: ['src/main.rs'], assetsExist: true }).includes('generate'))
   assert.ok(ids({ files: ['src/main.rs', 'apps/desktop/src/app.vue'] }).includes('generate'))
-  assert.ok(!ids({ files: ['apps/desktop/src/app.vue'] }).includes('generate'), 'frontend-only quick checks do not build assets')
+  assert.ok(!ids({ files: ['.github/workflows/x.yml'], assetsExist: false }).includes('generate'))
 })
 
-test('full plans add browser and native webview paths; formatters and generate run first', () => {
+test('full plans add browser and native webview paths last; formatters and generate run first', () => {
   const steps = plan({ all: true, full: true, scriptTests: [] })
   const id = steps.map(step => step.id)
-  for (const expected of ['browser-e2e', 'native-smoke', 'native-integration', 'generate', 'release-metadata']) assert.ok(id.includes(expected), expected)
+  for (const expected of ['browser-e2e', 'native-smoke', 'native-integration', 'generate', 'release-metadata', 'signature-check']) assert.ok(id.includes(expected), expected)
   assert.deepEqual(steps.filter(step => step.lane === 'pre').map(step => step.id), ['eslint', 'rustfmt', 'generate'])
-  assert.ok(steps.every(step => ['pre', 'node', 'cargo'].includes(step.lane)))
+  assert.deepEqual(steps.filter(step => step.lane === 'post').map(step => step.id), ['browser-e2e', 'native-smoke', 'native-integration'])
+  assert.ok(steps.every(step => ['pre', 'node', 'cargo', 'post'].includes(step.lane)))
   assert.ok(!ids({ files: ['apps/desktop/src/app.vue'] }).includes('native-smoke'), 'native paths are --full only')
+})
+
+test('harness script changes exercise the flows they drive under --full', () => {
+  for (const file of ['scripts/smoke-server.mjs', 'scripts/native-integration.mjs', 'scripts/process-runner.mjs']) {
+    const id = ids({ files: [file], full: true })
+    for (const expected of ['generate', 'browser-e2e', 'native-smoke', 'native-integration']) assert.ok(id.includes(expected), `${file} → ${expected}`)
+  }
+  assert.ok(!ids({ files: ['scripts/ci-gate.mjs'], full: true }).includes('native-smoke'))
 })
 
 test('fix mode rewrites with the same tools instead of checking', () => {

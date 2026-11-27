@@ -8,11 +8,14 @@
 //   node scripts/validate.mjs --dry-run  print the plan without running it
 //   --base <ref>                         compare against <ref> instead of the default branch
 //
+// --staged checks the working-tree copy of each staged file (partial staging is
+// not isolated), and rustfmt also checks out-of-line `mod` files.
+//
 // Changed files (branch commits since the default-branch merge base, the working
 // tree and untracked files) are classified into areas; each area maps to the
 // same commands CI runs. Logs: test-results/validate/<step>.log.
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,6 +33,10 @@ export const AREAS = {
   workflows: path => path.startsWith('.github/'),
   release: path => ['apps/desktop/src-tauri/Cargo.toml', 'apps/desktop/src-tauri/tauri.conf.json', 'apps/desktop/package.json', 'Cargo.lock', 'scripts/release-metadata.mjs'].includes(path),
 }
+// Scripts that drive the browser/native flows: changing them must exercise those flows under --full.
+const HARNESS = ['scripts/smoke-server.mjs', 'scripts/native-smoke.mjs', 'scripts/native-integration.mjs', 'scripts/process-runner.mjs', 'scripts/launchers.mjs', 'scripts/tauri-dev.mjs']
+// Builds and runs the signature-audit binary with cargo, so it runs in the cargo lane.
+const CARGO_SCRIPT_TEST = 'scripts/signature-check.test.mjs'
 const LINTABLE = /\.(?:[cm]?[jt]s|vue)$/
 const lintable = path => LINTABLE.test(path) && (AREAS.frontend(path) || AREAS.scripts(path))
 
@@ -47,7 +54,9 @@ const cargo = (...args) => ({ command: 'cargo', args })
 /**
  * Pure planner: which steps run, in which lane, with which command.
  * Lanes: `pre` runs first and serially (formatters rewrite files, generate writes
- * the assets cargo embeds); `node` and `cargo` then run concurrently.
+ * the assets cargo embeds); `node` and `cargo` then run concurrently; `post`
+ * (browser e2e, native webview paths) runs last and serially, because
+ * `tauri build` regenerates the .nuxt/.output files other steps read.
  */
 export function plan({ files = [], all = false, full = false, staged = false, fix = false, assetsExist = true, scriptTests = [] } = {}) {
   if (staged) {
@@ -59,23 +68,26 @@ export function plan({ files = [], all = false, full = false, staged = false, fi
     ].filter(Boolean)
   }
   const area = all ? Object.fromEntries(Object.keys(AREAS).map(name => [name, true])) : classify(files)
-  const native = area.rust || area.frontend
+  const harness = all || files.some(path => HARNESS.includes(path))
+  const native = area.rust || area.frontend || harness
+  const compiles = area.rust || area.scripts
   const steps = [
     (area.frontend || area.scripts) && { id: 'eslint', lane: 'pre', ...(fix ? npm('lint', '--', '--fix') : npm('lint')) },
     area.rust && { id: 'rustfmt', lane: 'pre', ...cargo('fmt', '--all', ...(fix ? [] : ['--', '--check'])) },
-    ((area.rust && (!assetsExist || area.frontend)) || (full && native)) && { id: 'generate', lane: 'pre', ...npm('generate') },
+    (area.frontend || (compiles && !assetsExist) || (full && native)) && { id: 'generate', lane: 'pre', ...npm('generate') },
     area.frontend && { id: 'typecheck', lane: 'node', ...npm('typecheck') },
     area.frontend && { id: 'vitest', lane: 'node', ...npm('test:unit') },
-    (area.scripts || area.workflows) && { id: 'script-tests', lane: 'node', ...node('--test', ...scriptTests) },
+    (area.scripts || area.workflows) && { id: 'script-tests', lane: 'node', ...node('--test', ...scriptTests.filter(path => path !== CARGO_SCRIPT_TEST)) },
     area.release && { id: 'release-metadata', lane: 'node', ...node('scripts/release-metadata.mjs', 'verify') },
     area.workflows && { id: 'actionlint', lane: 'node', optional: 'actionlint', command: 'actionlint', args: [] },
-    full && area.frontend && { id: 'browser-e2e', lane: 'node', ...npm('test:e2e') },
     area.rust && { id: 'clippy', lane: 'cargo', ...cargo('clippy', '--locked', '--all-targets', '--', '-D', 'warnings') },
     area.rust && { id: 'clippy-integration', lane: 'cargo', ...cargo('clippy', '--locked', '--all-targets', '--features', 'integration-test', '--', '-D', 'warnings') },
     area.rust && { id: 'check-os-probe', lane: 'cargo', ...cargo('check', '--locked', '--all-targets', '--features', 'os-integration-test') },
     area.rust && { id: 'cargo-test', lane: 'cargo', timeout: minutes(20), ...cargo('test', '--locked') },
-    full && native && { id: 'native-smoke', lane: 'cargo', timeout: minutes(25), ...node('scripts/native-smoke.mjs') },
-    full && native && { id: 'native-integration', lane: 'cargo', timeout: minutes(25), ...node('scripts/native-integration.mjs') },
+    compiles && { id: 'signature-check', lane: 'cargo', timeout: minutes(10), ...node('--test', CARGO_SCRIPT_TEST) },
+    full && (area.frontend || harness) && { id: 'browser-e2e', lane: 'post', ...npm('test:e2e') },
+    full && native && { id: 'native-smoke', lane: 'post', timeout: minutes(25), ...node('scripts/native-smoke.mjs') },
+    full && native && { id: 'native-integration', lane: 'post', timeout: minutes(25), ...node('scripts/native-integration.mjs') },
   ]
   return steps.filter(Boolean)
 }
@@ -88,14 +100,17 @@ const lines = text => (text ?? '').split('\n').map(line => line.trim()).filter(B
 
 export function changedFiles({ base, staged }) {
   if (staged) return { files: lines(git('diff', '--cached', '--name-only', '--diff-filter=ACMR')), base: 'index' }
+  if (base && !git('rev-parse', '--verify', '--quiet', `${base}^{commit}`)) throw new Error(`--base ${base} is not a commit`)
   const reference = base ?? git('symbolic-ref', '--short', 'refs/remotes/origin/HEAD') ?? 'main'
   const mergeBase = git('merge-base', 'HEAD', reference)
+  // Without a merge base the branch's commits are unknown: check everything rather than nothing.
+  if (!mergeBase) return { files: [], base: `${reference} (no merge base)`, all: true }
   const files = new Set([
-    ...(mergeBase ? lines(git('diff', '--name-only', mergeBase)) : []),
+    ...lines(git('diff', '--name-only', mergeBase)),
     ...lines(git('diff', '--name-only', 'HEAD')),
     ...lines(git('ls-files', '--others', '--exclude-standard')),
   ])
-  return { files: [...files].sort(), base: mergeBase ? `${reference}@${mergeBase.slice(0, 8)}` : `${reference} (no merge base; working tree only)` }
+  return { files: [...files].sort(), base: `${reference}@${mergeBase.slice(0, 8)}` }
 }
 
 function argument(name) {
@@ -107,7 +122,10 @@ async function main() {
   const flag = name => process.argv.includes(name)
   const options = { all: flag('--all'), full: flag('--full'), staged: flag('--staged'), fix: flag('--fix') }
   if (options.staged && options.fix) throw new Error('--staged only checks; run --fix without --staged')
-  const { files, base } = options.all ? { files: [], base: 'all' } : changedFiles({ base: argument('--base'), staged: options.staged })
+  const changes = options.all ? { files: [], base: 'all', all: true } : changedFiles({ base: argument('--base'), staged: options.staged })
+  const { files, base } = changes
+  if (changes.all && !options.all) console.log(`validate: warning: ${base}; checking all areas (pass --base <ref> to scope)`)
+  options.all ||= Boolean(changes.all)
   const scriptTests = readdirSync(resolve(root, 'scripts')).filter(name => name.endsWith('.test.mjs')).sort().map(name => `scripts/${name}`)
   const steps = plan({ ...options, files, scriptTests, assetsExist: existsSync(resolve(root, desktop, '.output/public/index.html')) })
   const scope = options.all ? 'all areas' : Object.entries(classify(files)).filter(([, on]) => on).map(([name]) => name).join(', ') || 'no checked areas'
@@ -137,6 +155,7 @@ async function main() {
   }
   for (const step of steps.filter(step => step.lane === 'pre')) await run(step)
   await Promise.all(['node', 'cargo'].map(async (lane) => { for (const step of steps.filter(step => step.lane === lane)) await run(step) }))
+  for (const step of steps.filter(step => step.lane === 'post')) await run(step)
   const failed = results.filter(result => result.status === 'failed')
   for (const result of failed) {
     const tail = result.output.trimEnd().split('\n').slice(-40).join('\n')
@@ -149,6 +168,6 @@ async function main() {
   } else console.log(`validate: all ${results.filter(result => result.status === 'passed').length} checks passed`)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   main().catch((error) => { console.error(`validate: ${error.message}`); process.exitCode = 1 })
 }
