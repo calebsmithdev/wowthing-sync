@@ -668,9 +668,11 @@ auto-launch 0.6.0 writes `Exec=<path> --autostart` unquoted, so the deb/rpm
 binary `/usr/bin/Wowthing Sync` would start `/usr/bin/Wowthing`, while the entry's
 existence still reported enabled. On Linux, every `enable()` (Settings toggle,
 startup refresh and the hosted probe) is followed by
-`login_registration::quote_linux_registration`, which rewrites only that exact
+`login_registration::quote_linux_registration`, which rewrites only that
 generated line to `Exec="<path>" --autostart` using Desktop Entry quoting/escaping
-(control characters are refused). Any other `Exec` contents fail the enable, so the
+(control characters are refused). The path comes from the line the plugin just
+wrote, not a fresh `current_exe()`, which can read "(deleted)" after an in-place
+package upgrade. Any other `Exec` contents fail the enable, so the
 toggle rolls back instead of claiming success. The Linux marker is
 `autostart-args-version: 2`, so already-migrated enabled entries are rewritten once
 more; macOS/Windows stay at 1 and are not touched again. The preflight accepts the
