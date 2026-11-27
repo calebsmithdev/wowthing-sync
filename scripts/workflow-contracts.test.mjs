@@ -94,3 +94,9 @@ test('release-triggered Pages deploys build the site from the default branch', a
     'download data must stay pinned to the published release')
   assert.deepEqual(pages.jobs.deploy.needs, 'build')
 })
+test('every script contract test runs in a CI tier', async () => {
+  const reusable = await workflow('desktop-checks.yml')
+  const commands = Object.values(reusable.jobs).flatMap(job => job.steps ?? []).map(step => step.run ?? '').join('\n')
+  const tests = (await readdir(new URL('./', import.meta.url))).filter(name => name.endsWith('.test.mjs'))
+  for (const name of tests) assert.match(commands, new RegExp(`scripts/${name.replaceAll('.', '\\.')}\\b`), `${name} is not run by desktop-checks.yml`)
+})
