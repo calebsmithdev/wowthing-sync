@@ -9,21 +9,21 @@
 </template>
 
 <script lang="ts" setup>
-import type { NavigationMenuItem } from '@nuxt/ui';
-import { computed } from 'vue';
+import type { NavigationMenuItem } from '@nuxt/ui'
+import { computed } from 'vue'
 
-const isDev = import.meta.dev;
+const isDev = import.meta.dev
 
 const navigationItems = computed<NavigationMenuItem[]>(() => {
   const items: NavigationMenuItem[] = [
     { label: 'Status', to: '/' },
     { label: 'Settings', to: '/settings' },
-  ];
+  ]
 
   if (isDev) {
-    items.push({ label: 'Debug', to: '/__debug' });
+    items.push({ label: 'Debug', to: '/__debug' })
   }
 
-  return items;
-});
+  return items
+})
 </script>

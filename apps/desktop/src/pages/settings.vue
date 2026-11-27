@@ -44,7 +44,7 @@
       <h2 class="section-title">Game Folder</h2>
       <div class="group-rows">
         <div class="space-y-2 py-3">
-          <UFormField label='World of Warcraft "_retail_" Folder' name="folder" description="The folder that contains WTF/Account.">
+          <UFormField label="World of Warcraft &quot;_retail_&quot; Folder" name="folder" description="The folder that contains WTF/Account.">
             <UInput :model-value="state.folder ?? ''" placeholder="No folder selected" readonly class="w-full" :ui="{ base: 'font-mono text-xs' }" />
           </UFormField>
           <p v-if="flavorWarning" class="text-sm text-warning">{{ flavorWarning }}</p>
@@ -107,8 +107,10 @@
           <UButton color="neutral" variant="outline" class="shrink-0" :loading="openingLogFolder" @click="openLogFolder">Open Logs Folder</UButton>
         </div>
         <div class="space-y-2 py-3 text-sm text-muted">
-          <p>Built by <a :href="aboutLinks.Failcookie" :aria-disabled="openingAboutLink !== null" class="underline hover:text-primary" @click.prevent="openAboutLink('Failcookie')">Failcookie</a>.
-          Powered by <a :href="aboutLinks.WoWthing" :aria-disabled="openingAboutLink !== null" class="underline hover:text-primary" @click.prevent="openAboutLink('WoWthing')">WoWthing</a>.</p>
+          <p>
+            Built by <a :href="aboutLinks.Failcookie" :aria-disabled="openingAboutLink !== null" class="underline hover:text-primary" @click.prevent="openAboutLink('Failcookie')">Failcookie</a>.
+            Powered by <a :href="aboutLinks.WoWthing" :aria-disabled="openingAboutLink !== null" class="underline hover:text-primary" @click.prevent="openAboutLink('WoWthing')">WoWthing</a>.
+          </p>
           <div v-if="failedAboutLink" role="alert" class="text-error">
             <p>Could not open {{ failedAboutLink }} in your browser. Try again or copy the link address.</p>
             <UButton color="neutral" variant="link" :disabled="openingAboutLink !== null" @click="openAboutLink(failedAboutLink!)">Retry Opening {{ failedAboutLink }}</UButton>
@@ -147,9 +149,7 @@ const openAboutLink = async (link: AboutLink) => {
   if (openingAboutLink.value) return
   openingAboutLink.value = link
   failedAboutLink.value = null
-  try { await openUrl(aboutLinks[link]) }
-  catch { failedAboutLink.value = link }
-  finally { openingAboutLink.value = null }
+  try { await openUrl(aboutLinks[link]) } catch { failedAboutLink.value = link } finally { openingAboutLink.value = null }
 }
 const openingLogFolder = ref(false)
 const logFolderFailed = ref(false)
@@ -157,9 +157,7 @@ const openLogFolder = async () => {
   if (openingLogFolder.value) return
   openingLogFolder.value = true
   logFolderFailed.value = false
-  try { await settings.openLogFolder() }
-  catch { logFolderFailed.value = true }
-  finally { openingLogFolder.value = false }
+  try { await settings.openLogFolder() } catch { logFolderFailed.value = true } finally { openingLogFolder.value = false }
 }
 
 const loadFailed = computed(() => !loading.value && (!loaded.value || (scope.value === null && !!error.value)))

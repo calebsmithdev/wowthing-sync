@@ -11,7 +11,7 @@ test('standalone release verifier checks the real signed bytes, key and trusted 
   try {
     const privateKey = join(temporary, 'key'), artifact = join(temporary, 'artifact'), config = join(temporary, 'config.json')
     const version = (await readFile(join(root, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8')).match(/^version = "([^"]+)"/m)[1]
-    const cli = args => { const launch = tauriInvocation(join(root, 'apps/desktop'), args); const result = spawnSync(launch.command, launch.args, { encoding: 'utf8', timeout: 30000 }); assert.equal(result.status, 0, result.stderr) }
+    const cli = (args) => { const launch = tauriInvocation(join(root, 'apps/desktop'), args); const result = spawnSync(launch.command, launch.args, { encoding: 'utf8', timeout: 30000 }); assert.equal(result.status, 0, result.stderr) }
     cli(['signer', 'generate', '--ci', '--write-keys', privateKey]) // private output captured, never logged
     await writeFile(artifact, 'synthetic signed release bytes')
     await writeFile(config, JSON.stringify({ plugins: { updater: { pubkey: (await readFile(`${privateKey}.pub`, 'utf8')).trim() } } }))

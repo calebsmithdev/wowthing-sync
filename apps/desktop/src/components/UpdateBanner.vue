@@ -34,7 +34,7 @@ const title = computed(() => {
   if (phase.value === 'error' && errorOperation.value === 'check') return 'Could Not Check for Updates'
   if (phase.value === 'error' && errorOperation.value === 'open-download') return 'Could Not Open Downloads'
   if (phase.value === 'error' && previousAppMoved.value) return 'Reinstall Needed'
-  return ({ idle: 'Updates', checking: 'Checking for Updates', available: 'Update Available', downloading: 'Downloading Update', installing: 'Installing Update', 'up-to-date': 'You Are Up to Date', error: 'Update Failed' })[phase.value]
+  return ({ 'idle': 'Updates', 'checking': 'Checking for Updates', 'available': 'Update Available', 'downloading': 'Downloading Update', 'installing': 'Installing Update', 'up-to-date': 'You Are Up to Date', 'error': 'Update Failed' })[phase.value]
 })
 const icon = computed(() => phase.value === 'error' ? 'i-lucide-circle-alert' : phase.value === 'up-to-date' ? 'i-lucide-circle-check' : busy.value ? 'i-lucide-loader-circle' : 'i-lucide-info')
 const description = computed(() => {
@@ -52,8 +52,7 @@ const description = computed(() => {
   return 'Please wait…'
 })
 const openDownload = async () => {
-  try { await openUrl('https://github.com/calebsmithdev/wowthing-sync/releases/latest') }
-  catch (cause) { error.value = String(cause); errorOperation.value = 'open-download'; phase.value = 'error' }
+  try { await openUrl('https://github.com/calebsmithdev/wowthing-sync/releases/latest') } catch (cause) { error.value = String(cause); errorOperation.value = 'open-download'; phase.value = 'error' }
 }
 const actions = computed<ButtonProps[]>(() => phase.value === 'available' ? [
   { variant: 'solid', color: 'primary', label: 'Update', disabled: busy.value, onClick: () => handleUpdate() },

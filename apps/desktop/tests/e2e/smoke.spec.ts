@@ -6,7 +6,7 @@ const version = readFileSync(new URL('../../src-tauri/Cargo.toml', import.meta.u
 test('fresh offline profile shows setup, preserves manual update feedback and becomes ready after saving', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   await page.route('https://**', route => route.abort())
   await page.goto('/?onboarding')
   await expect(page.getByRole('heading', { name: 'Welcome to WoWthing Sync' })).toBeVisible()
@@ -58,7 +58,7 @@ test('fresh offline profile shows setup, preserves manual update feedback and be
 test('built UI saves explicit drafts, keeps sync across navigation and reveals update state', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   await page.route('https://**', route => route.abort()) // Hermetic: no external API, icon CDN or updater.
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Not synced yet' })).toBeVisible()
@@ -75,7 +75,7 @@ test('built UI saves explicit drafts, keeps sync across navigation and reveals u
   await page.getByRole('textbox', { name: 'API Key', exact: true }).fill('invalid')
   await page.getByRole('button', { name: 'Save API Key', exact: true }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'API key is invalid' })).toBeVisible()
-  const folders = () => page.evaluate(() => (window as unknown as { __SMOKE__: { calls: { command: string; args: { folder?: string } }[] } }).__SMOKE__.calls.filter(call => call.command === 'save_sync_folder').map(call => call.args.folder))
+  const folders = () => page.evaluate(() => (window as unknown as { __SMOKE__: { calls: { command: string, args: { folder?: string } }[] } }).__SMOKE__.calls.filter(call => call.command === 'save_sync_folder').map(call => call.args.folder))
   await page.getByRole('button', { name: 'Choose Folder' }).click()
   await expect(page.locator('#folder-message[role=status]')).toHaveText('Settings saved.')
   expect(await folders()).toEqual(['/fixture/new_retail_'])
@@ -85,7 +85,7 @@ test('built UI saves explicit drafts, keeps sync across navigation and reveals u
   await expect(page.getByText('You Are Up to Date', { exact: true })).toBeVisible()
   await expect(page.getByText('You Are Up to Date', { exact: true })).toBeHidden({ timeout: 6000 })
   await page.evaluate(() => {
-    const fixture = (window as unknown as { __SMOKE__: { emit: (event: string, payload: unknown) => void; status: object } }).__SMOKE__
+    const fixture = (window as unknown as { __SMOKE__: { emit: (event: string, payload: unknown) => void, status: object } }).__SMOKE__
     fixture.emit('sync-status', { ...fixture.status, failures: [{ file: 'fixture.lua', message: 'HTTP 401' }] })
   })
   await expect(page.getByRole('alert').filter({ hasText: '1 account failed to upload.' })).toBeVisible()
@@ -96,7 +96,7 @@ test('built UI saves explicit drafts, keeps sync across navigation and reveals u
   await page.getByRole('button', { name: 'Sync Now' }).click()
   await expect(page.getByRole('heading', { name: /^Synced / })).toBeVisible()
   await page.evaluate(() => {
-    const fixture = (window as unknown as { __SMOKE__: { emit: (event: string, payload: unknown) => void; status: object } }).__SMOKE__
+    const fixture = (window as unknown as { __SMOKE__: { emit: (event: string, payload: unknown) => void, status: object } }).__SMOKE__
     fixture.emit('sync-status', { ...fixture.status, failures: [] })
   })
   await expect(page.getByRole('listitem').filter({ hasText: 'collector.lua' })).toContainText('ago')
@@ -104,11 +104,10 @@ test('built UI saves explicit drafts, keeps sync across navigation and reveals u
   await page.screenshot({ path: process.env.SMOKE_SCREENSHOT ?? test.info().outputPath('dashboard.png') })
 })
 
-
 test('About links use opener with exact URLs and recover from browser failures', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   await page.route('https://**', route => route.abort())
   await page.goto('/settings')
   for (const [name, url] of [['Failcookie', 'https://wowthing.org/user/Failcookie'], ['WoWthing', 'https://wowthing.org']]) {
@@ -122,7 +121,7 @@ test('About links use opener with exact URLs and recover from browser failures',
     await page.evaluate(() => { (window as unknown as { __SMOKE__: { openerError: string | null } }).__SMOKE__.openerError = null })
     await page.getByRole('button', { name: `Retry Opening ${name}`, exact: true }).click()
     await expect(page.getByRole('alert')).toHaveCount(0)
-    expect(await page.evaluate(() => (window as unknown as { __SMOKE__: { calls: { command: string; args: { url?: string } }[] } }).__SMOKE__.calls.filter(call => call.command === 'plugin:opener|open_url').map(call => call.args.url))).toEqual(
+    expect(await page.evaluate(() => (window as unknown as { __SMOKE__: { calls: { command: string, args: { url?: string } }[] } }).__SMOKE__.calls.filter(call => call.command === 'plugin:opener|open_url').map(call => call.args.url))).toEqual(
       name === 'Failcookie' ? [url, url] : ['https://wowthing.org/user/Failcookie', 'https://wowthing.org/user/Failcookie', url, url],
     )
     await expect(page).toHaveURL(/\/settings$/)
@@ -133,7 +132,7 @@ test('About links use opener with exact URLs and recover from browser failures',
 test('Open Logs Folder asks the native side and shows a failure inline', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   await page.goto('/settings')
   const smoke = () => (window as unknown as { __SMOKE__: { logFolderError: string | null, calls: { command: string, args: object }[] } }).__SMOKE__
   await page.evaluate(`(${smoke})().logFolderError = 'Could not open the logs folder.'`)

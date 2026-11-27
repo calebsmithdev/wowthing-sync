@@ -61,7 +61,7 @@ export function createUpdater() {
         setPhase('downloading')
         let downloaded = 0
         let total = 0
-        await update.downloadAndInstall(event => {
+        await update.downloadAndInstall((event) => {
           if (disposed) return
           if (event.event === 'Started') total = event.data.contentLength ?? 0
           if (event.event === 'Progress') {
@@ -74,7 +74,7 @@ export function createUpdater() {
         await update.close()
       }
       if (!disposed) await relaunch()
-    })().catch(cause => {
+    })().catch((cause) => {
       if (!disposed) {
         error.value = String(cause)
         errorOperation.value = install ? 'install' : 'check'
@@ -93,9 +93,9 @@ export function createUpdater() {
   const start = () => {
     if (started || disposed) return
     started = true
-    void listen<UpdateCheckRequest>('check-for-updates', event => {
+    void listen<UpdateCheckRequest>('check-for-updates', (event) => {
       if (event.payload.source === 'tray') void checkForUpdates(true)
-    }).then(stop => { if (disposed) stop(); else unlisten = stop }).catch(cause => {
+    }).then((stop) => { if (disposed) stop(); else unlisten = stop }).catch((cause) => {
       if (!disposed) { error.value = `Cannot listen for tray update requests: ${String(cause)}`; errorOperation.value = 'check'; phase.value = 'error' }
     })
     void checkForUpdates(false)

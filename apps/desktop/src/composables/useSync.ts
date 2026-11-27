@@ -10,7 +10,7 @@ export interface SyncStatus {
   lastSuccess: number | null
   error: string | null
   pending: number
-  failures: { file: string; message: string }[]
+  failures: { file: string, message: string }[]
   warning: string | null
   /** Last successful upload (unix seconds) per collector file. */
   uploads: Record<string, number>

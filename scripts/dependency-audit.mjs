@@ -8,8 +8,7 @@ const directory = resolve('test-results/dependency-audit')
 await mkdir(directory, { recursive: true })
 async function audit(executable, args, label, cwd) {
   let stdout = '', status
-  try { const result = await runProcess(executable, args, { cwd, capture: true, timeout: 180000, label, reportDirectory: directory, onStdout: bytes => { stdout += bytes } }); status = result.report }
-  catch (error) { status = error.report; if (!status) throw error }
+  try { const result = await runProcess(executable, args, { cwd, capture: true, timeout: 180000, label, reportDirectory: directory, onStdout: (bytes) => { stdout += bytes } }); status = result.report } catch (error) { status = error.report; if (!status) throw error }
   await writeFile(resolve(directory, `${label}.json`), stdout)
   return { status, data: JSON.parse(stdout) }
 }

@@ -73,8 +73,7 @@ export async function extractPackage(path, temporary) {
     // header/payload digests first, then use libarchive's native RPM reader.
     await command('rpm', ['--checksig', '--nosignature', path])
     await command('bsdtar', ['-xf', path, '-C', temporary, '--no-same-owner'])
-  }
-  else if (path.endsWith('.AppImage')) await command(path, ['--appimage-extract'], { cwd: temporary })
+  } else if (path.endsWith('.AppImage')) await command(path, ['--appimage-extract'], { cwd: temporary })
   else if (path.endsWith('.exe')) {
     if (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') throw new Error('installer requires disposable hosted runner')
     await command(path, ['/S', '/NS', `/D=${temporary}`], { timeout: 120_000, waitDescendants: true, windowsArgumentMode: 'nsis' })
@@ -90,66 +89,65 @@ export async function packageCheck({ release = false } = {}) {
   for (const harness of [false, true]) {
     const kind = harness ? 'harness' : 'production'
     for (const bundleTarget of targets.split(',')) {
-    const config = { bundle: { createUpdaterArtifacts: false }, ...(harness ? { identifier: 'com.calebsmithdev.wowthing-ci-isolated', productName: 'Wowthing CI Isolated', mainBinaryName: 'Wowthing CI Isolated' } : {}) }
-    const args = ['build', ...(release ? [] : ['--debug']), '--bundles', bundleTarget, '--no-sign', '--config', JSON.stringify(config), ...(harness ? ['--features', 'integration-test'] : []), '--', '--locked']
-    const invocation = tauriInvocation(resolve(root, 'apps/desktop'), args)
-    await rm(resolve(root, `target/${profile}/bundle`), { recursive: true, force: true })
-    const env = { ...process.env }
-    delete env.TAURI_SIGNING_PRIVATE_KEY
-    delete env.APPLE_CERTIFICATE
-    delete env.WOWTHING_DISTRIBUTION
-    if (!harness) env.WOWTHING_DISTRIBUTION = '1'
-    await command(invocation.command, invocation.args, { cwd: resolve(root, 'apps/desktop'), env, timeout: 35 * 60_000 })
-    const staged = join(destination, kind, bundleTarget)
-    await mkdir(staged, { recursive: true })
-    await cp(resolve(root, `target/${profile}/bundle`), staged, { recursive: true })
-    const all = await files(staged)
-    const packages = process.platform === 'darwin' ? [join(staged, 'macos', `${harness ? 'Wowthing CI Isolated' : 'Wowthing Sync'}.app`)] : all.filter(path => /\.(deb|rpm|AppImage|exe)$/.test(path))
-    if (packages.length !== 1) throw new Error('missing or unexpected packages')
-    for (const artifact of packages) {
-      const temporary = await mkdtemp(join(tmpdir(), 'wowthing-package-'))
-      let safeToRemove = true
-      try {
-        if (artifact.endsWith('.deb')) {
-          const actual = await command('dpkg-deb', ['--field', artifact, 'Version'], { capture: true })
-          if (actual.stdout.trim() !== version) throw new Error('Debian package version mismatch')
-        } else if (artifact.endsWith('.rpm')) {
-          const actual = await command('rpm', ['-qp', '--queryformat', '%{VERSION}', artifact], { capture: true })
-          if (actual.stdout.trim() !== version) throw new Error('RPM package version mismatch')
-        }
-        const extracted = await extractPackage(artifact, temporary)
-        const binaryName = harness ? 'Wowthing CI Isolated' : 'Wowthing Sync'
-        const candidates = (await files(extracted)).filter(path => [binaryName, binaryName.toLowerCase().replaceAll(' ', '-'), 'wowthing-sync'].includes(basename(path).replace(/\.exe$/, '')))
-        if (candidates.length !== 1) throw new Error(`expected one package executable: ${artifact}`)
-        const binary = candidates[0]
-        let built = resolve(root, `target/${profile}`, `${binaryName}${process.platform === 'win32' ? '.exe' : ''}`)
-        if (artifact.endsWith('.AppImage')) {
-          const postprocessed = (await files(resolve(root, `target/${profile}/bundle/appimage`))).filter(path => path.includes('.AppDir/') && basename(path) === basename(binary))
-          if (postprocessed.length !== 1) throw new Error('missing postprocessed AppImage build source')
-          built = postprocessed[0]
-        }
-        const identity = await verifyPackageBinary(binary, built, harness, bundleTarget)
-        const compatibility = artifact.endsWith('.AppImage') ? await verifyAppDir(join(extracted, 'squashfs-root')) : null
-        if (process.platform === 'darwin') {
-          const actual = await command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(extracted, 'Contents/Info.plist')], { capture: true })
-          if (actual.stdout.trim() !== version) throw new Error('bundle version mismatch')
-          await command('otool', ['-L', binary])
-        } else if (process.platform === 'linux') {
-          const linkage = await command('ldd', [binary], { capture: true })
-          if (/not found/.test(linkage.stdout + linkage.stderr)) throw new Error('packaged native dependency is missing')
-        } else {
-          const script = join(temporary, 'version.ps1')
-          await writeFile(script, 'param([string]$Binary)\n(Get-Item -LiteralPath $Binary).VersionInfo.ProductVersion')
-          const actual = await command('powershell.exe', ['-NoProfile', '-File', script, binary], { capture: true })
-          if (actual.stdout.trim() !== version) throw new Error('Windows executable version mismatch')
-        }
-        const entrypoint = artifact.endsWith('.AppImage') ? join(extracted, 'squashfs-root/AppRun') : binary
-        const native = harness ? await runFixture(entrypoint, resolve(root, `test-results/package-${profile}/${basename(artifact)}`), { auditedBinary: binary }) : null
-        if (native && native.version !== version) throw new Error('packaged candidate version mismatch')
-        reports.push({ artifact: artifact.replace(root, ''), harness, version, ...identity, compatibility, launched: harness })
-      } catch (error) { safeToRemove = error.report?.processClosed !== false && error.report?.treeClosed !== false; throw error }
-      finally { if (safeToRemove) await rm(temporary, { recursive: true, force: true }) }
-    }
+      const config = { bundle: { createUpdaterArtifacts: false }, ...(harness ? { identifier: 'com.calebsmithdev.wowthing-ci-isolated', productName: 'Wowthing CI Isolated', mainBinaryName: 'Wowthing CI Isolated' } : {}) }
+      const args = ['build', ...(release ? [] : ['--debug']), '--bundles', bundleTarget, '--no-sign', '--config', JSON.stringify(config), ...(harness ? ['--features', 'integration-test'] : []), '--', '--locked']
+      const invocation = tauriInvocation(resolve(root, 'apps/desktop'), args)
+      await rm(resolve(root, `target/${profile}/bundle`), { recursive: true, force: true })
+      const env = { ...process.env }
+      delete env.TAURI_SIGNING_PRIVATE_KEY
+      delete env.APPLE_CERTIFICATE
+      delete env.WOWTHING_DISTRIBUTION
+      if (!harness) env.WOWTHING_DISTRIBUTION = '1'
+      await command(invocation.command, invocation.args, { cwd: resolve(root, 'apps/desktop'), env, timeout: 35 * 60_000 })
+      const staged = join(destination, kind, bundleTarget)
+      await mkdir(staged, { recursive: true })
+      await cp(resolve(root, `target/${profile}/bundle`), staged, { recursive: true })
+      const all = await files(staged)
+      const packages = process.platform === 'darwin' ? [join(staged, 'macos', `${harness ? 'Wowthing CI Isolated' : 'Wowthing Sync'}.app`)] : all.filter(path => /\.(deb|rpm|AppImage|exe)$/.test(path))
+      if (packages.length !== 1) throw new Error('missing or unexpected packages')
+      for (const artifact of packages) {
+        const temporary = await mkdtemp(join(tmpdir(), 'wowthing-package-'))
+        let safeToRemove = true
+        try {
+          if (artifact.endsWith('.deb')) {
+            const actual = await command('dpkg-deb', ['--field', artifact, 'Version'], { capture: true })
+            if (actual.stdout.trim() !== version) throw new Error('Debian package version mismatch')
+          } else if (artifact.endsWith('.rpm')) {
+            const actual = await command('rpm', ['-qp', '--queryformat', '%{VERSION}', artifact], { capture: true })
+            if (actual.stdout.trim() !== version) throw new Error('RPM package version mismatch')
+          }
+          const extracted = await extractPackage(artifact, temporary)
+          const binaryName = harness ? 'Wowthing CI Isolated' : 'Wowthing Sync'
+          const candidates = (await files(extracted)).filter(path => [binaryName, binaryName.toLowerCase().replaceAll(' ', '-'), 'wowthing-sync'].includes(basename(path).replace(/\.exe$/, '')))
+          if (candidates.length !== 1) throw new Error(`expected one package executable: ${artifact}`)
+          const binary = candidates[0]
+          let built = resolve(root, `target/${profile}`, `${binaryName}${process.platform === 'win32' ? '.exe' : ''}`)
+          if (artifact.endsWith('.AppImage')) {
+            const postprocessed = (await files(resolve(root, `target/${profile}/bundle/appimage`))).filter(path => path.includes('.AppDir/') && basename(path) === basename(binary))
+            if (postprocessed.length !== 1) throw new Error('missing postprocessed AppImage build source')
+            built = postprocessed[0]
+          }
+          const identity = await verifyPackageBinary(binary, built, harness, bundleTarget)
+          const compatibility = artifact.endsWith('.AppImage') ? await verifyAppDir(join(extracted, 'squashfs-root')) : null
+          if (process.platform === 'darwin') {
+            const actual = await command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(extracted, 'Contents/Info.plist')], { capture: true })
+            if (actual.stdout.trim() !== version) throw new Error('bundle version mismatch')
+            await command('otool', ['-L', binary])
+          } else if (process.platform === 'linux') {
+            const linkage = await command('ldd', [binary], { capture: true })
+            if (/not found/.test(linkage.stdout + linkage.stderr)) throw new Error('packaged native dependency is missing')
+          } else {
+            const script = join(temporary, 'version.ps1')
+            await writeFile(script, 'param([string]$Binary)\n(Get-Item -LiteralPath $Binary).VersionInfo.ProductVersion')
+            const actual = await command('powershell.exe', ['-NoProfile', '-File', script, binary], { capture: true })
+            if (actual.stdout.trim() !== version) throw new Error('Windows executable version mismatch')
+          }
+          const entrypoint = artifact.endsWith('.AppImage') ? join(extracted, 'squashfs-root/AppRun') : binary
+          const native = harness ? await runFixture(entrypoint, resolve(root, `test-results/package-${profile}/${basename(artifact)}`), { auditedBinary: binary }) : null
+          if (native && native.version !== version) throw new Error('packaged candidate version mismatch')
+          reports.push({ artifact: artifact.replace(root, ''), harness, version, ...identity, compatibility, launched: harness })
+        } catch (error) { safeToRemove = error.report?.processClosed !== false && error.report?.treeClosed !== false; throw error } finally { if (safeToRemove) await rm(temporary, { recursive: true, force: true }) }
+      }
     }
   }
   await mkdir(resolve(root, 'test-results'), { recursive: true })

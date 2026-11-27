@@ -4,14 +4,14 @@
   addEventListener('error', event => errors.push(event.message))
   addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
   addEventListener('securitypolicyviolation', event => errors.push(`CSP ${event.violatedDirective}: ${event.blockedURI}`))
-  const wait = async predicate => {
+  const wait = async (predicate) => {
     const deadline = Date.now() + 20000
     while (!predicate()) {
       if (Date.now() > deadline) throw new Error(`Native UI timeout: ${document.body?.innerText}`)
       await new Promise(resolve => setTimeout(resolve, 50))
     }
   }
-  const click = text => {
+  const click = (text) => {
     const target = [...document.querySelectorAll('a,button')].find(node => node.textContent.trim() === text)
     if (!target) throw new Error(`Missing control: ${text}`)
     target.click()

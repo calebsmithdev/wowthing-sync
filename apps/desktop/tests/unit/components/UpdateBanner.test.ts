@@ -1,8 +1,9 @@
 import { mount, flushPromises } from '@vue/test-utils'
-import { computed, defineComponent, ref, h  } from 'vue'
+import { computed, defineComponent, ref, h } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import UpdateBanner from '../../../src/components/UpdateBanner.vue'
 import type { ButtonProps } from '@nuxt/ui'
+
 const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl }))
 

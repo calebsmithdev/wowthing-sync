@@ -13,7 +13,7 @@ async function assertStopped(pid) {
   if (process.platform === 'win32') assert.throws(() => process.kill(pid, 0), error => error.code === 'ESRCH')
   else {
     let stderr = ''
-    const state = await runProcess('ps', ['-o', 'stat=', '-p', String(pid)], { capture: true, onStderr: bytes => { stderr += bytes } }).catch(error => {
+    const state = await runProcess('ps', ['-o', 'stat=', '-p', String(pid)], { capture: true, onStderr: (bytes) => { stderr += bytes } }).catch((error) => {
       assert.equal(error.report?.exitCode, 1, error.message)
       assert.equal(stderr.trim(), '', 'process inspection failed')
       return { stdout: '' }
@@ -39,7 +39,7 @@ test('nested supervisors and successful wrappers cannot leave owned descendants'
   const module = new URL('./process-runner.mjs', import.meta.url).href
   const source = `import {runProcess} from ${JSON.stringify(module)}; await runProcess(process.execPath,['-e','console.log(process.pid);setInterval(()=>{},1000)'],{timeout:20000})`
   let descendant = ''
-  await assert.rejects(runProcess(process.execPath, ['--input-type=module', '-e', source], { timeout: process.platform === 'win32' ? 15_000 : 2000, capture: true, onStdout: data => { descendant += data.toString() } }), /deadline/)
+  await assert.rejects(runProcess(process.execPath, ['--input-type=module', '-e', source], { timeout: process.platform === 'win32' ? 15_000 : 2000, capture: true, onStdout: (data) => { descendant += data.toString() } }), /deadline/)
   const pid = Number(descendant.trim())
   assert.ok(pid > 1)
   await new Promise(resolvePromise => setTimeout(resolvePromise, 150))
@@ -56,7 +56,7 @@ test('a registration failure cannot leak a spawned process', async () => {
   const old = process.env.WOWTHING_PROCESS_REGISTRY
   process.env.WOWTHING_PROCESS_REGISTRY = join(directory, 'does-not-exist')
   try {
-    await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { capture: true }), error => {
+    await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { capture: true }), (error) => {
       assert.equal(error.report.passed, false)
       assert.equal(error.report.processClosed, true)
       assert.equal(error.report.treeClosed, true)
@@ -89,7 +89,7 @@ test('an intermediate deadline under an outer supervisor stops only its own subt
         await assert.rejects(runProcess(process.execPath,['--input-type=module','-e',${JSON.stringify(nested)}],{timeout:${process.platform === 'win32' ? 15000 : 2000},capture:true,onStdout:bytes=>descendant+=bytes}),/deadline/);
         const pid=Number(descendant.trim());assert.ok(pid>1,'nested startup failed');
         await new Promise(resolve=>setTimeout(resolve,150));
-        ${process.platform === 'win32' ? "assert.throws(()=>process.kill(pid,0),error=>error.code==='ESRCH')" : inspect};
+        ${process.platform === 'win32' ? 'assert.throws(()=>process.kill(pid,0),error=>error.code===\'ESRCH\')' : inspect};
         process.kill(siblingPid,0); // Sibling and this enclosing supervisor must still be alive.
       } finally { clearTimeout(readiness);await writeFile(${JSON.stringify(release)},'done');await sibling; }
       console.log('SCOPED_OWNERS_PASS');
@@ -166,8 +166,7 @@ test('PowerShell resolves duplicate PATH commands to the first scalar file and p
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-
-test('unconfirmed POSIX registry cleanup retains the tree failure and registry', { skip: process.platform === 'win32' }, async context => {
+test('unconfirmed POSIX registry cleanup retains the tree failure and registry', { skip: process.platform === 'win32' }, async (context) => {
   const directory = await mkdtemp(join(tmpdir(), 'unconfirmed-cleanup-'))
   const old = process.env.WOWTHING_PROCESS_REGISTRY
   try {
@@ -176,7 +175,7 @@ test('unconfirmed POSIX registry cleanup retains the tree failure and registry',
     // Inject only the registration IO failure after a real child was started.
     context.mock.method(fs, 'writeFileSync', () => { throw new Error('injected registration failure') })
     syncBuiltinESMExports()
-    await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { capture: true, reportDirectory: directory }), error => {
+    await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { capture: true, reportDirectory: directory }), (error) => {
       assert.match(error.message, /injected registration failure; cleanup:/)
       assert.equal(error.report.failure, error.message)
       assert.equal(error.report.passed, false)
@@ -205,14 +204,14 @@ test('interrupted POSIX publication cannot start the executable or orphan its gr
         import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';import {runProcess} from ${JSON.stringify(module)};
         const original=fs.${phase};
         fs.${phase}=(...args)=>{
-          ${phase === 'renameSync' ? "console.log('UNPUBLISHED '+JSON.parse(fs.readFileSync(args[0],'utf8')).pid)" : "console.log('UNPUBLISHED '+JSON.parse(args[1]).pid)"};
+          ${phase === 'renameSync' ? 'console.log(\'UNPUBLISHED \'+JSON.parse(fs.readFileSync(args[0],\'utf8\')).pid)' : 'console.log(\'UNPUBLISHED \'+JSON.parse(args[1]).pid)'};
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000);
           return original(...args);
         };syncBuiltinESMExports();
         await runProcess(process.execPath,['-e',${JSON.stringify(target)}],{timeout:20000});
       `
       let output = ''
-      await assert.rejects(runProcess(process.execPath, ['--input-type=module', '-e', source], { timeout: 2000, capture: true, onStdout: bytes => { output += bytes } }), error => {
+      await assert.rejects(runProcess(process.execPath, ['--input-type=module', '-e', source], { timeout: 2000, capture: true, onStdout: (bytes) => { output += bytes } }), (error) => {
         assert.equal(error.report.timedOut, true); assert.equal(error.report.treeClosed, true)
         return /deadline/.test(error.message)
       })
@@ -234,7 +233,7 @@ test('supervision preserves cwd, environment, output, native exit and inherited-
     assert.deepEqual({ ...observed, cwd: await realpath(observed.cwd) }, { cwd: await realpath(directory), value: 'literal value 雪' })
     assert.equal(result.stderr.trim(), 'owned stderr')
     await assert.rejects(runProcess(process.execPath, ['-e', 'process.exit(7)'], { capture: true, timeout: 15000 }), error => error.report.exitCode === 7 && error.report.signal === null)
-    if (process.platform !== 'win32') await assert.rejects(runProcess(process.execPath, ['-e', "process.kill(process.pid,'SIGTERM')"], { capture: true, timeout: 15000 }), error => error.report.signal === 'SIGTERM')
+    if (process.platform !== 'win32') await assert.rejects(runProcess(process.execPath, ['-e', 'process.kill(process.pid,\'SIGTERM\')'], { capture: true, timeout: 15000 }), error => error.report.signal === 'SIGTERM')
     const background = `const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'inherit'});console.log(child.pid);child.unref()`
     const completed = await runProcess(process.execPath, ['-e', background], { capture: true, timeout: 15000 })
     assert.equal(completed.report.exitCode, 0)
@@ -243,7 +242,7 @@ test('supervision preserves cwd, environment, output, native exit and inherited-
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test('a timed-out unconfirmed group kill cannot report treeClosed or remove its ownership record', { skip: process.platform === 'win32' }, async context => {
+test('a timed-out unconfirmed group kill cannot report treeClosed or remove its ownership record', { skip: process.platform === 'win32' }, async (context) => {
   const originalKill = process.kill
   let report
   try {
@@ -251,7 +250,7 @@ test('a timed-out unconfirmed group kill cannot report treeClosed or remove its 
       if (pid < 0 && signal === 'SIGKILL') { const error = new Error('injected group kill failure'); error.code = 'EPERM'; throw error }
       return originalKill(pid, signal)
     })
-    await assert.rejects(runProcess(process.execPath, ['-e', 'setTimeout(()=>process.exit(0),500)'], { capture: true, timeout: 200 }), error => {
+    await assert.rejects(runProcess(process.execPath, ['-e', 'setTimeout(()=>process.exit(0),500)'], { capture: true, timeout: 200 }), (error) => {
       report = error.report
       assert.match(error.message, /deadline.*injected group kill failure/)
       assert.equal(report.timedOut, true)
@@ -277,8 +276,7 @@ test('a timed-out unconfirmed group kill cannot report treeClosed or remove its 
   }
 })
 
-
-test('EPERM cleanup requires positive evidence that the owned group has no live members', { skip: process.platform === 'win32' }, async context => {
+test('EPERM cleanup requires positive evidence that the owned group has no live members', { skip: process.platform === 'win32' }, async (context) => {
   const completed = await runProcess(process.execPath, ['-e', 'process.exit(0)'], { capture: true })
   const originalKill = process.kill
   try {

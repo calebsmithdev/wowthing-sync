@@ -7,9 +7,7 @@ import { verifyBinary, verifyPackageBinary, expectedPackageIdentity, extractPack
 import { marker } from './native-integration.mjs'
 function fixture(architecture = process.arch, text = '') {
   const bytes = Buffer.alloc(256)
-  if (process.platform === 'darwin') { bytes.writeUInt32LE(0xfeedfacf); bytes.writeUInt32LE(architecture === 'arm64' ? 0x100000c : 0x1000007, 4) }
-  else if (process.platform === 'win32') { bytes.writeUInt32LE(64, 0x3c); bytes.write('PE\0\0', 64); bytes.writeUInt16LE(architecture === 'x64' ? 0x8664 : 0x14c, 68) }
-  else { bytes.write('\x7fELF'); bytes[4] = 2; bytes.writeUInt16LE(architecture === 'x64' ? 62 : 183, 18) }
+  if (process.platform === 'darwin') { bytes.writeUInt32LE(0xfeedfacf); bytes.writeUInt32LE(architecture === 'arm64' ? 0x100000c : 0x1000007, 4) } else if (process.platform === 'win32') { bytes.writeUInt32LE(64, 0x3c); bytes.write('PE\0\0', 64); bytes.writeUInt16LE(architecture === 'x64' ? 0x8664 : 0x14c, 68) } else { bytes.write('\x7fELF'); bytes[4] = 2; bytes.writeUInt16LE(architecture === 'x64' ? 62 : 183, 18) }
   bytes.write(text, 128)
   return bytes
 }

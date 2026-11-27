@@ -9,7 +9,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   nuxtApp.vueApp.onUnmount(dispose)
   import.meta.hot?.dispose(dispose)
   try {
-    unlisten = await observeSync(value => { if (!disposed) status.value = value })
+    unlisten = await observeSync((value) => { if (!disposed) status.value = value })
     if (disposed) unlisten()
   } catch (error) {
     if (!disposed) status.value.error = String(error)

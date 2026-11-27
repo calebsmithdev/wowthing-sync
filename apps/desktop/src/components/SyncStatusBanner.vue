@@ -32,7 +32,6 @@ const retryError = ref<string | null>(null)
 const accountFailures = computed(() => route.path === '/' ? 0 : status.value.failures.length)
 const retry = async () => {
   retrying.value = true; retryError.value = null
-  try { await syncNow() } catch (cause) { retryError.value = String(cause) }
-  finally { retrying.value = false }
+  try { await syncNow() } catch (cause) { retryError.value = String(cause) } finally { retrying.value = false }
 }
 </script>

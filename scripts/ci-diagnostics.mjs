@@ -6,8 +6,7 @@ const output = resolve(process.env.CI_REPORT_DIR ?? 'test-results/diagnostics')
 await mkdir(output, { recursive: true })
 if (!process.env.CI_STARTED_AT && process.env.GITHUB_ENV) await appendFile(process.env.GITHUB_ENV, `CI_STARTED_AT=${Date.now()}\n`)
 async function probe(executable, args) {
-  try { return (await runProcess(executable, args, { capture: true, timeout: 15_000, reportDirectory: undefined })).stdout.trim() }
-  catch (error) { return { unavailable: error.message } }
+  try { return (await runProcess(executable, args, { capture: true, timeout: 15_000, reportDirectory: undefined })).stdout.trim() } catch (error) { return { unavailable: error.message } }
 }
 const metadata = {
   recordedAt: new Date().toISOString(), platform: platform(), architecture: arch(), osRelease: release(), node: process.version,

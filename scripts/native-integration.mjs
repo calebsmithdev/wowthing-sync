@@ -20,34 +20,34 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
   let uploads = 0, navigationWriteUploaded = false, quitUploadStalled = false
   const responseTimers = new Set()
   try {
-  await mkdir(saved, { recursive: true })
-  await mkdir(join(temporary, 'not-a-wow-folder')) // Existing invalid folder reaches production validation.
-  await mkdir(reportDirectory, { recursive: true })
-  await writeFile(join(temporary, 'fixture-marker'), marker)
-  await writeFile(join(saved, 'WoWthing_Collector.lua'), 'synthetic packaged collector')
-  // Previous1.0.6 preferences: candidate runs its production migration and writes.
-  await writeFile(join(temporary, 'settings.json'), JSON.stringify({ 'api-key': 'smoke-fixture-key', 'program-folder': folder, 'last-updated': '2026-01-01T00:00:00Z', 'notifications-enabled': false }))
-  server = createServer(async (request, response) => {
-    try {
-      let body = ''
-      for await (const chunk of request) { body += chunk; if (body.length > 10000) throw new Error('oversized fixture request') }
-      const payload = JSON.parse(body)
-      if (request.method !== 'POST' || request.url !== '/upload/' || payload.apiKey !== 'smoke-fixture-key' || !payload.luaFile.startsWith('synthetic')) throw new Error('unexpected fixture upload')
-      uploads++
-      if (payload.luaFile === 'synthetic write during native navigation') navigationWriteUploaded = true
-      // Never answered: the app must still exit when tray Quit arrives mid-upload (#74).
-      if (payload.luaFile === 'synthetic stalled upload during quit') { quitUploadStalled = true; return }
-      const timer = setTimeout(() => { responseTimers.delete(timer); response.writeHead(200); response.end() }, 750)
-      responseTimers.add(timer)
-      response.once('close', () => { clearTimeout(timer); responseTimers.delete(timer) })
-    } catch { response.writeHead(400); response.end() }
-  })
-  await new Promise((resolvePromise, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolvePromise) })
+    await mkdir(saved, { recursive: true })
+    await mkdir(join(temporary, 'not-a-wow-folder')) // Existing invalid folder reaches production validation.
+    await mkdir(reportDirectory, { recursive: true })
+    await writeFile(join(temporary, 'fixture-marker'), marker)
+    await writeFile(join(saved, 'WoWthing_Collector.lua'), 'synthetic packaged collector')
+    // Previous1.0.6 preferences: candidate runs its production migration and writes.
+    await writeFile(join(temporary, 'settings.json'), JSON.stringify({ 'api-key': 'smoke-fixture-key', 'program-folder': folder, 'last-updated': '2026-01-01T00:00:00Z', 'notifications-enabled': false }))
+    server = createServer(async (request, response) => {
+      try {
+        let body = ''
+        for await (const chunk of request) { body += chunk; if (body.length > 10000) throw new Error('oversized fixture request') }
+        const payload = JSON.parse(body)
+        if (request.method !== 'POST' || request.url !== '/upload/' || payload.apiKey !== 'smoke-fixture-key' || !payload.luaFile.startsWith('synthetic')) throw new Error('unexpected fixture upload')
+        uploads++
+        if (payload.luaFile === 'synthetic write during native navigation') navigationWriteUploaded = true
+        // Never answered: the app must still exit when tray Quit arrives mid-upload (#74).
+        if (payload.luaFile === 'synthetic stalled upload during quit') { quitUploadStalled = true; return }
+        const timer = setTimeout(() => { responseTimers.delete(timer); response.writeHead(200); response.end() }, 750)
+        responseTimers.add(timer)
+        response.once('close', () => { clearTimeout(timer); responseTimers.delete(timer) })
+      } catch { response.writeHead(400); response.end() }
+    })
+    await new Promise((resolvePromise, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolvePromise) })
     const result = await command(binary, ['--autostart'], {
       cwd: temporary,
       env: { ...process.env, WOWTHING_TEST_ROOT: temporary, WOWTHING_TEST_ENDPOINT: `http://127.0.0.1:${server.address().port}/upload/` },
       timeout: 60_000, label: 'native-integration', reportDirectory: join(reportDirectory, 'process'),
-      onStdout: bytes => { stdout += bytes.toString() }, onStderr: bytes => { stderr += bytes.toString() },
+      onStdout: (bytes) => { stdout += bytes.toString() }, onStderr: (bytes) => { stderr += bytes.toString() },
     })
     const lines = result.stdout.split('\n').filter(line => line.startsWith('INTEGRATION_REPORT '))
     if (lines.length !== 1) throw new Error('missing or duplicate native report')
@@ -58,8 +58,7 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
     const preferences = JSON.parse(await readFile(join(temporary, 'settings.json'), 'utf8'))
     if ('api-key' in preferences || !preferences['last-success']) throw new Error('upgrade fixture did not persist migration and upload')
     return report
-  } catch (error) { failure = error.message; safeToRemove = error.report?.processClosed !== false && error.report?.treeClosed !== false; throw error }
-  finally {
+  } catch (error) { failure = error.message; safeToRemove = error.report?.processClosed !== false && error.report?.treeClosed !== false; throw error } finally {
     await mkdir(reportDirectory, { recursive: true })
     await writeFile(join(reportDirectory, 'stdout.log'), stdout)
     await writeFile(join(reportDirectory, 'stderr.log'), stderr)
