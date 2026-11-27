@@ -82,3 +82,15 @@ test('workflow DAG, real runner matrix and required-job topology are enforced', 
   requireSuccess(needs, reusable.jobs.complete.needs)
   for (const id of reusable.jobs.complete.needs) assert.throws(() => requireSuccess({ ...needs, [id]: { result: 'skipped' } }, reusable.jobs.complete.needs), new RegExp(id))
 })
+test('release-triggered Pages deploys build the site from the default branch', async () => {
+  const pages = await workflow('static-pages.yml')
+  assert.ok(Object.hasOwn(pages.on, 'release'))
+  const build = pages.jobs.build
+  const checkout = build.steps.find(step => step.uses?.split('@')[0] === 'actions/checkout')
+  const ref = checkout?.with?.ref?.replace(/\s+/g, ' ')
+  assert.equal(ref, "${{ github.event_name == 'release' && github.event.repository.default_branch || '' }}",
+    'a release event must not rebuild the site from the tag commit')
+  assert.equal(build.env.WOWTHING_RELEASE_TAG, '${{ github.event.release.tag_name }}',
+    'download data must stay pinned to the published release')
+  assert.deepEqual(pages.jobs.deploy.needs, 'build')
+})
