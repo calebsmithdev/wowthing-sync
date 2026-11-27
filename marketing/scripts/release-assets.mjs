@@ -14,7 +14,7 @@ export const PLATFORMS = {
   // NSIS installer first; it's what the updater uses on Windows.
   windows: { ext: ['.exe', '.msi'], arch: X64, required: true },
   'windows-msi': { ext: ['.msi'], arch: X64, required: false },
-  // Only the AppImage updates itself, so .deb and .rpm packages aren't offered.
+  // The site offers the AppImage only; .deb and .rpm stay on the Releases page.
   linux: { ext: ['.AppImage'], arch: X64, required: true }
 };
 

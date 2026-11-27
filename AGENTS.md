@@ -661,3 +661,16 @@ hidden, manual recovery, and macOS Reopen. User Reopen is never suppressed by th
 original login marker. Update relaunch deliberately retains the invocation mode:
 an app started with `--autostart` returns hidden after update; tray Open Window
 reveals it. No updater state or IPC is added for this bounded fix.
+
+### Linux deb/rpm updates (#76)
+
+Installed `.deb`/`.rpm` apps carry their bundle type and the updater requests
+`linux-x86_64-deb`/`linux-x86_64-rpm` before falling back to `linux-x86_64`
+(the AppImage archive, which they cannot install). `release-metadata.mjs` stages
+the CLI-signed `.deb.sig`/`.rpm.sig`, requires both on Linux and adds those
+entries to `latest.json`; `distribution-signatures.mjs` rejects unsigned
+packages. A failed install keeps **Check Again** and adds **Download** (the fixed
+releases/latest URL already allowed by the opener scope). The plugin's privileged
+`dpkg -i`/`rpm -U` path is not run in CI; it needs manual disposable-machine
+evidence. Releases before this fix have no deb/rpm entries; those installs
+update once the first fixed release is published.
