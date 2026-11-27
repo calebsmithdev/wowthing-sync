@@ -674,3 +674,16 @@ releases/latest URL already allowed by the opener scope). The plugin's privilege
 `dpkg -i`/`rpm -U` path is not run in CI; it needs manual disposable-machine
 evidence. Releases before this fix have no deb/rpm entries; those installs
 update once the first fixed release is published.
+
+### Quit during an upload (#74)
+
+Tauri runs Rust event listeners synchronously on the emitting thread, so the tray's
+`sync-status` listener runs on the sync worker. Menu setters (`set_text`) block until
+the main thread runs them, while `RunEvent::Exit` blocks the main thread in
+`SyncService::shutdown()` joining that worker. The listener therefore queues its
+update with `run_on_main_thread` and never blocks. Any new Rust listener on worker
+events must do the same for main-thread APIs. The worker also returns without
+publishing once shutdown cancels an in-flight upload. `worker_integration` asserts
+no emit after shutdown begins; native integration ends with tray **Quit** while the
+loopback server holds an upload open, and fails on the 60s process deadline if the
+app does not exit (verified to hang without the fix on macOS ARM64).
