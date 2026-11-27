@@ -6,7 +6,7 @@ const target = process.argv[2]
 const bundles = resolve('target', target, 'release/bundle')
 const paths = await files(bundles), reports = []
 const signatures = paths.filter(path => path.endsWith('.sig'))
-const payloads = paths.filter(path => /(?:\.app\.tar\.gz|\.AppImage(?:\.tar\.gz)?|\.(?:nsis|msi)\.zip|\.exe|\.msi)$/.test(path))
+const payloads = paths.filter(path => /(?:\.app\.tar\.gz|\.AppImage(?:\.tar\.gz)?|\.(?:nsis|msi)\.zip|\.exe|\.msi|\.deb|\.rpm)$/.test(path))
 for (const payload of payloads) if (!paths.includes(`${payload}.sig`)) throw new Error(`unsigned updater payload: ${payload}`)
 if (!signatures.length) throw new Error('no distribution updater signatures')
 for (const signature of signatures) {

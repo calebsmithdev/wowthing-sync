@@ -38,6 +38,13 @@ describe('UpdateBanner action buttons', () => {
     errorOperation.value = 'install'; await flushPromises()
     expect(wrapper.text()).toContain('Update Failed')
     expect(wrapper.text()).toContain('The update could not be completed.')
+    expect(wrapper.text()).toContain('download the latest version')
+    const [retry, download] = wrapper.findAll('button')
+    expect([retry!.text(), download!.text()]).toEqual(['Check Again', 'Download'])
+    openUrl.mockClear(); await download!.trigger('click'); await flushPromises()
+    expect(openUrl).toHaveBeenCalledExactlyOnceWith('https://github.com/calebsmithdev/wowthing-sync/releases/latest')
+    errorOperation.value = 'check'; await flushPromises()
+    expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Check Again'])
     wrapper.unmount(); vi.unstubAllGlobals()
   })
   it('asks for a reinstall when macOS could not restore the previous app', async () => {

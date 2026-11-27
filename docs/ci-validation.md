@@ -34,7 +34,14 @@ the same check before the isolated fixture launch. Release builds run the audit
 before staging assets and preserve `test-results/appimage-compatibility.json`.
 AppImage assets and updater archives/signatures use
 `wowthing-sync_<version>_x86_64.AppImage[.tar.gz][.sig]`; the updater platform key
-remains `linux-x86_64`. Publish a new version after the checks pass, then request
+remains `linux-x86_64`. Installed `.deb`/`.rpm` apps request
+`linux-x86_64-deb`/`linux-x86_64-rpm` first and can only install their own package
+type, so `latest.json` lists those entries with the signed
+`wowthing-sync_<version>_linux-x86_64.{deb,rpm}` packages and the release uploads
+their `.sig` files. Staging and the release signature audit fail if either package
+is unsigned. The updater's privileged `dpkg -i`/`rpm -U` install is not exercised in
+CI (it would modify the runner's system packages); check it manually on a
+disposable Debian/Fedora machine before release. Publish a new version after the checks pass, then request
 `/retest` on [AppImageHub PR 9719](https://github.com/AppImage/appimage.github.io/pull/9719).
 Existing published artifacts are not rebuilt in place.
 
@@ -132,6 +139,9 @@ consumer VMs before replacing this checklist with automated jobs.
   On Windows, update from a release built with the current updater to a newer
   `.nsis.zip`: production's `v1Compatible` archives use the updater's zip path,
   while `updater-install.mjs` builds `createUpdaterArtifacts: true` candidates.
+  On Linux, update an installed `.deb` (Debian/Ubuntu) and `.rpm` (Fedora) from
+  a release that lists `linux-x86_64-deb`/`-rpm`, approving the pkexec or sudo
+  prompt, then confirm the package manager reports the new version.
 - Approve/deny notification consent and confirm delivery, disabled behavior and
   OS settings links; hosted probes do not claim actual consent/delivery coverage.
 - In a disposable profile, confirm an enabled pre-marker registration is refreshed

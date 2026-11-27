@@ -42,6 +42,7 @@ const description = computed(() => {
     if (errorOperation.value === 'check') return 'Updates could not be checked right now. Try again later. Syncing can continue.'
     if (errorOperation.value === 'open-download') return 'The downloads page could not be opened. Try checking for updates again.'
     if (previousAppMoved.value) return 'The update could not be installed, and the current version could not be put back. Your previous copy was kept as "(previous version)" next to the app. Download the latest version to reinstall.'
+    if (errorOperation.value === 'install') return 'The update could not be completed. Try checking for updates again, or download the latest version and install it yourself.'
     return 'The update could not be completed. Try checking for updates again.'
   }
   if (phase.value === 'available') return `Version ${version.value} is ready to install.`
@@ -59,6 +60,10 @@ const actions = computed<ButtonProps[]>(() => phase.value === 'available' ? [
   { variant: 'outline', color: 'primary', label: 'Download', onClick: openDownload },
 ] : phase.value === 'error' && previousAppMoved.value ? [
   { variant: 'solid', color: 'primary', label: 'Download', onClick: openDownload },
+] : phase.value === 'error' && errorOperation.value === 'install' ? [
+  { label: 'Check Again', onClick: () => checkForUpdates(true) },
+  // A failed install can recur on every check; a manual download always works.
+  { variant: 'outline', color: 'primary', label: 'Download', onClick: openDownload },
 ] : phase.value === 'error' ? [
   { label: 'Check Again', onClick: () => checkForUpdates(true) },
 ] : [])

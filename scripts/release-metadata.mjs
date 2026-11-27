@@ -31,7 +31,10 @@ export function existingReleaseTarget(release, { version, sha, tagSha }) {
   return release.isDraft === true
 }
 export const PLATFORM_KEYS = ['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64']
-const EXTENSIONS = ['.app.tar.gz.sig', '.AppImage.tar.gz.sig', '.msi.zip.sig', '.nsis.zip.sig', '.app.tar.gz', '.AppImage.tar.gz', '.msi.zip', '.nsis.zip', '.AppImage.sig', '.AppImage', '.dmg', '.deb', '.rpm', '.msi', '.exe']
+const EXTENSIONS = ['.app.tar.gz.sig', '.AppImage.tar.gz.sig', '.msi.zip.sig', '.nsis.zip.sig', '.app.tar.gz', '.AppImage.tar.gz', '.msi.zip', '.nsis.zip', '.AppImage.sig', '.deb.sig', '.rpm.sig', '.AppImage', '.dmg', '.deb', '.rpm', '.msi', '.exe']
+// Installed .deb/.rpm apps look up `<key>-<installer>` before `<key>` and can only
+// install their own package type, so each needs its own signed updater entry.
+const INSTALLERS = { 'linux-x86_64': { deb: '.deb', rpm: '.rpm' } }
 function artifactName(version, key, extension) {
   // AppImageHub rejects redundant "linux" in AppImage names. Keep the Tauri
   // updater platform key unchanged; its URL points to the renamed asset.
@@ -56,9 +59,17 @@ export function stageArtifacts({ version, key, paths, destination, targetRoot })
   const candidates = key.startsWith('darwin') ? ['.app.tar.gz'] : key.startsWith('linux') ? ['.AppImage.tar.gz', '.AppImage'] : ['.nsis.zip', '.msi.zip']
   const extension = candidates.find(extension => staged.has(extension) && staged.has(`${extension}.sig`))
   if (!extension) throw new Error(`No signed updater artifact for ${key}`)
-  const signature = readFileSync(join(destination, staged.get(`${extension}.sig`)), 'utf8').trim()
-  if (!signature) throw new Error('Updater signature is empty')
-  const fragment = { version, key, artifact: staged.get(extension), signature }
+  const signed = extension => {
+    const signature = readFileSync(join(destination, staged.get(`${extension}.sig`)), 'utf8').trim()
+    if (!signature) throw new Error('Updater signature is empty')
+    return { artifact: staged.get(extension), signature }
+  }
+  const installers = {}
+  for (const [installer, packageExtension] of Object.entries(INSTALLERS[key] ?? {})) {
+    if (!staged.has(packageExtension) || !staged.has(`${packageExtension}.sig`)) throw new Error(`No signed ${installer} updater artifact for ${key}`)
+    installers[installer] = signed(packageExtension)
+  }
+  const fragment = { version, key, ...signed(extension), installers }
   writeFileSync(join(destination, `metadata-${key}.json`), JSON.stringify(fragment))
   return fragment
 }
@@ -70,9 +81,15 @@ export function mergeUpdater(fragments, version, repository) {
   for (const fragment of fragments) {
     if (!PLATFORM_KEYS.includes(fragment.key)) throw new Error('Unexpected updater platform')
     verifyVersions(version, { updaterVersion: fragment.version })
-    const extension = EXTENSIONS.find(extension => fragment.artifact.endsWith(extension))
-    if (!fragment.signature || basename(fragment.artifact) !== fragment.artifact || !extension || fragment.artifact !== artifactName(version, fragment.key, extension)) throw new Error('Invalid updater artifact metadata')
-    platforms[fragment.key] = { signature: fragment.signature, url: `https://github.com/${repository}/releases/download/v${version}/${encodeURIComponent(fragment.artifact)}` }
+    const expected = INSTALLERS[fragment.key] ?? {}
+    const installers = fragment.installers ?? {}
+    if (Object.keys(installers).sort().join() !== Object.keys(expected).sort().join()) throw new Error('Unexpected updater installer entries')
+    const entries = [[fragment.key, fragment, null], ...Object.entries(installers).map(([installer, entry]) => [`${fragment.key}-${installer}`, entry, expected[installer]])]
+    for (const [target, entry, required] of entries) {
+      const extension = EXTENSIONS.find(extension => entry.artifact?.endsWith(extension))
+      if (!entry.signature || basename(entry.artifact) !== entry.artifact || !extension || extension.endsWith('.sig') || (required && extension !== required) || entry.artifact !== artifactName(version, fragment.key, extension)) throw new Error('Invalid updater artifact metadata')
+      platforms[target] = { signature: entry.signature, url: `https://github.com/${repository}/releases/download/v${version}/${encodeURIComponent(entry.artifact)}` }
+    }
   }
   return { version, notes: `WoWthing Sync ${version}`, pub_date: new Date().toISOString(), platforms }
 }
@@ -95,8 +112,8 @@ function main() {
     const fragments = readdirSync(destination).filter(name => name.startsWith('metadata-') && name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(destination, name), 'utf8')))
     const updater = mergeUpdater(fragments, version, process.env.GITHUB_REPOSITORY)
     // Confirm every metadata entry refers to a present staged binary/signature pair.
-    for (const fragment of fragments) {
-      if (!statSync(join(destination, fragment.artifact)).isFile() || readFileSync(join(destination, `${fragment.artifact}.sig`), 'utf8').trim() !== fragment.signature) throw new Error('Updater artifact or matching signature missing')
+    for (const entry of fragments.flatMap(fragment => [fragment, ...Object.values(fragment.installers ?? {})])) {
+      if (!statSync(join(destination, entry.artifact)).isFile() || readFileSync(join(destination, `${entry.artifact}.sig`), 'utf8').trim() !== entry.signature) throw new Error('Updater artifact or matching signature missing')
     }
     writeFileSync(join(destination, 'latest.json'), JSON.stringify(updater, null, 2))
   } else throw new Error('Unknown release metadata command')
