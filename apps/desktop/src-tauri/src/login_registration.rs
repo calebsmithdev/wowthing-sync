@@ -14,20 +14,7 @@ pub(crate) fn prepare(app: &tauri::AppHandle, name: &str) -> Result<(), String> 
         }
     }
     #[cfg(target_os = "linux")]
-    {
-        use tauri::Manager;
-        let home = app
-            .path()
-            .home_dir()
-            .map_err(|_| "Home directory unavailable")?;
-        // auto-launch 0.6.0 deliberately uses this location, not XDG_CONFIG_HOME.
-        // The name comes only from package metadata or the scoped hosted probe.
-        inspect_linux_registration(
-            &home
-                .join(".config/autostart")
-                .join(format!("{name}.desktop")),
-        )?;
-    }
+    inspect_linux_registration(&linux_registration_path(app, name)?)?;
     let _ = (app, name);
     Ok(())
 }
@@ -40,30 +27,211 @@ fn transient_macos_executable(path: &std::path::Path) -> bool {
             .any(|part| part.as_os_str() == "AppTranslocation")
 }
 
+#[cfg(target_os = "linux")]
+fn linux_registration_path(
+    app: &tauri::AppHandle,
+    name: &str,
+) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|_| "Home directory unavailable")?;
+    // auto-launch 0.6.0 deliberately uses this location, not XDG_CONFIG_HOME.
+    // The name comes only from package metadata or the scoped hosted probe.
+    Ok(home
+        .join(".config/autostart")
+        .join(format!("{name}.desktop")))
+}
+
+/// The path tauri-plugin-autostart 2.7.0 registers: `$APPIMAGE` when set,
+/// otherwise the current executable.
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_launch_path(app: &tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    if let Some(appimage) = app
+        .env()
+        .appimage
+        .and_then(|p| p.to_str().map(String::from))
+    {
+        return Ok(appimage);
+    }
+    std::env::current_exe()
+        .map(|path| path.display().to_string())
+        .map_err(|_| "Could not resolve executable for launch at login".into())
+}
+
+/// auto-launch 0.6.0 writes `Exec=<path> <args>` without quoting, so the
+/// deb/rpm binary `/usr/bin/Wowthing Sync` splits into `/usr/bin/Wowthing`.
+/// Call right after `enable()`: rewrite only that exact generated line.
+#[cfg(target_os = "linux")]
+pub(crate) fn quote_linux_registration(
+    app: &tauri::AppHandle,
+    name: &str,
+    args: &[&str],
+) -> Result<(), String> {
+    let path = linux_registration_path(app, name)?;
+    let exe = linux_launch_path(app)?;
+    let contents = read_registration(&path)
+        .map_err(|_| "Could not read the new launch-at-login entry".to_string())?;
+    let Some(fixed) = quoted_registration(&contents, &exe, args)? else {
+        return Ok(());
+    };
+    let temp = path.with_extension("desktop.tmp");
+    std::fs::write(&temp, fixed)
+        .and_then(|()| std::fs::rename(&temp, &path))
+        .map_err(|_| {
+            let _ = std::fs::remove_file(&temp);
+            "Could not write the launch-at-login entry".to_string()
+        })
+}
+
+/// Returns the entry with its single generated `Exec` line quoted, `None` when
+/// it is already quoted, and an error for any other `Exec` contents.
+#[cfg(any(test, target_os = "linux"))]
+fn quoted_registration(contents: &str, exe: &str, args: &[&str]) -> Result<Option<String>, String> {
+    let args = args.join(" ");
+    let generated = format!("{exe} {args}");
+    let quoted = format!("{} {args}", quote_exec_arg(exe)?);
+    let quoted = quoted.trim_end();
+    let mut exec = contents.lines().filter(|line| line.starts_with("Exec="));
+    let (Some(line), None) = (exec.next(), exec.next()) else {
+        return Err("Unexpected launch-at-login entry".into());
+    };
+    match &line["Exec=".len()..] {
+        value if value == quoted => Ok(None),
+        value if value == generated => Ok(Some(
+            contents
+                .lines()
+                .map(|l| {
+                    if l == line {
+                        format!("Exec={quoted}")
+                    } else {
+                        l.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n",
+        )),
+        _ => Err("Unexpected launch-at-login entry".into()),
+    }
+}
+
+/// Quote one Exec argument per the Desktop Entry spec: reserved characters are
+/// backslash-escaped inside double quotes, `%` is doubled, and the string-value
+/// escape (`\\` for a backslash) is applied on top.
+#[cfg(any(test, target_os = "linux"))]
+fn quote_exec_arg(arg: &str) -> Result<String, String> {
+    if arg.is_empty() || arg.chars().any(char::is_control) {
+        return Err("Executable path cannot be registered for launch at login".into());
+    }
+    let mut out = String::from("\"");
+    // Each arm pushes the escape prefix; `c` itself completes the sequence.
+    for c in arg.chars() {
+        match c {
+            '"' | '`' | '$' => out.push_str("\\\\"),
+            '\\' => out.push_str("\\\\\\"),
+            '%' => out.push('%'),
+            _ => {}
+        }
+        out.push(c);
+    }
+    out.push('"');
+    Ok(out)
+}
+
+/// Split an Exec value into arguments (string unescape, then quoting, then `%%`).
+/// Field codes other than `%%` are not expected in our entries and are rejected.
+#[cfg(any(test, all(target_os = "linux", feature = "os-integration-test")))]
+pub(crate) fn parse_exec(value: &str) -> Result<Vec<String>, String> {
+    let mut unescaped = String::new();
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            unescaped.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('s') => unescaped.push(' '),
+            Some('\\') => unescaped.push('\\'),
+            // Keep other escapes for the quoting stage.
+            Some(other) => {
+                unescaped.push('\\');
+                unescaped.push(other);
+            }
+            None => return Err("Trailing escape".into()),
+        }
+    }
+    let mut args = Vec::new();
+    let mut chars = unescaped.chars().peekable();
+    loop {
+        while chars.next_if_eq(&' ').is_some() {}
+        if chars.peek().is_none() {
+            return Ok(args);
+        }
+        let mut arg = String::new();
+        if chars.next_if_eq(&'"').is_some() {
+            loop {
+                match chars.next() {
+                    Some('"') => break,
+                    Some('\\') => match chars.next() {
+                        Some(c @ ('"' | '`' | '$' | '\\')) => arg.push(c),
+                        _ => return Err("Invalid escape in quoted argument".into()),
+                    },
+                    Some(c) => arg.push(c),
+                    None => return Err("Unterminated quoted argument".into()),
+                }
+            }
+            if chars.peek().is_some_and(|c| *c != ' ') {
+                return Err("Quoted argument must end at a space".into());
+            }
+        } else {
+            while let Some(c) = chars.next_if(|c| *c != ' ') {
+                if matches!(c, '"' | '`' | '$' | '\\') {
+                    return Err("Reserved character outside quotes".into());
+                }
+                arg.push(c);
+            }
+        }
+        let mut decoded = String::new();
+        let mut parts = arg.chars();
+        while let Some(c) = parts.next() {
+            if c == '%' && parts.next() != Some('%') {
+                return Err("Unsupported field code".into());
+            }
+            decoded.push(c);
+        }
+        args.push(decoded);
+    }
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn read_registration(path: &std::path::Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other("registration is not a regular file"));
+    }
+    let mut contents = String::new();
+    file.take(65537).read_to_string(&mut contents)?;
+    if contents.len() > 65536 {
+        return Err(std::io::Error::other("registration is too large"));
+    }
+    Ok(contents)
+}
+
 #[cfg(any(test, target_os = "linux"))]
 fn inspect_linux_registration(path: &std::path::Path) -> Result<(), String> {
-    use std::io::Read;
-    let read = || -> std::io::Result<String> {
-        let mut options = std::fs::OpenOptions::new();
-        options.read(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-        }
-        let file = options.open(path)?;
-        if !file.metadata()?.is_file() {
-            return Err(std::io::Error::other("registration is not a regular file"));
-        }
-        let mut contents = String::new();
-        file.take(65537).read_to_string(&mut contents)?;
-        if contents.len() > 65536 {
-            return Err(std::io::Error::other("registration is too large"));
-        }
-        Ok(contents)
-    };
-    let contents =
-        read().map_err(|_| "Could not safely read launch-at-login entry; refresh deferred")?;
+    let contents = read_registration(path)
+        .map_err(|_| "Could not safely read launch-at-login entry; refresh deferred")?;
     if !plain_linux_registration(&contents) {
         return Err("Customized or disabled launch-at-login entry; refresh deferred".into());
     }
@@ -161,6 +329,85 @@ mod tests {
             std::fs::write(&path, &contents).unwrap();
             assert!(inspect_linux_registration(&path).is_err(), "{suffix}");
             assert_eq!(std::fs::read_to_string(&path).unwrap(), contents);
+        }
+    }
+
+    // auto-launch 0.6.0 output for the deb/rpm binary, which has a space.
+    const DEB_EXE: &str = "/usr/bin/Wowthing Sync";
+    const GENERATED: &str = "[Desktop Entry]\nType=Application\nVersion=1.0\nName=wowthing-sync\nComment=wowthing-sync startup script\nExec=/usr/bin/Wowthing Sync --autostart\nStartupNotify=false\nTerminal=false";
+
+    #[test]
+    fn unquoted_generated_exec_runs_the_wrong_program() {
+        let exec = GENERATED
+            .lines()
+            .find_map(|l| l.strip_prefix("Exec="))
+            .unwrap();
+        assert_eq!(
+            parse_exec(exec).unwrap(),
+            ["/usr/bin/Wowthing", "Sync", "--autostart"]
+        );
+    }
+
+    #[test]
+    fn linux_generated_entry_is_quoted_once_and_still_refreshable() {
+        let fixed = quoted_registration(GENERATED, DEB_EXE, &["--autostart"])
+            .unwrap()
+            .unwrap();
+        assert!(fixed.contains("\nExec=\"/usr/bin/Wowthing Sync\" --autostart\n"));
+        assert_eq!(
+            fixed.replace(
+                "Exec=\"/usr/bin/Wowthing Sync\"",
+                "Exec=/usr/bin/Wowthing Sync"
+            ),
+            format!("{GENERATED}\n")
+        );
+        let exec = fixed.lines().find_map(|l| l.strip_prefix("Exec=")).unwrap();
+        assert_eq!(parse_exec(exec).unwrap(), [DEB_EXE, "--autostart"]);
+        assert_eq!(
+            quoted_registration(&fixed, DEB_EXE, &["--autostart"]),
+            Ok(None)
+        );
+        // The next automatic refresh must accept the corrected entry.
+        assert!(plain_linux_registration(&fixed));
+    }
+
+    #[test]
+    fn linux_quoting_round_trips_reserved_characters() {
+        for exe in [
+            "/opt/plain",
+            "/home/a b/My Apps/Wowthing Sync.AppImage",
+            "/opt/q\"uote/$HOME/`tick`/back\\slash/100%/s;emi=ok/ünï",
+        ] {
+            let quoted = quote_exec_arg(exe).unwrap();
+            assert_eq!(
+                parse_exec(&format!("{quoted} --autostart")).unwrap(),
+                [exe, "--autostart"]
+            );
+        }
+        assert_eq!(quote_exec_arg("/a\\b").unwrap(), "\"/a\\\\\\\\b\"");
+        assert_eq!(quote_exec_arg("/a\"b%").unwrap(), "\"/a\\\\\"b%%\"");
+        for exe in ["", "/opt/new\nline", "/opt/tab\t"] {
+            assert!(quote_exec_arg(exe).is_err(), "{exe:?}");
+        }
+    }
+
+    #[test]
+    fn linux_quoting_rejects_unexpected_exec_lines() {
+        let legacy = GENERATED.replace(" --autostart", " ");
+        assert_eq!(
+            quoted_registration(&legacy, DEB_EXE, &[])
+                .unwrap()
+                .unwrap()
+                .lines()
+                .nth(5),
+            Some("Exec=\"/usr/bin/Wowthing Sync\"")
+        );
+        for contents in [
+            GENERATED.replace("/usr/bin/", "/opt/other/"),
+            GENERATED.replace("Exec=", "X-Exec="),
+            format!("{GENERATED}\nExec=/usr/bin/Wowthing Sync --autostart"),
+        ] {
+            assert!(quoted_registration(&contents, DEB_EXE, &["--autostart"]).is_err());
         }
     }
 

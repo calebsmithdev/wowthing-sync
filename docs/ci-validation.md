@@ -152,7 +152,11 @@ consumer VMs before replacing this checklist with automated jobs.
   retry next launch; prior registration arguments cannot be restored by the plugin.
   On Linux, confirm external `Hidden=true`/`X-GNOME-Autostart-enabled=false`,
   `OnlyShowIn`/`NotShowIn`/`TryExec` restrictions and unfamiliar entries remain
-  untouched. The pinned auto-launch 0.6.0 uses `~/.config/autostart` even when
+  untouched. Install the `.deb`/`.rpm` (binary `/usr/bin/Wowthing Sync`), enable
+  Launch at Login and confirm the entry reads `Exec="/usr/bin/Wowthing Sync"
+  --autostart` and that login starts the app hidden; upgrading from an affected
+  release with Launch at Login on must rewrite the unquoted entry once (#75).
+  The pinned auto-launch 0.6.0 uses `~/.config/autostart` even when
   `XDG_CONFIG_HOME` differs; this fix reads only that same own registration.
   macOS automatic refresh must defer on `/Volumes` and AppTranslocation paths
   without marking migration done; retry from the installed location.

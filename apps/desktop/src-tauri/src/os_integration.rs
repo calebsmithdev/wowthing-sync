@@ -105,11 +105,20 @@ fn verify_autostart_marker(
         .split_once("<key>ProgramArguments</key>")
         .and_then(|(_, tail)| tail.split_once("</array>"))
         .is_some_and(|(args, _)| args.contains(&format!("<string>{ARG}</string>")));
+    // Parse as a desktop environment would: the first token must be the actual
+    // executable, so an unquoted path with spaces cannot pass (#75).
     #[cfg(target_os = "linux")]
-    let present = contents
-        .lines()
-        .find_map(|line| line.strip_prefix("Exec="))
-        .is_some_and(|command| command.split_whitespace().last() == Some(ARG));
+    let present = {
+        let command = contents
+            .lines()
+            .find_map(|line| line.strip_prefix("Exec="))
+            .ok_or("Autostart registration has no Exec line")?;
+        let args = crate::login_registration::parse_exec(command)?;
+        if expected && args.first() != Some(&crate::login_registration::linux_launch_path(app)?) {
+            return Err("Autostart Exec program is not the registered executable".into());
+        }
+        args.last().map(String::as_str) == Some(ARG)
+    };
     #[cfg(windows)]
     let present = {
         let _ = app;
@@ -148,6 +157,13 @@ impl crate::settings::AutoStart for ScopedStart<'_> {
         if !enabled {
             return Err("refresh must never disable".into());
         }
-        self.0.autolaunch().enable().map_err(|e| e.to_string())
+        self.0.autolaunch().enable().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "linux")]
+        crate::login_registration::quote_linux_registration(
+            self.0,
+            self.1,
+            &[crate::window_lifecycle::AUTOSTART_ARG],
+        )?;
+        Ok(())
     }
 }
