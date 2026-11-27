@@ -149,7 +149,7 @@ fn main() {
 * Vue SFCs use `<script setup lang="ts">` and the Composition API.
 * State: OS calls via composables wrapping IPC.
 * UI components in `/components`. Pages in `/pages`.
-* Strict TypeScript and ESLint + Prettier configs enforced (`npm lint` must pass pre‑commit).
+* Strict TypeScript and ESLint enforced; formatting is ESLint stylistic (no Prettier), see §16.
 * No dynamic `eval` or inline scripts/styles.
 
 ---
@@ -172,9 +172,8 @@ fn main() {
 
 **Sample checks Agent must run for each PR**
 
-* `npm typecheck && npm lint && npm test:unit`
-* `cargo fmt -- --check && cargo clippy -- -D warnings && cargo test`
-* Build the app for the current OS and run `tests/e2e` minimal smoke.
+* While iterating: `node scripts/validate.mjs` (change-scoped; `--fix` applies formatting first).
+* Before opening a PR: `node scripts/validate.mjs --full` and paste its summary into the PR's Validation section.
 
 **Artifacts to attach to PR**
 
@@ -308,7 +307,29 @@ Agent SHOULD submit a patch that adds these subsections under clearly marked hea
 
 ## 16) Quick Validation Commands
 
-Use the reproducible validation catalog below. The desktop npm directory is `apps/desktop`; Cargo is a root workspace. Use `npm run --prefix apps/desktop <script>` and Cargo `--locked`. Generate frontend assets before native checks/builds.
+Use `node scripts/validate.mjs` from the repo root; it runs the same commands as CI, scoped to what changed. The full catalog below remains for individual steps. The desktop npm directory is `apps/desktop`; Cargo is a root workspace. Use `npm run --prefix apps/desktop <script>` and Cargo `--locked`. Generate frontend assets before native checks/builds (validate does this when needed).
+
+| Command | Runs |
+| --- | --- |
+| `node scripts/validate.mjs` | Quick, change-scoped checks against the default-branch merge base, the working tree and untracked files. **This is the pre-push hook.** |
+| `… --fix` | `eslint --fix` (app + scripts) and `cargo fmt` first, then the same checks. |
+| `… --full` | Adds browser e2e, native smoke and native integration (rust/frontend changes). **Run before opening a PR.** |
+| `… --all` / `--base <ref>` / `--dry-run` | Ignore change detection / compare to another ref / print the plan. |
+| `… --staged` | ESLint and rustfmt on staged files only. **This is the pre-commit hook.** |
+
+Change areas (rules in `scripts/validate.mjs`, tested by `scripts/validate.test.mjs`):
+* **rust** (`*.rs`, Cargo files, `rust-toolchain.toml`, `.cargo/`, `src-tauri/**`): rustfmt, clippy (default + `integration-test`, `-D warnings`), `os-integration-test` check, `cargo test`.
+* **frontend** (`apps/desktop/**` except `src-tauri`): eslint, typecheck, vitest.
+* **scripts** (`scripts/**`, root `eslint.config.mjs`): eslint and all `scripts/*.test.mjs`.
+* **workflows** (`.github/**`): script contract tests and actionlint (when it is installed).
+* **release** (versioned manifests, `Cargo.lock`, `release-metadata.mjs`): `release-metadata.mjs verify`.
+* Docs-only changes run nothing.
+
+Steps run in three lanes. Formatters and `generate` go first, then the Node and Cargo lanes run in parallel. A failing step prints its last 40 lines; full logs are in `test-results/validate/<step>.log`.
+
+**Formatting rules.** ESLint stylistic options live in `apps/desktop/eslint.style.mjs` and are shared by the app (through `@nuxt/eslint`) and the repo scripts (root `eslint.config.mjs`, which loads `apps/desktop/eslint.scripts.mjs`): 2-space indent, single quotes, no semicolons, `1tbs` braces, arrow parens only for block bodies. Dense one-line statements and dense Vue attribute layout are allowed on purpose. Rust uses default rustfmt. Fix with `npm run --prefix apps/desktop lint:fix` or `validate --fix`.
+
+**Hooks.** `npm ci --prefix apps/desktop` runs `scripts/install-hooks.mjs`, which sets `core.hooksPath=.githooks`. It skips CI, `WOWTHING_SKIP_HOOKS=1` and clones whose `core.hooksPath` already points elsewhere. For a one-off bypass, use `--no-verify`. Claude Code also runs `scripts/format-edited.mjs` after every Edit/Write (`.claude/settings.json`): rustfmt or `eslint --fix` on the edited file, with remaining errors reported back to the agent. Other agents rely on the git hooks.
 
 ---
 
@@ -317,6 +338,7 @@ Use the reproducible validation catalog below. The desktop npm directory is `app
 * Tauri dev path vs dist path mismatch → ensure `tauri.conf.json > build > beforeDevCommand`/`devPath` are correct.
 * CSP blocks inline scripts/styles → prefer hashed or move logic to JS.
 * Windows path separators vs POSIX → normalize in Rust.
+* The Tauri CLI exports `MACOSX_DEPLOYMENT_TARGET` from `bundle.macOS.minimumSystemVersion`. `.cargo/config.toml` sets the same value for plain cargo; if they differ, every cargo/`tauri build` alternation rebuilds ring, aws-lc and objc2 and everything that depends on them (minutes per macOS CI job). `scripts/build-env.test.mjs` keeps them equal.
 * Long‑running Rust tasks blocking UI → offload to threads or async with progress events.
 
 ---

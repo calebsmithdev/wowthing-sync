@@ -1,0 +1,5 @@
+#!/bin/sh
+# Lint/format check of staged files (eslint stylistic rules, rustfmt).
+# Enabled by `npm ci --prefix apps/desktop` (scripts/install-hooks.mjs).
+# Fix: node scripts/validate.mjs --fix · bypass once: git commit --no-verify
+exec node scripts/validate.mjs --staged

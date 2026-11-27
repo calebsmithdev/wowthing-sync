@@ -1,0 +1,5 @@
+#!/bin/sh
+# Change-scoped quick validation of the branch (same commands as CI).
+# Run `node scripts/validate.mjs --full` before opening a PR.
+# Bypass once: git push --no-verify
+exec node scripts/validate.mjs
