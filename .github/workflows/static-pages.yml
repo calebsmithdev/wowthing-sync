@@ -35,7 +35,12 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       WOWTHING_RELEASE_TAG: ${{ github.event.release.tag_name }}
     steps:
+      # A release event's ref is the tag, which can predate site changes already
+      # deployed from main. Build the site from the default branch instead;
+      # WOWTHING_RELEASE_TAG still pins the download data to this release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || '' }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
