@@ -2,4 +2,5 @@
 # Change-scoped quick validation of the branch (same commands as CI).
 # Run `node scripts/validate.mjs --full` before opening a PR.
 # Bypass once: git push --no-verify
+command -v node >/dev/null 2>&1 || { echo "wowthing hook: node not on PATH; skipping validation" >&2; exit 0; }
 exec node scripts/validate.mjs

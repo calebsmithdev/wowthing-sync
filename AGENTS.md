@@ -318,18 +318,18 @@ Use `node scripts/validate.mjs` from the repo root; it runs the same commands as
 | `… --staged` | ESLint and rustfmt on staged files only. **This is the pre-commit hook.** |
 
 Change areas (rules in `scripts/validate.mjs`, tested by `scripts/validate.test.mjs`):
-* **rust** (`*.rs`, Cargo files, `rust-toolchain.toml`, `.cargo/`, `src-tauri/**`): rustfmt, clippy (default + `integration-test`, `-D warnings`), `os-integration-test` check, `cargo test`.
-* **frontend** (`apps/desktop/**` except `src-tauri`): eslint, typecheck, vitest.
-* **scripts** (`scripts/**`, root `eslint.config.mjs`): eslint and all `scripts/*.test.mjs`.
+* **rust** (`*.rs`, Cargo files, `rust-toolchain.toml`, `.cargo/`, `src-tauri/**`): rustfmt, clippy (default + `integration-test`, `-D warnings`), `os-integration-test` check, `cargo test`, signature-audit check.
+* **frontend** (`apps/desktop/**` except `src-tauri`): eslint, `generate`, typecheck, vitest.
+* **scripts** (`scripts/**`, root `eslint.config.mjs`): eslint and all `scripts/*.test.mjs`. `signature-check.test.mjs` builds with cargo, so it runs in the Cargo lane. Changes to the harness scripts (smoke server, native smoke and integration, process runner, launchers, dev wrapper) also trigger the `--full` browser and native paths.
 * **workflows** (`.github/**`): script contract tests and actionlint (when it is installed).
 * **release** (versioned manifests, `Cargo.lock`, `release-metadata.mjs`): `release-metadata.mjs verify`.
-* Docs-only changes run nothing.
+* Docs-only changes run nothing. If there is no merge base with the default branch, validate checks every area (with a warning). An unknown `--base` is an error.
 
-Steps run in three lanes. Formatters and `generate` go first, then the Node and Cargo lanes run in parallel. A failing step prints its last 40 lines; full logs are in `test-results/validate/<step>.log`.
+Formatters and `generate` run first, then the Node and Cargo lanes run in parallel. Browser e2e and the native paths run last, one at a time, because `tauri build` regenerates `.nuxt` and `.output`. A failing step prints its last 40 lines; full logs are in `test-results/validate/<step>.log`.
 
 **Formatting rules.** ESLint stylistic options live in `apps/desktop/eslint.style.mjs` and are shared by the app (through `@nuxt/eslint`) and the repo scripts (root `eslint.config.mjs`, which loads `apps/desktop/eslint.scripts.mjs`): 2-space indent, single quotes, no semicolons, `1tbs` braces, arrow parens only for block bodies. Dense one-line statements and dense Vue attribute layout are allowed on purpose. Rust uses default rustfmt. Fix with `npm run --prefix apps/desktop lint:fix` or `validate --fix`.
 
-**Hooks.** `npm ci --prefix apps/desktop` runs `scripts/install-hooks.mjs`, which sets `core.hooksPath=.githooks`. It skips CI, `WOWTHING_SKIP_HOOKS=1` and clones whose `core.hooksPath` already points elsewhere. For a one-off bypass, use `--no-verify`. Claude Code also runs `scripts/format-edited.mjs` after every Edit/Write (`.claude/settings.json`): rustfmt or `eslint --fix` on the edited file, with remaining errors reported back to the agent. Other agents rely on the git hooks.
+**Hooks.** `npm ci --prefix apps/desktop` runs `scripts/install-hooks.mjs`, which sets `core.hooksPath=.githooks`. It skips CI, `WOWTHING_SKIP_HOOKS=1` and clones whose `core.hooksPath` already points elsewhere. It also skips when `.git/hooks` already holds real hooks, because setting `core.hooksPath` would silently disable them. Hooks skip with a message when `node` is not on PATH. `.gitattributes` keeps them LF. `--staged` checks the working-tree copy of staged files, so partial staging is not isolated. For a one-off bypass, use `--no-verify`. Claude Code also runs `scripts/format-edited.mjs` after every Edit/Write (`.claude/settings.json`): rustfmt or `eslint --fix` on the edited file, with remaining errors reported back to the agent. Other agents rely on the git hooks.
 
 ---
 

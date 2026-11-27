@@ -1,6 +1,6 @@
 [env]
 # The Tauri CLI exports MACOSX_DEPLOYMENT_TARGET from
-# bundle.macOS.minimumSystemVersion for every `tauri build`/`tauri dev`.
+# bundle.macOS.minimumSystemVersion for every `tauri build` (not `tauri dev`).
 # Plain cargo (clippy, test, native smoke) must see the same value, or the
 # cc-based build scripts (ring, aws-lc-sys, objc2, ...) rerun and their whole
 # dependent tree rebuilds each time the two alternate, defeating the CI cache.
