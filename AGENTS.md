@@ -632,7 +632,7 @@ untouched: development shares the installed identity and must not retarget its
 login item to `target/debug`. The core stays compiled for unit tests and direct
 hosted debug/release probes. Release startup refresh holds `SettingsManager.gate`,
 rewrites eligible enabled registrations once, verifies plugin enabled state, then commits
-`autostart-args-version: 1`. Disabled registrations are only marked; refresh never
+`autostart-args-version` (1, or 2 on Linux; see #75). Disabled registrations are only marked; refresh never
 calls disable. macOS refresh defers from canonical `/Volumes` or `AppTranslocation`
 paths. Linux reads only the plugin's own `~/.config/autostart/<app-name>.desktop`
 (auto-launch 0.6.0 does not use `XDG_CONFIG_HOME`); only its plain generated entry
@@ -661,6 +661,22 @@ hidden, manual recovery, and macOS Reopen. User Reopen is never suppressed by th
 original login marker. Update relaunch deliberately retains the invocation mode:
 an app started with `--autostart` returns hidden after update; tray Open Window
 reveals it. No updater state or IPC is added for this bounded fix.
+
+### Linux login entry quoting (#75)
+
+auto-launch 0.6.0 writes `Exec=<path> --autostart` unquoted, so the deb/rpm
+binary `/usr/bin/Wowthing Sync` would start `/usr/bin/Wowthing`, while the entry's
+existence still reported enabled. On Linux, every `enable()` (Settings toggle,
+startup refresh and the hosted probe) is followed by
+`login_registration::quote_linux_registration`, which rewrites only that exact
+generated line to `Exec="<path>" --autostart` using Desktop Entry quoting/escaping
+(control characters are refused). Any other `Exec` contents fail the enable, so the
+toggle rolls back instead of claiming success. The Linux marker is
+`autostart-args-version: 2`, so already-migrated enabled entries are rewritten once
+more; macOS/Windows stay at 1 and are not touched again. The preflight accepts the
+quoted entry. The OS probe parses `Exec` like a desktop session and requires the
+first argument to be the registered executable. Real login delivery remains a
+disposable-machine release check.
 
 ### Linux deb/rpm updates (#76)
 

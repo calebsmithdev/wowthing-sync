@@ -96,7 +96,16 @@ impl AutoStart for NativeAutoStart<'_> {
         } else {
             self.0.autolaunch().disable()
         }
-        .map_err(|_| "Could not change launch-at-login registration".into())
+        .map_err(|_| "Could not change launch-at-login registration".to_string())?;
+        #[cfg(target_os = "linux")]
+        if enabled {
+            crate::login_registration::quote_linux_registration(
+                self.0,
+                &self.0.package_info().name,
+                &[crate::window_lifecycle::AUTOSTART_ARG],
+            )?;
+        }
+        Ok(())
     }
 }
 #[cfg(feature = "integration-test")]
@@ -112,6 +121,11 @@ impl AutoStart for NativeAutoStart<'_> {
             .commit("fixture-autostart", Some(serde_json::json!(enabled)))
     }
 }
+// Bump to rewrite enabled registrations once more. Linux 2 quotes the Exec path
+// (#75); other platforms keep 1, so they are not rewritten again.
+#[cfg(not(feature = "integration-test"))]
+const LOGIN_ARGS_VERSION: u64 = if cfg!(target_os = "linux") { 2 } else { 1 };
+
 // Refresh only existing enabled registrations. A failed rewrite can leave changed
 // arguments behind; the plugin cannot restore them, so never attempt a rollback.
 #[cfg(any(test, not(feature = "integration-test")))]
@@ -146,9 +160,15 @@ pub fn refresh_login_registration(app: &tauri::AppHandle) {
         let _guard = manager.gate.lock().unwrap_or_else(|e| e.into_inner());
         let result = (|| {
             let store = crate::preferences::store(&app)?;
-            let done = store.get("autostart-args-version").and_then(|v| v.as_u64()) == Some(1);
+            let done = store
+                .get("autostart-args-version")
+                .and_then(|v| v.as_u64())
+                .is_some_and(|version| version >= LOGIN_ARGS_VERSION);
             refresh_registration(&NativeAutoStart(&app), done, || {
-                store.commit("autostart-args-version", Some(serde_json::json!(1)))
+                store.commit(
+                    "autostart-args-version",
+                    Some(serde_json::json!(LOGIN_ARGS_VERSION)),
+                )
             })
         })();
         if let Err(error) = result {
