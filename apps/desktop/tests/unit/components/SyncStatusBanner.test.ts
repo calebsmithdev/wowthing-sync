@@ -1,4 +1,4 @@
-import { mount, flushPromises  } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { emptySyncStatus, type SyncStatus } from '../../../src/composables/useSync'

@@ -24,7 +24,7 @@ try {
   await writeFile(join(folder, 'WoWthing_Collector.lua'), 'synthetic updater collector')
   await writeFile(join(temporary, 'settings.json'), JSON.stringify({ 'api-key': 'smoke-fixture-key', 'program-folder': join(temporary, 'WoW'), 'notifications-enabled': false }))
   server = createServer(async (request, response) => {
-    if (request.url === '/upload/') { for await (const _ of request) {} response.end(); return }
+    if (request.url === '/upload/') { for await (const _ of request) { /* drain the upload body */ } response.end(); return }
     if (request.url === '/background') { response.writeHead(204); response.end(); return }
     if (request.url === '/payload') { downloadCount++; response.end(candidate); return }
     if (!['/invalid', '/valid'].includes(request.url) || !signature) { response.writeHead(404); response.end(); return }
@@ -105,8 +105,7 @@ try {
   const preferences = JSON.parse(await readFile(join(temporary, 'settings.json'), 'utf8'))
   if ('api-key' in preferences || !preferences['last-success']) throw new Error('upgrade persistence failed')
   await writeFile(join(directory, 'report.json'), JSON.stringify({ passed: true, previous: '1.0.6', candidate: report.version, signatureRejected: true, installedHashBefore: before, installedHashAfter: after, expectedCandidateHash: expected, candidateIdentity, downloads: downloadCount, profile }, null, 2))
-} catch (error) { failure = error.message; safe = error.report?.processClosed !== false && error.report?.treeClosed !== false; console.error(error); process.exitCode = 1 }
-finally {
+} catch (error) { failure = error.message; safe = error.report?.processClosed !== false && error.report?.treeClosed !== false; console.error(error); process.exitCode = 1 } finally {
   if (failure) await writeFile(join(directory, 'report.json'), JSON.stringify({ passed: false, failure, retainedFixture: safe ? null : temporary }, null, 2))
   if (server?.listening) { const closed = new Promise(accept => server.close(accept)); server.closeAllConnections(); await closed }
   if (process.platform === 'win32' && installed) {

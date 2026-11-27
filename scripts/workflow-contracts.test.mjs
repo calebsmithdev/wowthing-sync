@@ -21,12 +21,12 @@ test('Playwright caches isolate runner images, architectures and locked browser 
       'matrix.os': image,
       'runner.os': os,
       'runner.arch': arch,
-      "hashFiles('apps/desktop/package-lock.json')": lock,
+      'hashFiles(\'apps/desktop/package-lock.json\')': lock,
     }
     assert.ok(Object.hasOwn(values, expression), `unsupported cache expression: ${expression}`)
     return values[expression]
   })
-  const images = native.strategy.matrix.os.map(image => {
+  const images = native.strategy.matrix.os.map((image) => {
     const os = image.startsWith('macos-') ? 'macOS' : image.startsWith('windows-') ? 'Windows' : 'Linux'
     assert.notEqual(key(image, os, 'ARM64', 'lock-a'), key(image, os, 'X64', 'lock-a'))
     assert.notEqual(key(image, os, 'X64', 'lock-a'), key(image, os, 'X64', 'lock-b'))
@@ -63,9 +63,9 @@ test('workflow DAG, real runner matrix and required-job topology are enforced', 
   assert.match(prerequisites.run, /\blibfuse2\b/)
   assert.doesNotMatch(prerequisites.run, /\blibfuse2t64\b/)
   const rustCache = setup.runs.steps.find(step => step.uses?.startsWith('swatinem/rust-cache@'))
-  assert.equal(rustCache.with['prefix-key'], "${{ runner.os == 'Linux' && 'desktop-ubuntu22-v1' || 'v0-rust' }}")
+  assert.equal(rustCache.with['prefix-key'], '${{ runner.os == \'Linux\' && \'desktop-ubuntu22-v1\' || \'v0-rust\' }}')
   const appimageAudit = release.jobs.build.steps.find(step => step.run?.includes('node scripts/appimage-check.mjs'))
-  assert.equal(appimageAudit.if, "runner.os == 'Linux'")
+  assert.equal(appimageAudit.if, 'runner.os == \'Linux\'')
   assert.equal(appimageAudit.env.ARTIFACT_PATHS, '${{ steps.tauri.outputs.artifactPaths }}')
   const steps = release.jobs.build.steps
   assert.ok(steps.indexOf(appimageAudit) > steps.findIndex(step => step.id === 'tauri'))
@@ -88,7 +88,7 @@ test('release-triggered Pages deploys build the site from the default branch', a
   const build = pages.jobs.build
   const checkout = build.steps.find(step => step.uses?.split('@')[0] === 'actions/checkout')
   const ref = checkout?.with?.ref?.replace(/\s+/g, ' ')
-  assert.equal(ref, "${{ github.event_name == 'release' && github.event.repository.default_branch || '' }}",
+  assert.equal(ref, '${{ github.event_name == \'release\' && github.event.repository.default_branch || \'\' }}',
     'a release event must not rebuild the site from the tag commit')
   assert.equal(build.env.WOWTHING_RELEASE_TAG, '${{ github.event.release.tag_name }}',
     'download data must stay pinned to the published release')

@@ -81,10 +81,10 @@
 </template>
 
 <script setup lang="ts">
-import type { BadgeProps } from '@nuxt/ui';
-import { checkPermissions, isTauri } from '@tauri-apps/api/core';
-import { getName, getVersion } from '@tauri-apps/api/app';
-import { arch, platform, type as osType, version as osVersion } from '@tauri-apps/plugin-os';
+import type { BadgeProps } from '@nuxt/ui'
+import { checkPermissions, isTauri } from '@tauri-apps/api/core'
+import { getName, getVersion } from '@tauri-apps/api/app'
+import { arch, platform, type as osType, version as osVersion } from '@tauri-apps/plugin-os'
 import {
   appCacheDir,
   appConfigDir,
@@ -100,102 +100,102 @@ import {
   homeDir,
   resourceDir,
   tempDir,
-} from '@tauri-apps/api/path';
-import { computed, ref } from 'vue';
+} from '@tauri-apps/api/path'
+import { computed, ref } from 'vue'
 
 interface AppInfo {
-  name: string;
-  version: string;
+  name: string
+  version: string
 }
 
 interface PlatformInfo {
-  type: string;
-  platform: string;
-  version: string;
-  arch: string;
+  type: string
+  platform: string
+  version: string
+  arch: string
 }
 
 interface PathEntry {
-  label: string;
-  value: string;
-  error?: string;
+  label: string
+  value: string
+  error?: string
 }
 
 interface PermissionEntry {
-  label: string;
-  plugin: string;
-  status: string;
-  raw?: string;
-  error?: string;
+  label: string
+  plugin: string
+  status: string
+  raw?: string
+  error?: string
 }
 
-const isDev = import.meta.dev;
-const runningInTauri = isTauri();
+const isDev = import.meta.dev
+const runningInTauri = isTauri()
 
-const appInfo = ref<AppInfo | null>(null);
-const platformInfo = ref<PlatformInfo | null>(null);
-const paths = ref<PathEntry[]>([]);
-const permissionStates = ref<PermissionEntry[]>([]);
-const loadError = ref<string | null>(null);
+const appInfo = ref<AppInfo | null>(null)
+const platformInfo = ref<PlatformInfo | null>(null)
+const paths = ref<PathEntry[]>([])
+const permissionStates = ref<PermissionEntry[]>([])
+const loadError = ref<string | null>(null)
 
-const formatPermissionState = (value: unknown): { status: string; raw?: string } => {
+const formatPermissionState = (value: unknown): { status: string, raw?: string } => {
   if (value === null || value === undefined) {
-    return { status: 'unknown' };
+    return { status: 'unknown' }
   }
 
   if (typeof value === 'string') {
-    return { status: value };
+    return { status: value }
   }
 
   try {
-    return { status: 'details', raw: JSON.stringify(value, null, 2) };
+    return { status: 'details', raw: JSON.stringify(value, null, 2) }
   } catch (error) {
     return {
       status: 'details',
       raw: `Unable to stringify state: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    }
   }
-};
+}
 
 const badgeColor = (status: string): BadgeProps['color'] => {
   switch (status) {
     case 'granted':
-      return 'success';
+      return 'success'
     case 'denied':
     case 'error':
-      return 'error';
+      return 'error'
     case 'prompt':
     case 'prompt-with-rationale':
-      return 'warning';
+      return 'warning'
     case 'details':
-      return 'info';
+      return 'info'
     default:
-      return 'neutral';
+      return 'neutral'
   }
-};
+}
 
 try {
   if (!isDev) {
-    loadError.value = 'Debug panel is only available in development builds.';
+    loadError.value = 'Debug panel is only available in development builds.'
   } else if (!runningInTauri) {
-    loadError.value = 'Debug panel requires the Tauri runtime environment.';
+    loadError.value = 'Debug panel requires the Tauri runtime environment.'
   } else {
-    const [name, version] = await Promise.all([getName(), getVersion()]);
-    appInfo.value = { name, version };
+    const [name, version] = await Promise.all([getName(), getVersion()])
+    appInfo.value = { name, version }
 
     const [osTypeValue, osPlatform, osVersionValue, osArchValue] = await Promise.all([
       osType(),
       platform(),
       osVersion(),
       arch(),
-    ]);
+    ])
 
     platformInfo.value = {
       type: osTypeValue,
       platform: osPlatform,
       version: osVersionValue,
       arch: osArchValue,
-    };
+    }
 
     const pathGetters: Array<[string, () => Promise<string>]> = [
       ['App Cache Dir', appCacheDir],
@@ -212,22 +212,22 @@ try {
       ['Home Dir', homeDir],
       ['Resource Dir', resourceDir],
       ['Temp Dir', tempDir],
-    ];
+    ]
 
     paths.value = await Promise.all(
       pathGetters.map(async ([label, getter]) => {
         try {
-          const value = await getter();
-          return { label, value } satisfies PathEntry;
+          const value = await getter()
+          return { label, value } satisfies PathEntry
         } catch (error) {
           return {
             label,
             value: 'Unavailable',
             error: error instanceof Error ? error.message : String(error),
-          } satisfies PathEntry;
+          } satisfies PathEntry
         }
       }),
-    );
+    )
 
     const pluginPermissions = [
       { plugin: 'core', label: 'Core' },
@@ -242,31 +242,31 @@ try {
       { plugin: 'log', label: 'Log' },
       { plugin: 'notification', label: 'Notification (Plugin)' },
       { plugin: 'persisted-scope', label: 'Persisted Scope' },
-    ] as const;
+    ] as const
 
     const pluginResults = await Promise.all(
       pluginPermissions.map(async ({ plugin, label }) => {
         try {
-          const state = await checkPermissions(plugin);
-          const formatted = formatPermissionState(state);
+          const state = await checkPermissions(plugin)
+          const formatted = formatPermissionState(state)
           return {
             plugin,
             label,
             status: formatted.status,
             raw: formatted.raw,
-          } satisfies PermissionEntry;
+          } satisfies PermissionEntry
         } catch (error) {
           return {
             plugin,
             label,
             status: 'error',
             error: error instanceof Error ? error.message : String(error),
-          } satisfies PermissionEntry;
+          } satisfies PermissionEntry
         }
       }),
-    );
+    )
 
-    const notificationPermission = useSettings().state.value.notificationPermission;
+    const notificationPermission = useSettings().state.value.notificationPermission
 
     permissionStates.value = [
       {
@@ -275,11 +275,11 @@ try {
         status: notificationPermission,
       },
       ...pluginResults,
-    ];
+    ]
   }
 } catch (error) {
-  loadError.value = error instanceof Error ? error.message : String(error);
+  loadError.value = error instanceof Error ? error.message : String(error)
 }
 
-const sortedPaths = computed(() => [...paths.value].sort((a, b) => a.label.localeCompare(b.label)));
+const sortedPaths = computed(() => [...paths.value].sort((a, b) => a.label.localeCompare(b.label)))
 </script>

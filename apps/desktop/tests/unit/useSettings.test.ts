@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { invoke } from '../mocks/tauri'
 import { createSettings, emptySettings } from '../../src/composables/useSettings'
 
-function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
+function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
 
 describe('typed shared settings', () => {
   it('hydrates once for concurrent consumers', async () => {
@@ -32,7 +32,7 @@ describe('typed shared settings', () => {
     expect(invoke).toHaveBeenNthCalledWith(2, 'get_settings')
   })
   it('uses explicit secure saving and prevents overlapping writes', async () => {
-    const pending = deferred<{ hasKey: boolean; loaded: boolean; error: string | null }>()
+    const pending = deferred<{ hasKey: boolean, loaded: boolean, error: string | null }>()
     invoke.mockReturnValueOnce(pending.promise)
     const settings = createSettings(); const saving = settings.saveKey(' test-key ')
     expect(settings.saving.value).toBe('api-key'); expect(await settings.setAutostart(true)).toBe(false)

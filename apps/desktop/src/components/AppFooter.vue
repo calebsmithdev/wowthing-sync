@@ -6,9 +6,9 @@
 </template>
 
 <script setup lang="ts">
-import { getVersion } from '@tauri-apps/api/app';
-import { useSync } from '../composables/useSync';
+import { getVersion } from '@tauri-apps/api/app'
+import { useSync } from '../composables/useSync'
 
-const status = useSync();
-const appVersion = await getVersion();
+const status = useSync()
+const appVersion = await getVersion()
 </script>

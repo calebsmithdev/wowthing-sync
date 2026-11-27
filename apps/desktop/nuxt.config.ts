@@ -1,29 +1,12 @@
-import tailwindcss from "@tailwindcss/vite";
-import { defineNuxtConfig } from "nuxt/config";
+import tailwindcss from '@tailwindcss/vite'
+import { defineNuxtConfig } from 'nuxt/config'
+import { stylisticOptions } from './eslint.style.mjs'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  devtools: { enabled: false },
   modules: ['@nuxt/ui', '@nuxt/eslint'],
   ssr: false,
-  // A static palette replaces Nuxt UI's two runtime inline <style> insertions.
-  hooks: {
-    'app:resolve': (app) => {
-      app.plugins = app.plugins.filter(plugin => !plugin.src.includes('/@nuxt/ui/dist/runtime/plugins/colors'))
-    },
-  },
-  icon: {
-    mode: 'svg',
-    provider: 'none',
-    clientBundle: { scan: true, icons: ['heroicons:eye', 'heroicons:eye-slash', 'lucide:loader-circle', 'lucide:check', 'lucide:chevron-down', 'lucide:external-link', 'lucide:circle-check', 'lucide:circle-alert', 'lucide:x', 'lucide:refresh-cw', 'lucide:folder-open', 'lucide:key-round', 'lucide:user', 'lucide:circle', 'lucide:triangle-alert', 'lucide:settings', 'lucide:info', 'lucide:radar'] },
-  },
-  telemetry: false,
-  colorMode: {
-    // Follow the OS appearance; the static palette defines both light and dark tokens.
-    preference: 'system',
-    // Nuxt UI's transition suppression injects an inline stylesheet blocked by CSP.
-    disableTransition: false,
-  },
+  devtools: { enabled: false },
   app: {
     head: {
       title: 'WoWthing Sync',
@@ -36,6 +19,21 @@ export default defineNuxtConfig({
       mode: 'out-in',
     },
   },
+  css: [
+    '~/assets/styles/main.css',
+    '~/assets/styles/palette.css',
+  ],
+  colorMode: {
+    // Follow the OS appearance; the static palette defines both light and dark tokens.
+    preference: 'system',
+    // Nuxt UI's transition suppression injects an inline stylesheet blocked by CSP.
+    disableTransition: false,
+  },
+  srcDir: 'src/',
+  devServer: {
+    host: '127.0.0.1',
+  },
+  compatibilityDate: '2024-10-01',
   vite: {
     html: { cspNonce: process.env.TAURI_DEV_NONCE },
     build: {
@@ -44,7 +42,7 @@ export default defineNuxtConfig({
     clearScreen: false,
     envPrefix: ['VITE_', 'TAURI_'],
     plugins: [
-      tailwindcss()
+      tailwindcss(),
     ],
     server: {
       strictPort: true,
@@ -53,23 +51,27 @@ export default defineNuxtConfig({
         host: '127.0.0.1',
         port: Number(process.env.TAURI_DEV_PORT ?? 3000) + 1,
       },
-			watch: {
-				ignored: ["**/src-tauri/**"]
-			}
+      watch: {
+        ignored: ['**/src-tauri/**'],
+      },
     },
   },
-  css: [
-    '~/assets/styles/main.css',
-    '~/assets/styles/palette.css',
-  ],
-  devServer: {
-		host: "127.0.0.1"
-	},
   postcss: {
     plugins: {
       autoprefixer: {},
     },
   },
-  compatibilityDate: "2024-10-01",
-  srcDir: 'src/'
+  telemetry: false,
+  // A static palette replaces Nuxt UI's two runtime inline <style> insertions.
+  hooks: {
+    'app:resolve': (app) => {
+      app.plugins = app.plugins.filter(plugin => !plugin.src.includes('/@nuxt/ui/dist/runtime/plugins/colors'))
+    },
+  },
+  eslint: { config: { stylistic: stylisticOptions } },
+  icon: {
+    mode: 'svg',
+    provider: 'none',
+    clientBundle: { scan: true, icons: ['heroicons:eye', 'heroicons:eye-slash', 'lucide:loader-circle', 'lucide:check', 'lucide:chevron-down', 'lucide:external-link', 'lucide:circle-check', 'lucide:circle-alert', 'lucide:x', 'lucide:refresh-cw', 'lucide:folder-open', 'lucide:key-round', 'lucide:user', 'lucide:circle', 'lucide:triangle-alert', 'lucide:settings', 'lucide:info', 'lucide:radar'] },
+  },
 })

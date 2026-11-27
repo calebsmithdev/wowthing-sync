@@ -12,5 +12,4 @@ try {
   if (lines.length !== 1 || !lines[0].startsWith('NATIVE_SMOKE PASS ')) throw new Error('missing or failed native smoke report')
   report = JSON.parse(lines[0].slice('NATIVE_SMOKE PASS '.length))
   if (report.errors.length || report.saved !== 1 || report.synced !== true || report.setup !== true || report.updaterChecks < 2 || report.openerCalls !== 4 || report.logFolderCalls !== 2) throw new Error('native smoke incomplete')
-} catch (error) { failure = error.message; console.error(error.message); process.exitCode = 1 }
-finally { await writeFile(resolve(reportDirectory, 'report.json'), JSON.stringify({ passed: failure === null, failure, native: report }, null, 2)) }
+} catch (error) { failure = error.message; console.error(error.message); process.exitCode = 1 } finally { await writeFile(resolve(reportDirectory, 'report.json'), JSON.stringify({ passed: failure === null, failure, native: report }, null, 2)) }

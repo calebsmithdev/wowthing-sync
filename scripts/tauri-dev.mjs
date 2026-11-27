@@ -17,9 +17,9 @@ for (const candidate of [port, port + 1]) {
   })
 }
 const nonce = randomBytes(24).toString('base64')
-const devCsp = config.app.security.devCsp.replace("script-src 'self'", `script-src 'self' 'nonce-${nonce}'`).replace("style-src 'self'", `style-src 'self' 'nonce-${nonce}'`)
+const devCsp = config.app.security.devCsp.replace('script-src \'self\'', `script-src 'self' 'nonce-${nonce}'`).replace('style-src \'self\'', `style-src 'self' 'nonce-${nonce}'`)
 const override = JSON.stringify({ build: { beforeDevCommand: `npm run dev -- --port ${port}`, devUrl: `http://localhost:${port}` }, app: { security: { devCsp } } })
 const launch = tauriInvocation(desktop, ['dev', '--config', override, ...process.argv.slice(2)])
 const child = spawn(launch.command, launch.args, { cwd: desktop, stdio: 'inherit', env: { ...process.env, TAURI_DEV_NONCE: nonce, TAURI_DEV_PORT: String(port), TAURI_CONFIG: override } })
-child.on('error', error => { console.error(error); process.exitCode = 1 })
-child.on('close', code => { process.exitCode = code ?? 1 })
+child.on('error', (error) => { console.error(error); process.exitCode = 1 })
+child.on('close', (code) => { process.exitCode = code ?? 1 })

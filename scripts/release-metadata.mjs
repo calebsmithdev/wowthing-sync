@@ -59,7 +59,7 @@ export function stageArtifacts({ version, key, paths, destination, targetRoot })
   const candidates = key.startsWith('darwin') ? ['.app.tar.gz'] : key.startsWith('linux') ? ['.AppImage.tar.gz', '.AppImage'] : ['.nsis.zip', '.msi.zip']
   const extension = candidates.find(extension => staged.has(extension) && staged.has(`${extension}.sig`))
   if (!extension) throw new Error(`No signed updater artifact for ${key}`)
-  const signed = extension => {
+  const signed = (extension) => {
     const signature = readFileSync(join(destination, staged.get(`${extension}.sig`)), 'utf8').trim()
     if (!signature) throw new Error('Updater signature is empty')
     return { artifact: staged.get(extension), signature }

@@ -14,7 +14,7 @@
     if (delay === 10000) displayTimers.add(id)
     return id
   }
-  window.clearInterval = id => { displayTimers.delete(id); clearInterval(id) }
+  window.clearInterval = (id) => { displayTimers.delete(id); clearInterval(id) }
   addEventListener('error', event => errors.push(event.message))
   addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
   addEventListener('securitypolicyviolation', event => errors.push(`CSP ${event.violatedDirective}`))
@@ -30,19 +30,19 @@
     entry.finishedVisibility = document.visibilityState
     entry.finishedDisplayTimers = displayTimers.size
   }
-  const click = text => {
+  const click = (text) => {
     const node = [...document.querySelectorAll('a,button')].find(node => node.textContent.trim() === text && !node.disabled)
     if (!node) throw new Error(`Missing enabled control: ${text}`)
     node.click()
   }
-  const input = value => {
+  const input = (value) => {
     const node = document.querySelector('input[type=password]')
     node.value = value
     node.dispatchEvent(new Event('input', { bubbles: true }))
   }
   addEventListener('DOMContentLoaded', async () => {
     const invoke = window.__TAURI_INTERNALS__.invoke
-    const control = async action => { nativeState = await invoke('integration_control', { action }); return nativeState }
+    const control = async (action) => { nativeState = await invoke('integration_control', { action }); return nativeState }
     try {
       await control('login-startup')
       await wait('login startup manually revealed', async () => (await control('state')).visible)

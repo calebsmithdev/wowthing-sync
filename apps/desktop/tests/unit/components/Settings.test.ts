@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import Settings from '../../../src/pages/settings.vue'
 import { createSettings, emptySettings } from '../../../src/composables/useSettings'
 import { invoke } from '../../mocks/tauri'
+
 const { open, openUrl } = vi.hoisted(() => ({ open: vi.fn(), openUrl: vi.fn() }))
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open }))
@@ -63,7 +64,7 @@ describe('settings', () => {
   it('ignores repeated clicks while an About link is opening', async () => {
     const { wrapper } = mountSettings()
     let finish!: () => void
-    openUrl.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    openUrl.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
     const link = wrapper.get('a[href="https://wowthing.org"]')
     await link.trigger('click')
     expect(link.attributes('aria-disabled')).toBe('true')

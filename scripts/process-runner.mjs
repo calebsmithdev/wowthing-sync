@@ -13,8 +13,8 @@ export async function terminateTree(child) {
     await new Promise((resolvePromise, reject) => {
       const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
       const timer = setTimeout(() => { killer.kill(); reject(new Error('taskkill deadline exceeded')) }, 5000)
-      killer.once('error', error => { clearTimeout(timer); reject(error) })
-      killer.once('close', code => { clearTimeout(timer); code === 0 || child.exitCode !== null || child.signalCode !== null ? resolvePromise() : reject(new Error(`taskkill failed (${code})`)) })
+      killer.once('error', (error) => { clearTimeout(timer); reject(error) })
+      killer.once('close', (code) => { clearTimeout(timer); code === 0 || child.exitCode !== null || child.signalCode !== null ? resolvePromise() : reject(new Error(`taskkill failed (${code})`)) })
     })
   } else {
     try { process.kill(-child.pid, 'SIGKILL') } catch (error) {
@@ -75,7 +75,7 @@ export async function runProcess(executable, args = [], options = {}) {
   // Timeout, exit and error paths must join one cleanup, never race or replace
   // the primary command failure while diagnostic files are being written.
   const startCleanup = () => {
-    if (!cleanup) cleanup = (async () => { try { if (process.platform !== 'win32' || !processClosed) await terminateTree(child) } finally { await cleanupRegistry(registry, owner) } })().catch(error => {
+    if (!cleanup) cleanup = (async () => { try { if (process.platform !== 'win32' || !processClosed) await terminateTree(child) } finally { await cleanupRegistry(registry, owner) } })().catch((error) => {
       cleanupFailure = error.message
       child.kill('SIGKILL')
     })
@@ -103,9 +103,9 @@ export async function runProcess(executable, args = [], options = {}) {
         }, 10_000)
         startCleanup()
       }, timeout)
-      child.stdout.on('data', bytes => { stdout = append(stdout, bytes); if (!capture) process.stdout.write(bytes); onStdout?.(bytes) })
-      child.stderr.on('data', bytes => { stderr = append(stderr, bytes); if (!capture) process.stderr.write(bytes); onStderr?.(bytes) })
-      child.once('error', error => { clearTimeout(timer); clearTimeout(closeDeadline); processClosed = !child.pid; treeClosed = processClosed; reject(error) })
+      child.stdout.on('data', (bytes) => { stdout = append(stdout, bytes); if (!capture) process.stdout.write(bytes); onStdout?.(bytes) })
+      child.stderr.on('data', (bytes) => { stderr = append(stderr, bytes); if (!capture) process.stderr.write(bytes); onStderr?.(bytes) })
+      child.once('error', (error) => { clearTimeout(timer); clearTimeout(closeDeadline); processClosed = !child.pid; treeClosed = processClosed; reject(error) })
       child.once('exit', () => {
         // An exited wrapper may leave descendants holding stdout/stderr open.
         // Stop its group now, then allow close to drain the captured streams.
@@ -129,19 +129,17 @@ export async function runProcess(executable, args = [], options = {}) {
     failure = error.message
     // Registration/config/report setup may fail after spawn, before the normal
     // listeners exist. It still owns the child and must terminate and await it.
-    if (!child) { processClosed = true; treeClosed = true }
-    else {
+    if (!child) { processClosed = true; treeClosed = true } else {
       await startCleanup()
       if (cleanupFailure && !failure.includes(cleanupFailure)) failure += `; cleanup: ${cleanupFailure}`
-      if (!processClosed) await new Promise(resolvePromise => {
+      if (!processClosed) await new Promise((resolvePromise) => {
         if (processClosed) { resolvePromise(); return }
         const timer = setTimeout(() => { child.stdout.destroy(); child.stderr.destroy(); child.unref(); resolvePromise() }, 10_000)
         child.once('close', () => { clearTimeout(timer); processClosed = true; resolvePromise() })
       })
       treeClosed = processClosed && cleanupFailure === null
     }
-  }
-  finally {
+  } finally {
     if (treeClosed || !pid) { for (const path of [entry, `${entry}.pending`]) { try { unlinkSync(path) } catch {} } }
     if (jobConfig) await rm(jobConfig, { force: true })
     if (!inheritedRegistry && processClosed && treeClosed) await rm(registry, { recursive: true, force: true })
@@ -160,7 +158,6 @@ export async function runProcess(executable, args = [], options = {}) {
   return { stdout, stderr, report }
 }
 
-
 // Private POSIX launcher. The control pipe is held only by runProcess: owner
 // death closes it and kills this group even if registry publication was interrupted.
 // The requested executable never runs before its owner has published the group.
@@ -168,7 +165,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   let input = '', started = false
   const abandoned = () => { try { process.kill(-process.pid, 'SIGKILL') } catch { process.exit(1) } }
   process.stdin.once('end', abandoned)
-  process.stdin.on('data', bytes => {
+  process.stdin.on('data', (bytes) => {
     if (started) return
     input += bytes
     if (input.length > 16 * 1024 * 1024) abandoned()
@@ -178,7 +175,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       if (typeof executable !== 'string' || !Array.isArray(args) || args.some(arg => typeof arg !== 'string')) throw new Error('invalid owned executable')
       started = true
       const target = spawn(executable, args, { env: process.env, cwd: process.cwd(), stdio: ['ignore', 'inherit', 'inherit'] })
-      target.once('error', error => { console.error(error.message); process.exit(1) })
+      target.once('error', (error) => { console.error(error.message); process.exit(1) })
       target.once('exit', (code, signal) => {
         if (signal) process.kill(process.pid, signal)
         else process.exit(code ?? 1)
