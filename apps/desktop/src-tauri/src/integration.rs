@@ -104,7 +104,38 @@ fn integration_report(
         "INTEGRATION_REPORT {}",
         serde_json::json!({"marker": HARNESS_MARKER, "passed":passed,"errors":errors,"diagnostics":diagnostics,"version":env!("CARGO_PKG_VERSION"),"migrated":migrated,"resourcesClosed":resources_closed,"windowLifecycle":lifecycle,"windowLifecycleDetails":lifecycle_details,"updater":updater,"status":status})
     );
-    app.exit(if passed { 0 } else { 1 });
+    if passed {
+        quit_during_upload(app, &store);
+    } else {
+        app.exit(1);
+    }
+}
+/// Final path (#74): tray Quit while an upload is stalled on the loopback server. The
+/// fixture server holds this request open; the run only completes if the process still exits.
+fn quit_during_upload(app: tauri::AppHandle, store: &Preferences) {
+    let folder = store
+        .get("program-folder")
+        .and_then(|v| v.as_str().map(PathBuf::from))
+        .expect("isolated WoW folder required");
+    let collector = folder.join("WTF/Account/SYNTHETIC/SavedVariables/WoWthing_Collector.lua");
+    assert!(collector.canonicalize().unwrap().starts_with(root()));
+    if std::fs::write(&collector, "synthetic stalled upload during quit").is_err()
+        || app.state::<SyncService>().manual().is_err()
+    {
+        app.exit(1);
+        return;
+    }
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !app.state::<SyncService>().snapshot().is_processing {
+            if std::time::Instant::now() > deadline {
+                app.exit(1);
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        tray::dispatch_menu(&app, "quit");
+    });
 }
 #[path = "setup/system_tray_menu.rs"]
 mod tray;

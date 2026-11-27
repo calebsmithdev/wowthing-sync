@@ -1069,14 +1069,20 @@ fn real_worker_keeps_writes_during_upload_and_cancels_folder_changes_and_shutdow
 
     let blocked = Server::new(vec![(200, Duration::from_secs(10))]);
     let fresh = tempfile::tempdir().unwrap();
-    let service = SyncService::start_with_io(io(&fresh, &blocked));
+    let blocked_io = io(&fresh, &blocked);
+    let service = SyncService::start_with_io(blocked_io.clone());
     configure(&service, &root);
     service.manual().unwrap();
-    wait("shutdown during upload", || blocked.bodies().len() == 1);
+    wait("shutdown during upload", || {
+        blocked.bodies().len() == 1 && service.snapshot().is_processing
+    });
+    let emitted = blocked_io.states.lock().unwrap().len();
     let start = Instant::now();
     service.shutdown();
     assert!(start.elapsed() < Duration::from_secs(2));
     assert!(service.snapshot().last_success.is_none());
+    // Shutdown runs on the main thread; an emit here reaches listeners that may need it (#74).
+    assert_eq!(blocked_io.states.lock().unwrap().len(), emitted);
 }
 #[test]
 fn real_worker_retries_http_failures_and_reports_bounded_timeouts() {

@@ -815,6 +815,11 @@ fn run(
             active_generation,
         ));
         state.is_processing = false;
+        if stopping.load(Ordering::Acquire) {
+            // Shutdown cancelled the upload: nobody is left to observe a final status, and
+            // emitting while the main thread waits in `shutdown` invites listener deadlocks.
+            return;
+        }
         if generation.load(Ordering::Acquire) != active_generation {
             continue;
         }

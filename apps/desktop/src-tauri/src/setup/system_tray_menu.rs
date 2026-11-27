@@ -89,9 +89,17 @@ pub fn setup_system_tray_menu(handle: &AppHandle) -> tauri::Result<()> {
     }
 
     tray_icon_builder.build(handle)?;
+    let listener_handle = handle.clone();
     handle.listen_any("sync-status", move |event| {
         if let Ok(status) = serde_json::from_str::<serde_json::Value>(event.payload()) {
-            let _ = status_item.set_text(status_label(&status));
+            // Rust listeners run on the emitting (sync worker) thread, and `set_text` blocks
+            // until the main thread runs it. During `RunEvent::Exit` the main thread waits for
+            // that worker to stop, so a blocking update would deadlock quit (#74). Queue it.
+            let item = status_item.clone();
+            let label = status_label(&status);
+            let _ = listener_handle.run_on_main_thread(move || {
+                let _ = item.set_text(label);
+            });
         }
     });
     Ok(())

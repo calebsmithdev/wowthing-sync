@@ -17,7 +17,7 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
   const saved = join(folder, 'WTF/Account/SYNTHETIC/SavedVariables')
   let stdout = '', stderr = ''
   let report, failure = null, safeToRemove = true, server
-  let uploads = 0, navigationWriteUploaded = false
+  let uploads = 0, navigationWriteUploaded = false, quitUploadStalled = false
   const responseTimers = new Set()
   try {
   await mkdir(saved, { recursive: true })
@@ -35,6 +35,8 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
       if (request.method !== 'POST' || request.url !== '/upload/' || payload.apiKey !== 'smoke-fixture-key' || !payload.luaFile.startsWith('synthetic')) throw new Error('unexpected fixture upload')
       uploads++
       if (payload.luaFile === 'synthetic write during native navigation') navigationWriteUploaded = true
+      // Never answered: the app must still exit when tray Quit arrives mid-upload (#74).
+      if (payload.luaFile === 'synthetic stalled upload during quit') { quitUploadStalled = true; return }
       const timer = setTimeout(() => { responseTimers.delete(timer); response.writeHead(200); response.end() }, 750)
       responseTimers.add(timer)
       response.once('close', () => { clearTimeout(timer); responseTimers.delete(timer) })
@@ -51,6 +53,8 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
     if (lines.length !== 1) throw new Error('missing or duplicate native report')
     report = JSON.parse(lines[0].slice('INTEGRATION_REPORT '.length))
     if (report.marker !== marker || report.passed !== true || report.errors.length || !report.migrated || uploads < 1 || !navigationWriteUploaded || !report.resourcesClosed || !report.windowLifecycle || !report.updater) throw new Error('native integration did not pass')
+    // runProcess already fails on a timeout/nonzero exit, so this proves Quit completed mid-upload (#74).
+    if (!quitUploadStalled) throw new Error('tray Quit did not happen during a stalled upload')
     const preferences = JSON.parse(await readFile(join(temporary, 'settings.json'), 'utf8'))
     if ('api-key' in preferences || !preferences['last-success']) throw new Error('upgrade fixture did not persist migration and upload')
     return report
@@ -59,7 +63,7 @@ export async function runFixture(binary, reportDirectory = resolve(root, 'test-r
     await mkdir(reportDirectory, { recursive: true })
     await writeFile(join(reportDirectory, 'stdout.log'), stdout)
     await writeFile(join(reportDirectory, 'stderr.log'), stderr)
-    await writeFile(join(reportDirectory, 'report.json'), JSON.stringify({ passed: failure === null, failure, report: report ?? null, uploads, navigationWriteUploaded, retainedFixture: safeToRemove ? null : temporary }, null, 2))
+    await writeFile(join(reportDirectory, 'report.json'), JSON.stringify({ passed: failure === null, failure, report: report ?? null, uploads, navigationWriteUploaded, quitUploadStalled, retainedFixture: safeToRemove ? null : temporary }, null, 2))
     for (const timer of responseTimers) clearTimeout(timer)
     if (server?.listening) {
       const closed = new Promise(resolvePromise => server.close(resolvePromise))
